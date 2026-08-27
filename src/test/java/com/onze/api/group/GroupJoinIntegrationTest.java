@@ -1,0 +1,204 @@
+package com.onze.api.group;
+
+import com.onze.api.auth.AuthModels.AuthResponse;
+import com.onze.api.auth.PasswordResetCodeRepository;
+import com.onze.api.group.GroupInviteModels.InviteResponse;
+import com.onze.api.group.GroupInviteModels.JoinGroupResponse;
+import com.onze.api.group.GroupModels.GroupResponse;
+import com.onze.api.user.UserRepository;
+
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.test.web.servlet.MockMvc;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.postgresql.PostgreSQLContainer;
+
+import tools.jackson.databind.json.JsonMapper;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+@Testcontainers
+@SpringBootTest(properties = {
+        "security.jwt.secret=onze-join-integration-secret-with-at-least-32-bytes",
+        "security.jwt.issuer=onze-api-join-integration-test"
+})
+@AutoConfigureMockMvc
+class GroupJoinIntegrationTest {
+
+    @Container
+    @ServiceConnection
+    static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:18-alpine")
+            .withDatabaseName("onze_join_test")
+            .withUsername("onze")
+            .withPassword("onze");
+
+    @Autowired
+    private MockMvc mockMvc;
+
+    @Autowired
+    private JsonMapper jsonMapper;
+
+    @Autowired
+    private GroupRepository groupRepository;
+
+    @Autowired
+    private GroupMemberRepository groupMemberRepository;
+
+    @Autowired
+    private GroupScheduleRepository groupScheduleRepository;
+
+    @Autowired
+    private GroupInviteRepository groupInviteRepository;
+
+    @Autowired
+    private PasswordResetCodeRepository resetCodeRepository;
+
+    @Autowired
+    private UserRepository userRepository;
+
+    @BeforeEach
+    void cleanDatabase() {
+        groupInviteRepository.deleteAll();
+        groupScheduleRepository.deleteAll();
+        groupMemberRepository.deleteAll();
+        groupRepository.deleteAll();
+        resetCodeRepository.deleteAll();
+        userRepository.deleteAll();
+    }
+
+    @Test
+    void shouldJoinGroupAsMemberUsingInviteCodeAndBeIdempotent() throws Exception {
+        AuthResponse creator = register("creator@example.com", "Criador");
+        AuthResponse invited = register("invited@example.com", "Convidado");
+        GroupResponse group = createGroup(creator, "Pelada do convite");
+        InviteResponse invite = createInvite(creator, group.id());
+
+        var joinResult = mockMvc.perform(post("/api/groups/join")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(invited))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"code": "%s"}
+                                """.formatted(invite.code().toLowerCase())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.groupId").value(group.id().toString()))
+                .andExpect(jsonPath("$.groupName").value("Pelada do convite"))
+                .andExpect(jsonPath("$.role").value("MEMBER"))
+                .andExpect(jsonPath("$.alreadyMember").value(false))
+                .andReturn();
+
+        JoinGroupResponse joined = jsonMapper.readValue(
+                joinResult.getResponse().getContentAsString(),
+                JoinGroupResponse.class);
+        assertThat(joined.role()).isEqualTo(GroupRole.MEMBER);
+        assertThat(groupMemberRepository.findByGroupIdAndUserId(group.id(), invited.user().id()))
+                .get()
+                .extracting(GroupMember::getRole)
+                .isEqualTo(GroupRole.MEMBER);
+
+        mockMvc.perform(post("/api/groups/join")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(invited))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"code": "%s"}
+                                """.formatted(invite.code())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.alreadyMember").value(true))
+                .andExpect(jsonPath("$.role").value("MEMBER"));
+
+        assertThat(groupMemberRepository.findAll()).hasSize(2);
+
+        mockMvc.perform(get("/api/groups")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(invited)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].id").value(group.id().toString()))
+                .andExpect(jsonPath("$[0].role").value("MEMBER"));
+    }
+
+    @Test
+    void shouldKeepAdminRoleWhenCreatorUsesOwnInvite() throws Exception {
+        AuthResponse creator = register("creator@example.com", "Criador");
+        GroupResponse group = createGroup(creator, "Pelada Admin");
+        InviteResponse invite = createInvite(creator, group.id());
+
+        mockMvc.perform(post("/api/groups/join")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(creator))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"code": "%s"}
+                                """.formatted(invite.code())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.alreadyMember").value(true))
+                .andExpect(jsonPath("$.role").value("ADMIN"));
+    }
+
+    @Test
+    void shouldRejectInvalidInviteCodeAndUnauthenticatedJoin() throws Exception {
+        AuthResponse invited = register("invited@example.com", "Convidado");
+
+        mockMvc.perform(post("/api/groups/join")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(invited))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"code": "ABCDEFGH"}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_GROUP_INVITE"));
+
+        mockMvc.perform(post("/api/groups/join")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"code": "ABCDEFGH"}
+                                """))
+                .andExpect(status().isUnauthorized());
+    }
+
+    private GroupResponse createGroup(AuthResponse creator, String name) throws Exception {
+        var result = mockMvc.perform(post("/api/groups")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(creator))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"name": "%s"}
+                                """.formatted(name)))
+                .andExpect(status().isCreated())
+                .andReturn();
+        return jsonMapper.readValue(result.getResponse().getContentAsString(), GroupResponse.class);
+    }
+
+    private InviteResponse createInvite(AuthResponse creator, java.util.UUID groupId) throws Exception {
+        var result = mockMvc.perform(post("/api/groups/{groupId}/invite", groupId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(creator)))
+                .andExpect(status().isOk())
+                .andReturn();
+        return jsonMapper.readValue(result.getResponse().getContentAsString(), InviteResponse.class);
+    }
+
+    private AuthResponse register(String email, String displayName) throws Exception {
+        var result = mockMvc.perform(post("/api/auth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "email": "%s",
+                                  "password": "StrongPass123!",
+                                  "displayName": "%s"
+                                }
+                                """.formatted(email, displayName)))
+                .andExpect(status().isCreated())
+                .andReturn();
+        return jsonMapper.readValue(result.getResponse().getContentAsString(), AuthResponse.class);
+    }
+
+    private String bearer(AuthResponse response) {
+        return "Bearer " + response.accessToken();
+    }
+}

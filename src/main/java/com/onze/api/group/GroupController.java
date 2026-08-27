@@ -5,6 +5,8 @@ import java.util.List;
 import java.util.UUID;
 
 import com.onze.api.group.GroupInviteModels.InviteResponse;
+import com.onze.api.group.GroupInviteModels.JoinGroupRequest;
+import com.onze.api.group.GroupInviteModels.JoinGroupResponse;
 import com.onze.api.group.GroupModels.CreateGroupRequest;
 import com.onze.api.group.GroupModels.GroupResponse;
 import com.onze.api.group.GroupModels.UpdateGroupDetailsRequest;
@@ -57,6 +59,13 @@ public class GroupController {
             Authentication authentication,
             @PathVariable UUID groupId) {
         return groupInviteService.getOrCreate(authentication.getName(), groupId);
+    }
+
+    @PostMapping("/join")
+    public JoinGroupResponse join(
+            Authentication authentication,
+            @Valid @RequestBody JoinGroupRequest request) {
+        return groupInviteService.join(authentication.getName(), request.code());
     }
 
     @PutMapping("/{groupId}/details")
