@@ -87,4 +87,8 @@ public class User {
     public Instant getUpdatedAt() {
         return updatedAt;
     }
+
+    public void changePasswordHash(String passwordHash) {
+        this.passwordHash = passwordHash;
+    }
 }
