@@ -9,5 +9,7 @@ public interface GroupInviteRepository extends JpaRepository<GroupInvite, UUID> 
 
     Optional<GroupInvite> findByGroupId(UUID groupId);
 
+    Optional<GroupInvite> findByCodeIgnoreCase(String code);
+
     boolean existsByCode(String code);
 }
