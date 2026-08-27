@@ -8,7 +8,9 @@ import com.onze.api.group.GroupInviteModels.InviteResponse;
 import com.onze.api.group.GroupInviteModels.JoinGroupRequest;
 import com.onze.api.group.GroupInviteModels.JoinGroupResponse;
 import com.onze.api.group.GroupModels.CreateGroupRequest;
+import com.onze.api.group.GroupModels.GroupMemberResponse;
 import com.onze.api.group.GroupModels.GroupResponse;
+import com.onze.api.group.GroupModels.TransferPrimaryAdminRequest;
 import com.onze.api.group.GroupModels.UpdateGroupDetailsRequest;
 
 import jakarta.validation.Valid;
@@ -32,10 +34,15 @@ public class GroupController {
 
     private final GroupService groupService;
     private final GroupInviteService groupInviteService;
+    private final GroupAdminService groupAdminService;
 
-    public GroupController(GroupService groupService, GroupInviteService groupInviteService) {
+    public GroupController(
+            GroupService groupService,
+            GroupInviteService groupInviteService,
+            GroupAdminService groupAdminService) {
         this.groupService = groupService;
         this.groupInviteService = groupInviteService;
+        this.groupAdminService = groupAdminService;
     }
 
     @PostMapping
@@ -81,6 +88,40 @@ public class GroupController {
             @PathVariable UUID groupId,
             @Valid @RequestBody UpdateGroupDetailsRequest request) {
         return groupService.updateDetails(authentication.getName(), groupId, request);
+    }
+
+    @GetMapping("/{groupId}/members")
+    public List<GroupMemberResponse> listMembers(
+            Authentication authentication,
+            @PathVariable UUID groupId) {
+        return groupAdminService.listMembers(authentication.getName(), groupId);
+    }
+
+    @PutMapping("/{groupId}/members/{memberId}/promote")
+    public GroupMemberResponse promoteMember(
+            Authentication authentication,
+            @PathVariable UUID groupId,
+            @PathVariable UUID memberId) {
+        return groupAdminService.promote(authentication.getName(), groupId, memberId);
+    }
+
+    @PutMapping("/{groupId}/members/{memberId}/demote")
+    public GroupMemberResponse demoteAdmin(
+            Authentication authentication,
+            @PathVariable UUID groupId,
+            @PathVariable UUID memberId) {
+        return groupAdminService.demote(authentication.getName(), groupId, memberId);
+    }
+
+    @PutMapping("/{groupId}/primary-admin")
+    public List<GroupMemberResponse> transferPrimaryAdmin(
+            Authentication authentication,
+            @PathVariable UUID groupId,
+            @Valid @RequestBody TransferPrimaryAdminRequest request) {
+        return groupAdminService.transferPrimaryAndStepDown(
+                authentication.getName(),
+                groupId,
+                request.replacementMemberId());
     }
 
     @GetMapping
