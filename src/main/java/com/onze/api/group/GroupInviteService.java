@@ -11,6 +11,7 @@ import com.onze.api.group.GroupService.GroupNotFoundException;
 import com.onze.api.group.GroupService.GroupUserNotFoundException;
 import com.onze.api.user.UserRepository;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -25,16 +26,19 @@ public class GroupInviteService {
     private final GroupMemberRepository groupMemberRepository;
     private final GroupInviteRepository groupInviteRepository;
     private final UserRepository userRepository;
+    private final String publicBaseUrl;
 
     public GroupInviteService(
             GroupRepository groupRepository,
             GroupMemberRepository groupMemberRepository,
             GroupInviteRepository groupInviteRepository,
-            UserRepository userRepository) {
+            UserRepository userRepository,
+            @Value("${app.public-base-url}") String publicBaseUrl) {
         this.groupRepository = groupRepository;
         this.groupMemberRepository = groupMemberRepository;
         this.groupInviteRepository = groupInviteRepository;
         this.userRepository = userRepository;
+        this.publicBaseUrl = publicBaseUrl.replaceAll("/+$", "");
     }
 
     @Transactional
@@ -84,6 +88,11 @@ public class GroupInviteService {
         return new JoinGroupResponse(group.getId(), group.getName(), membership.getRole(), false);
     }
 
+    boolean inviteExists(String rawCode) {
+        String code = rawCode.trim().toUpperCase(Locale.ROOT);
+        return groupInviteRepository.findByCodeIgnoreCase(code).isPresent();
+    }
+
     private UUID requireAdmin(String authenticatedUserId, UUID groupId) {
         UUID userId = parseUserId(authenticatedUserId);
         if (!groupRepository.existsById(groupId)) {
@@ -113,10 +122,12 @@ public class GroupInviteService {
     }
 
     private InviteResponse toResponse(GroupInvite invite) {
+        String code = invite.getCode();
         return new InviteResponse(
                 invite.getGroupId(),
-                invite.getCode(),
-                "onze://join/" + invite.getCode());
+                code,
+                "onze://join/" + code,
+                publicBaseUrl + "/join/" + code);
     }
 
     private UUID parseUserId(String authenticatedUserId) {
