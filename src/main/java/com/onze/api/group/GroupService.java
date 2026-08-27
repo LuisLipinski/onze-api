@@ -1,7 +1,7 @@
 package com.onze.api.group;
 
+import java.io.IOException;
 import java.time.DayOfWeek;
-import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -19,24 +19,30 @@ import com.onze.api.user.UserRepository;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
 @Service
 public class GroupService {
+
+    private static final long MAX_PHOTO_BYTES = 5L * 1024L * 1024L;
 
     private final GroupRepository groupRepository;
     private final GroupMemberRepository groupMemberRepository;
     private final GroupScheduleRepository groupScheduleRepository;
     private final UserRepository userRepository;
+    private final GroupPhotoStorage groupPhotoStorage;
 
     public GroupService(
             GroupRepository groupRepository,
             GroupMemberRepository groupMemberRepository,
             GroupScheduleRepository groupScheduleRepository,
-            UserRepository userRepository) {
+            UserRepository userRepository,
+            GroupPhotoStorage groupPhotoStorage) {
         this.groupRepository = groupRepository;
         this.groupMemberRepository = groupMemberRepository;
         this.groupScheduleRepository = groupScheduleRepository;
         this.userRepository = userRepository;
+        this.groupPhotoStorage = groupPhotoStorage;
     }
 
     @Transactional
@@ -74,6 +80,25 @@ public class GroupService {
         return toResponse(group, membership.getRole(), schedules);
     }
 
+    @Transactional
+    public GroupResponse updatePhoto(String authenticatedUserId, UUID groupId, MultipartFile photo) {
+        UUID userId = parseUserId(authenticatedUserId);
+        Group group = requireGroup(groupId);
+        GroupMember membership = requireAdmin(groupId, userId);
+        validatePhoto(photo);
+
+        try {
+            String photoUrl = groupPhotoStorage.upload(groupId, photo.getBytes());
+            group.updatePhotoUrl(photoUrl);
+            return toResponse(
+                    group,
+                    membership.getRole(),
+                    groupScheduleRepository.findAllByGroupId(groupId));
+        } catch (IOException exception) {
+            throw new PhotoUploadFailedException(exception);
+        }
+    }
+
     @Transactional(readOnly = true)
     public List<GroupResponse> listForUser(String authenticatedUserId) {
         UUID userId = parseUserId(authenticatedUserId);
@@ -91,6 +116,16 @@ public class GroupService {
                     groupScheduleRepository.findAllByGroupId(group.getId())));
         }
         return result;
+    }
+
+    private void validatePhoto(MultipartFile photo) {
+        String contentType = photo.getContentType();
+        if (photo.isEmpty()
+                || photo.getSize() > MAX_PHOTO_BYTES
+                || contentType == null
+                || !contentType.toLowerCase().startsWith("image/")) {
+            throw new InvalidGroupPhotoException();
+        }
     }
 
     private User requireUser(String authenticatedUserId) {
@@ -177,5 +212,24 @@ public class GroupService {
 
     public static final class GroupUserNotFoundException extends RuntimeException {
         private static final long serialVersionUID = 1L;
+    }
+
+    public static final class InvalidGroupPhotoException extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+    }
+
+    public static final class PhotoStorageNotConfiguredException extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+    }
+
+    public static final class PhotoUploadFailedException extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+
+        public PhotoUploadFailedException() {
+        }
+
+        public PhotoUploadFailedException(Throwable cause) {
+            super(cause);
+        }
     }
 }
