@@ -79,7 +79,7 @@ class GroupFlowIntegrationTest {
     }
 
     @Test
-    void shouldCreateGroupWithCreatorAsAdminCompleteSetupAndGenerateInvite() throws Exception {
+    void shouldCreateGroupWithCreatorAsPrimaryAdminCompleteSetupAndGenerateInvite() throws Exception {
         AuthResponse creator = register("creator@example.com", "Criador");
 
         var createResult = mockMvc.perform(post("/api/groups")
@@ -95,7 +95,7 @@ class GroupFlowIntegrationTest {
                 .andExpect(jsonPath("$.name").value("Pelada de Quinta"))
                 .andExpect(jsonPath("$.description").value("Futebol dos amigos"))
                 .andExpect(jsonPath("$.photoUrl").doesNotExist())
-                .andExpect(jsonPath("$.role").value("ADMIN"))
+                .andExpect(jsonPath("$.role").value("PRIMARY_ADMIN"))
                 .andReturn();
 
         GroupResponse created = jsonMapper.readValue(
@@ -104,7 +104,7 @@ class GroupFlowIntegrationTest {
 
         var membership = groupMemberRepository.findByGroupIdAndUserId(
                 created.id(), creator.user().id()).orElseThrow();
-        assertThat(membership.getRole()).isEqualTo(GroupRole.ADMIN);
+        assertThat(membership.getRole()).isEqualTo(GroupRole.PRIMARY_ADMIN);
         assertThat(groupRepository.findById(created.id()).orElseThrow().getCreatedBy())
                 .isEqualTo(creator.user().id());
 
@@ -151,7 +151,7 @@ class GroupFlowIntegrationTest {
                         .header(HttpHeaders.AUTHORIZATION, bearer(creator)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].id").value(created.id().toString()))
-                .andExpect(jsonPath("$[0].role").value("ADMIN"))
+                .andExpect(jsonPath("$[0].role").value("PRIMARY_ADMIN"))
                 .andExpect(jsonPath("$[0].city").value("Curitiba"));
     }
 
