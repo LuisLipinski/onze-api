@@ -4,6 +4,7 @@ import java.net.URI;
 import java.util.List;
 import java.util.UUID;
 
+import com.onze.api.group.GroupInviteModels.InviteResponse;
 import com.onze.api.group.GroupModels.CreateGroupRequest;
 import com.onze.api.group.GroupModels.GroupResponse;
 import com.onze.api.group.GroupModels.UpdateGroupDetailsRequest;
@@ -28,9 +29,11 @@ import org.springframework.web.multipart.MultipartFile;
 public class GroupController {
 
     private final GroupService groupService;
+    private final GroupInviteService groupInviteService;
 
-    public GroupController(GroupService groupService) {
+    public GroupController(GroupService groupService, GroupInviteService groupInviteService) {
         this.groupService = groupService;
+        this.groupInviteService = groupInviteService;
     }
 
     @PostMapping
@@ -47,6 +50,13 @@ public class GroupController {
             @PathVariable UUID groupId,
             @RequestPart("photo") MultipartFile photo) {
         return groupService.updatePhoto(authentication.getName(), groupId, photo);
+    }
+
+    @PostMapping("/{groupId}/invite")
+    public InviteResponse createInvite(
+            Authentication authentication,
+            @PathVariable UUID groupId) {
+        return groupInviteService.getOrCreate(authentication.getName(), groupId);
     }
 
     @PutMapping("/{groupId}/details")
