@@ -20,3 +20,7 @@ services:
         value: onze-api
       - key: JWT_ACCESS_TOKEN_TTL
         value: PT2H
+      - key: RESEND_API_KEY
+        sync: false
+      - key: RESEND_FROM
+        sync: false
