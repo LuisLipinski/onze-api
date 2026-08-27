@@ -101,7 +101,7 @@ public class GroupInviteService {
 
         GroupMember membership = groupMemberRepository.findByGroupIdAndUserId(groupId, userId)
                 .orElseThrow(GroupAccessDeniedException::new);
-        if (membership.getRole() != GroupRole.ADMIN) {
+        if (membership.getRole() == GroupRole.MEMBER) {
             throw new GroupAccessDeniedException();
         }
         return userId;

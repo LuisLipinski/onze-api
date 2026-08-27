@@ -51,6 +51,18 @@ public final class GroupModels {
             Instant createdAt) {
     }
 
+    public record GroupMemberResponse(
+            UUID membershipId,
+            UUID userId,
+            String displayName,
+            GroupRole role,
+            boolean currentUser) {
+    }
+
+    public record TransferPrimaryAdminRequest(
+            @NotNull UUID replacementMemberId) {
+    }
+
     public record ErrorResponse(String code, String message) {
     }
 }

@@ -72,4 +72,8 @@ public class GroupMember {
     public Instant getCreatedAt() {
         return createdAt;
     }
+
+    public void changeRole(GroupRole role) {
+        this.role = role;
+    }
 }

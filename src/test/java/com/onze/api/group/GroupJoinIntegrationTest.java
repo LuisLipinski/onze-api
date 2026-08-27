@@ -213,7 +213,7 @@ class GroupJoinIntegrationTest {
     }
 
     @Test
-    void shouldKeepAdminRoleWhenCreatorUsesOwnInvite() throws Exception {
+    void shouldKeepPrimaryAdminRoleWhenCreatorUsesOwnInvite() throws Exception {
         AuthResponse creator = register("creator@example.com", "Criador");
         GroupResponse group = createGroup(creator, "Pelada Admin");
         InviteResponse invite = createInvite(creator, group.id());
@@ -226,7 +226,7 @@ class GroupJoinIntegrationTest {
                                 """.formatted(invite.code())))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.alreadyMember").value(true))
-                .andExpect(jsonPath("$.role").value("ADMIN"));
+                .andExpect(jsonPath("$.role").value("PRIMARY_ADMIN"));
     }
 
     @Test

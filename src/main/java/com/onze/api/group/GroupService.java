@@ -53,8 +53,8 @@ public class GroupService {
                 normalizeOptional(request.description()),
                 creator.getId()));
 
-        groupMemberRepository.save(new GroupMember(group.getId(), creator.getId(), GroupRole.ADMIN));
-        return toResponse(group, GroupRole.ADMIN, List.of());
+        groupMemberRepository.save(new GroupMember(group.getId(), creator.getId(), GroupRole.PRIMARY_ADMIN));
+        return toResponse(group, GroupRole.PRIMARY_ADMIN, List.of());
     }
 
     @Transactional
@@ -140,7 +140,7 @@ public class GroupService {
     private GroupMember requireAdmin(UUID groupId, UUID userId) {
         GroupMember membership = groupMemberRepository.findByGroupIdAndUserId(groupId, userId)
                 .orElseThrow(GroupAccessDeniedException::new);
-        if (membership.getRole() != GroupRole.ADMIN) {
+        if (membership.getRole() == GroupRole.MEMBER) {
             throw new GroupAccessDeniedException();
         }
         return membership;
