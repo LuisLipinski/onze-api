@@ -2,6 +2,9 @@ package com.onze.api.auth;
 
 import com.onze.api.auth.AuthModels.AuthResponse;
 import com.onze.api.auth.AuthModels.LoginRequest;
+import com.onze.api.auth.AuthModels.MessageResponse;
+import com.onze.api.auth.AuthModels.PasswordResetConfirmRequest;
+import com.onze.api.auth.AuthModels.PasswordResetRequest;
 import com.onze.api.auth.AuthModels.RegisterRequest;
 import com.onze.api.auth.AuthModels.UserResponse;
 
@@ -21,10 +24,15 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/auth")
 public class AuthController {
 
-    private final AuthService authService;
+    private static final String RESET_REQUEST_MESSAGE =
+            "Se existir uma conta com este e-mail, enviaremos um código de recuperação.";
 
-    public AuthController(AuthService authService) {
+    private final AuthService authService;
+    private final PasswordResetService passwordResetService;
+
+    public AuthController(AuthService authService, PasswordResetService passwordResetService) {
         this.authService = authService;
+        this.passwordResetService = passwordResetService;
     }
 
     @PostMapping("/register")
@@ -36,6 +44,19 @@ public class AuthController {
     @PostMapping("/login")
     public AuthResponse login(@Valid @RequestBody LoginRequest request) {
         return authService.login(request);
+    }
+
+    @PostMapping("/password-reset/request")
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    public MessageResponse requestPasswordReset(@Valid @RequestBody PasswordResetRequest request) {
+        passwordResetService.requestReset(request);
+        return new MessageResponse(RESET_REQUEST_MESSAGE);
+    }
+
+    @PostMapping("/password-reset/confirm")
+    public MessageResponse confirmPasswordReset(@Valid @RequestBody PasswordResetConfirmRequest request) {
+        passwordResetService.confirmReset(request);
+        return new MessageResponse("Senha alterada com sucesso.");
     }
 
     @GetMapping("/me")
