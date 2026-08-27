@@ -1,12 +1,15 @@
 package com.onze.api.group;
 
 import java.security.SecureRandom;
+import java.util.Locale;
 import java.util.UUID;
 
 import com.onze.api.group.GroupInviteModels.InviteResponse;
+import com.onze.api.group.GroupInviteModels.JoinGroupResponse;
 import com.onze.api.group.GroupService.GroupAccessDeniedException;
 import com.onze.api.group.GroupService.GroupNotFoundException;
 import com.onze.api.group.GroupService.GroupUserNotFoundException;
+import com.onze.api.user.UserRepository;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -21,14 +24,17 @@ public class GroupInviteService {
     private final GroupRepository groupRepository;
     private final GroupMemberRepository groupMemberRepository;
     private final GroupInviteRepository groupInviteRepository;
+    private final UserRepository userRepository;
 
     public GroupInviteService(
             GroupRepository groupRepository,
             GroupMemberRepository groupMemberRepository,
-            GroupInviteRepository groupInviteRepository) {
+            GroupInviteRepository groupInviteRepository,
+            UserRepository userRepository) {
         this.groupRepository = groupRepository;
         this.groupMemberRepository = groupMemberRepository;
         this.groupInviteRepository = groupInviteRepository;
+        this.userRepository = userRepository;
     }
 
     @Transactional
@@ -48,6 +54,30 @@ public class GroupInviteService {
                 .orElseGet(() -> groupInviteRepository.save(
                         new GroupInvite(groupId, generateUniqueCode(), userId)));
         return toResponse(invite);
+    }
+
+    @Transactional
+    public JoinGroupResponse join(String authenticatedUserId, String rawCode) {
+        UUID userId = parseUserId(authenticatedUserId);
+        if (!userRepository.existsById(userId)) {
+            throw new GroupUserNotFoundException();
+        }
+
+        String code = rawCode.trim().toUpperCase(Locale.ROOT);
+        GroupInvite invite = groupInviteRepository.findByCodeIgnoreCase(code)
+                .orElseThrow(InvalidGroupInviteException::new);
+        Group group = groupRepository.findById(invite.getGroupId())
+                .orElseThrow(InvalidGroupInviteException::new);
+
+        var existingMembership = groupMemberRepository.findByGroupIdAndUserId(group.getId(), userId);
+        if (existingMembership.isPresent()) {
+            GroupMember membership = existingMembership.get();
+            return new JoinGroupResponse(group.getId(), group.getName(), membership.getRole(), true);
+        }
+
+        GroupMember membership = groupMemberRepository.save(
+                new GroupMember(group.getId(), userId, GroupRole.MEMBER));
+        return new JoinGroupResponse(group.getId(), group.getName(), membership.getRole(), false);
     }
 
     private String generateUniqueCode() {
@@ -77,5 +107,9 @@ public class GroupInviteService {
         } catch (IllegalArgumentException exception) {
             throw new GroupUserNotFoundException();
         }
+    }
+
+    public static final class InvalidGroupInviteException extends RuntimeException {
+        private static final long serialVersionUID = 1L;
     }
 }
