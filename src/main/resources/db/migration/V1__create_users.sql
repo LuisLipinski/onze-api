@@ -1,0 +1,10 @@
+CREATE TABLE users (
+    id UUID PRIMARY KEY,
+    email VARCHAR(320) NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    display_name VARCHAR(120) NOT NULL,
+    email_verified BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uk_users_email UNIQUE (email)
+);
