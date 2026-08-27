@@ -1,5 +1,9 @@
 package com.onze.api.group;
 
+import com.onze.api.group.GroupAdminService.GroupMemberNotFoundException;
+import com.onze.api.group.GroupAdminService.PrimaryAdminRequiredException;
+import com.onze.api.group.GroupAdminService.PrimaryAdminTransferRequiredException;
+import com.onze.api.group.GroupAdminService.ReplacementMustBeAdminException;
 import com.onze.api.group.GroupInviteService.InvalidGroupInviteException;
 import com.onze.api.group.GroupModels.ErrorResponse;
 import com.onze.api.group.GroupService.GroupAccessDeniedException;
@@ -23,10 +27,40 @@ public class GroupExceptionHandler {
                 .body(new ErrorResponse("GROUP_NOT_FOUND", "Grupo não encontrado."));
     }
 
+    @ExceptionHandler(GroupMemberNotFoundException.class)
+    ResponseEntity<ErrorResponse> memberNotFound() {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(new ErrorResponse("GROUP_MEMBER_NOT_FOUND", "Jogador não encontrado neste grupo."));
+    }
+
     @ExceptionHandler(GroupAccessDeniedException.class)
     ResponseEntity<ErrorResponse> accessDenied() {
         return ResponseEntity.status(HttpStatus.FORBIDDEN)
                 .body(new ErrorResponse("GROUP_ACCESS_DENIED", "Você não tem permissão para alterar este grupo."));
+    }
+
+    @ExceptionHandler(PrimaryAdminRequiredException.class)
+    ResponseEntity<ErrorResponse> primaryAdminRequired() {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(new ErrorResponse(
+                        "PRIMARY_ADMIN_REQUIRED",
+                        "Somente o administrador principal pode rebaixar administradores."));
+    }
+
+    @ExceptionHandler(PrimaryAdminTransferRequiredException.class)
+    ResponseEntity<ErrorResponse> primaryTransferRequired() {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(new ErrorResponse(
+                        "PRIMARY_ADMIN_TRANSFER_REQUIRED",
+                        "Escolha outro administrador principal antes de deixar o cargo."));
+    }
+
+    @ExceptionHandler(ReplacementMustBeAdminException.class)
+    ResponseEntity<ErrorResponse> replacementMustBeAdmin() {
+        return ResponseEntity.badRequest()
+                .body(new ErrorResponse(
+                        "REPLACEMENT_MUST_BE_ADMIN",
+                        "O novo administrador principal precisa já ser administrador do grupo."));
     }
 
     @ExceptionHandler(GroupUserNotFoundException.class)
