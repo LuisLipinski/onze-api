@@ -1,5 +1,6 @@
 package com.onze.api.group;
 
+import com.onze.api.group.GroupInviteService.InvalidGroupInviteException;
 import com.onze.api.group.GroupModels.ErrorResponse;
 import com.onze.api.group.GroupService.GroupAccessDeniedException;
 import com.onze.api.group.GroupService.GroupNotFoundException;
@@ -32,6 +33,14 @@ public class GroupExceptionHandler {
     ResponseEntity<ErrorResponse> userNotFound() {
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                 .body(new ErrorResponse("INVALID_SESSION", "Sessão inválida."));
+    }
+
+    @ExceptionHandler(InvalidGroupInviteException.class)
+    ResponseEntity<ErrorResponse> invalidInvite() {
+        return ResponseEntity.badRequest()
+                .body(new ErrorResponse(
+                        "INVALID_GROUP_INVITE",
+                        "Este código de convite não é válido."));
     }
 
     @ExceptionHandler(InvalidGroupPhotoException.class)
