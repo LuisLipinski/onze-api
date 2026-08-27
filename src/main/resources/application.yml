@@ -21,6 +21,9 @@ spring:
       max-file-size: 5MB
       max-request-size: 6MB
 
+app:
+  public-base-url: ${PUBLIC_BASE_URL:https://onze-organizador-de-pelada.onrender.com}
+
 security:
   jwt:
     issuer: ${JWT_ISSUER:onze-api}
