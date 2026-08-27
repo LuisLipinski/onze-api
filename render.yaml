@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: onze-api
+    runtime: docker
+    plan: free
+    region: virginia
+    branch: development
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /actuator/health/readiness
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: DATABASE_USERNAME
+        sync: false
+      - key: DATABASE_PASSWORD
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_ISSUER
+        value: onze-api
+      - key: JWT_ACCESS_TOKEN_TTL
+        value: PT2H
