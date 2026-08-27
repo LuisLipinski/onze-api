@@ -15,6 +15,12 @@ spring:
   flyway:
     enabled: true
 
+security:
+  jwt:
+    issuer: ${JWT_ISSUER:onze-api}
+    secret: ${JWT_SECRET}
+    access-token-ttl: ${JWT_ACCESS_TOKEN_TTL:PT2H}
+
 management:
   endpoint:
     health:
