@@ -31,7 +31,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @Testcontainers
 @SpringBootTest(properties = {
         "security.jwt.secret=onze-join-integration-secret-with-at-least-32-bytes",
-        "security.jwt.issuer=onze-api-join-integration-test"
+        "security.jwt.issuer=onze-api-join-integration-test",
+        "app.public-base-url=https://test.onze.local"
 })
 @AutoConfigureMockMvc
 class GroupJoinIntegrationTest {
@@ -126,6 +127,29 @@ class GroupJoinIntegrationTest {
     }
 
     @Test
+    void shouldExposePublicHttpsLandingPageForInvite() throws Exception {
+        AuthResponse creator = register("creator@example.com", "Criador");
+        GroupResponse group = createGroup(creator, "Pelada WhatsApp");
+        InviteResponse invite = createInvite(creator, group.id());
+
+        assertThat(invite.deepLink()).isEqualTo("onze://join/" + invite.code());
+        assertThat(invite.shareUrl()).isEqualTo("https://test.onze.local/join/" + invite.code());
+
+        var landing = mockMvc.perform(get("/join/{code}", invite.code()))
+                .andExpect(status().isOk())
+                .andReturn();
+
+        assertThat(landing.getResponse().getContentType()).startsWith("text/html");
+        assertThat(landing.getResponse().getContentAsString())
+                .contains("Abrir no Onze")
+                .contains(invite.code())
+                .contains("onze://join/" + invite.code());
+
+        mockMvc.perform(get("/join/ABCDEFGH"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
     void shouldAllowMultipleUsersToJoinUsingTheSameReusableInvite() throws Exception {
         AuthResponse creator = register("creator@example.com", "Criador");
         AuthResponse first = register("first@example.com", "Primeiro");
@@ -171,6 +195,12 @@ class GroupJoinIntegrationTest {
 
         assertThat(regenerated.code()).isNotEqualTo(original.code());
         assertThat(regenerated.deepLink()).isEqualTo("onze://join/" + regenerated.code());
+        assertThat(regenerated.shareUrl()).isEqualTo("https://test.onze.local/join/" + regenerated.code());
+
+        mockMvc.perform(get("/join/{code}", original.code()))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(get("/join/{code}", regenerated.code()))
+                .andExpect(status().isOk());
 
         join(oldInviteUser, original.code())
                 .andExpect(status().isBadRequest())
