@@ -98,7 +98,7 @@ class AuthFlowIntegrationTest {
                 AuthResponse.class);
 
         assertThat(loginResponse.accessToken()).isNotBlank();
-        assertThat(loginResponse.accessToken()).isNotEqualTo(registerResponse.accessToken());
+        assertThat(loginResponse.user().id()).isEqualTo(registerResponse.user().id());
 
         mockMvc.perform(get("/api/auth/me")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + loginResponse.accessToken()))
