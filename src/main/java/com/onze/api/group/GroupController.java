@@ -61,6 +61,13 @@ public class GroupController {
         return groupInviteService.getOrCreate(authentication.getName(), groupId);
     }
 
+    @PostMapping("/{groupId}/invite/regenerate")
+    public InviteResponse regenerateInvite(
+            Authentication authentication,
+            @PathVariable UUID groupId) {
+        return groupInviteService.regenerate(authentication.getName(), groupId);
+    }
+
     @PostMapping("/join")
     public JoinGroupResponse join(
             Authentication authentication,
