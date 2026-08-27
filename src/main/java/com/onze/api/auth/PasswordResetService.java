@@ -72,7 +72,7 @@ public class PasswordResetService {
         }
     }
 
-    @Transactional
+    @Transactional(noRollbackFor = InvalidPasswordResetCodeException.class)
     public void confirmReset(PasswordResetConfirmRequest request) {
         String email = normalizeEmail(request.email());
         User user = userRepository.findByEmailIgnoreCase(email)
