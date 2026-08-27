@@ -11,6 +11,7 @@ import org.springframework.boot.testcontainers.service.connection.ServiceConnect
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.web.servlet.MockMvc;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -48,8 +49,15 @@ class AuthFlowIntegrationTest {
     @Autowired
     private UserRepository userRepository;
 
+    @Autowired
+    private PasswordResetCodeRepository resetCodeRepository;
+
+    @Autowired
+    private PasswordEncoder passwordEncoder;
+
     @BeforeEach
     void cleanDatabase() {
+        resetCodeRepository.deleteAll();
         userRepository.deleteAll();
     }
 
@@ -154,6 +162,72 @@ class AuthFlowIntegrationTest {
                                 """))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value("INVALID_CREDENTIALS"));
+    }
+
+    @Test
+    void shouldReturnGenericMessageForUnknownPasswordResetEmail() throws Exception {
+        mockMvc.perform(post("/api/auth/password-reset/request")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "email": "missing@example.com"
+                                }
+                                """))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.message").value(
+                        "Se existir uma conta com este e-mail, enviaremos um código de recuperação."));
+
+        assertThat(resetCodeRepository.count()).isZero();
+    }
+
+    @Test
+    void shouldPersistResetCodeAndCountInvalidAttemptAgainstRealPostgres() throws Exception {
+        mockMvc.perform(post("/api/auth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "email": "reset@example.com",
+                                  "password": "StrongPass123!",
+                                  "displayName": "Jogador Reset"
+                                }
+                                """))
+                .andExpect(status().isCreated());
+
+        var user = userRepository.findByEmailIgnoreCase("reset@example.com").orElseThrow();
+
+        mockMvc.perform(post("/api/auth/password-reset/request")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "email": "RESET@EXAMPLE.COM"
+                                }
+                                """))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.message").value(
+                        "Se existir uma conta com este e-mail, enviaremos um código de recuperação."));
+
+        var reset = resetCodeRepository.findTopByUserIdOrderByCreatedAtDesc(user.getId()).orElseThrow();
+        assertThat(reset.getCodeHash()).isNotBlank();
+        assertThat(reset.getExpiresAt()).isAfter(reset.getCreatedAt());
+        assertThat(reset.getAttemptCount()).isZero();
+
+        String wrongCode = passwordEncoder.matches("000000", reset.getCodeHash()) ? "000001" : "000000";
+
+        mockMvc.perform(post("/api/auth/password-reset/confirm")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "email": "reset@example.com",
+                                  "code": "%s",
+                                  "newPassword": "NewStrongPass123!"
+                                }
+                                """.formatted(wrongCode)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_OR_EXPIRED_RESET_CODE"));
+
+        var updatedReset = resetCodeRepository.findTopByUserIdOrderByCreatedAtDesc(user.getId()).orElseThrow();
+        assertThat(updatedReset.getAttemptCount()).isEqualTo(1);
+        assertThat(updatedReset.getConsumedAt()).isNull();
     }
 
     @Test
