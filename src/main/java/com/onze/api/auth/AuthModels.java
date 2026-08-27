@@ -6,6 +6,7 @@ import com.onze.api.user.User;
 
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
 public final class AuthModels {
@@ -22,6 +23,16 @@ public final class AuthModels {
     public record LoginRequest(
             @NotBlank @Email @Size(max = 320) String email,
             @NotBlank String password) {
+    }
+
+    public record PasswordResetRequest(
+            @NotBlank @Email @Size(max = 320) String email) {
+    }
+
+    public record PasswordResetConfirmRequest(
+            @NotBlank @Email @Size(max = 320) String email,
+            @NotBlank @Pattern(regexp = "\\d{6}") String code,
+            @NotBlank @Size(min = 8, max = 72) String newPassword) {
     }
 
     public record UserResponse(
@@ -44,6 +55,9 @@ public final class AuthModels {
             String tokenType,
             long expiresIn,
             UserResponse user) {
+    }
+
+    public record MessageResponse(String message) {
     }
 
     public record ErrorResponse(String code, String message) {

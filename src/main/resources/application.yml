@@ -23,6 +23,11 @@ security:
     secret: ${JWT_SECRET}
     access-token-ttl: ${JWT_ACCESS_TOKEN_TTL:PT2H}
 
+email:
+  resend:
+    api-key: ${RESEND_API_KEY:}
+    from: ${RESEND_FROM:}
+
 management:
   endpoint:
     health:
