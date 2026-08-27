@@ -10,5 +10,7 @@ public interface GroupMemberRepository extends JpaRepository<GroupMember, UUID> 
 
     List<GroupMember> findAllByUserIdOrderByCreatedAtAsc(UUID userId);
 
+    List<GroupMember> findAllByGroupIdOrderByCreatedAtAsc(UUID groupId);
+
     Optional<GroupMember> findByGroupIdAndUserId(UUID groupId, UUID userId);
 }
