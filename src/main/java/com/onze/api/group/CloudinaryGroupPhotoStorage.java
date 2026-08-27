@@ -49,11 +49,9 @@ public class CloudinaryGroupPhotoStorage implements GroupPhotoStorage {
                 throw new PhotoUploadFailedException();
             }
             return secureUrl.toString();
+        } catch (PhotoUploadFailedException exception) {
+            throw exception;
         } catch (IOException | RuntimeException exception) {
-            if (exception instanceof PhotoStorageNotConfiguredException
-                    || exception instanceof PhotoUploadFailedException) {
-                throw exception;
-            }
             throw new PhotoUploadFailedException(exception);
         }
     }
