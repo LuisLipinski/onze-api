@@ -13,7 +13,8 @@ public final class GroupInviteModels {
     public record InviteResponse(
             UUID groupId,
             String code,
-            String deepLink) {
+            String deepLink,
+            String shareUrl) {
     }
 
     public record JoinGroupRequest(
