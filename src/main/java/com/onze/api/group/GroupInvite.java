@@ -45,6 +45,12 @@ public class GroupInvite {
         createdAt = Instant.now();
     }
 
+    public void regenerate(String newCode, UUID regeneratedBy) {
+        code = newCode;
+        createdBy = regeneratedBy;
+        createdAt = Instant.now();
+    }
+
     public UUID getId() {
         return id;
     }

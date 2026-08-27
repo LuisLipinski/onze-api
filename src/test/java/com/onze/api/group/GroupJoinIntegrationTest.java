@@ -126,6 +126,63 @@ class GroupJoinIntegrationTest {
     }
 
     @Test
+    void shouldAllowMultipleUsersToJoinUsingTheSameReusableInvite() throws Exception {
+        AuthResponse creator = register("creator@example.com", "Criador");
+        AuthResponse first = register("first@example.com", "Primeiro");
+        AuthResponse second = register("second@example.com", "Segundo");
+        GroupResponse group = createGroup(creator, "Pelada WhatsApp");
+        InviteResponse invite = createInvite(creator, group.id());
+
+        join(first, invite.code())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.alreadyMember").value(false))
+                .andExpect(jsonPath("$.role").value("MEMBER"));
+
+        join(second, invite.code())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.alreadyMember").value(false))
+                .andExpect(jsonPath("$.role").value("MEMBER"));
+
+        assertThat(groupMemberRepository.findAll()).hasSize(3);
+        assertThat(groupMemberRepository.findByGroupIdAndUserId(group.id(), first.user().id())).isPresent();
+        assertThat(groupMemberRepository.findByGroupIdAndUserId(group.id(), second.user().id())).isPresent();
+        assertThat(groupInviteRepository.findByGroupId(group.id()))
+                .get()
+                .extracting(GroupInvite::getCode)
+                .isEqualTo(invite.code());
+    }
+
+    @Test
+    void shouldRegenerateInviteAndInvalidatePreviousCode() throws Exception {
+        AuthResponse creator = register("creator@example.com", "Criador");
+        AuthResponse oldInviteUser = register("old@example.com", "Convite antigo");
+        AuthResponse newInviteUser = register("new@example.com", "Convite novo");
+        GroupResponse group = createGroup(creator, "Pelada regenerada");
+        InviteResponse original = createInvite(creator, group.id());
+
+        var regenerateResult = mockMvc.perform(post("/api/groups/{groupId}/invite/regenerate", group.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(creator)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.groupId").value(group.id().toString()))
+                .andReturn();
+        InviteResponse regenerated = jsonMapper.readValue(
+                regenerateResult.getResponse().getContentAsString(),
+                InviteResponse.class);
+
+        assertThat(regenerated.code()).isNotEqualTo(original.code());
+        assertThat(regenerated.deepLink()).isEqualTo("onze://join/" + regenerated.code());
+
+        join(oldInviteUser, original.code())
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_GROUP_INVITE"));
+
+        join(newInviteUser, regenerated.code())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.alreadyMember").value(false))
+                .andExpect(jsonPath("$.role").value("MEMBER"));
+    }
+
+    @Test
     void shouldKeepAdminRoleWhenCreatorUsesOwnInvite() throws Exception {
         AuthResponse creator = register("creator@example.com", "Criador");
         GroupResponse group = createGroup(creator, "Pelada Admin");
@@ -161,6 +218,15 @@ class GroupJoinIntegrationTest {
                                 {"code": "ABCDEFGH"}
                                 """))
                 .andExpect(status().isUnauthorized());
+    }
+
+    private org.springframework.test.web.servlet.ResultActions join(AuthResponse user, String code) throws Exception {
+        return mockMvc.perform(post("/api/groups/join")
+                .header(HttpHeaders.AUTHORIZATION, bearer(user))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                        {"code": "%s"}
+                        """.formatted(code)));
     }
 
     private GroupResponse createGroup(AuthResponse creator, String name) throws Exception {

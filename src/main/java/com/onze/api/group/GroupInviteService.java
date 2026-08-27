@@ -39,21 +39,25 @@ public class GroupInviteService {
 
     @Transactional
     public InviteResponse getOrCreate(String authenticatedUserId, UUID groupId) {
-        UUID userId = parseUserId(authenticatedUserId);
-        if (!groupRepository.existsById(groupId)) {
-            throw new GroupNotFoundException();
-        }
-
-        GroupMember membership = groupMemberRepository.findByGroupIdAndUserId(groupId, userId)
-                .orElseThrow(GroupAccessDeniedException::new);
-        if (membership.getRole() != GroupRole.ADMIN) {
-            throw new GroupAccessDeniedException();
-        }
-
+        UUID userId = requireAdmin(authenticatedUserId, groupId);
         GroupInvite invite = groupInviteRepository.findByGroupId(groupId)
                 .orElseGet(() -> groupInviteRepository.save(
                         new GroupInvite(groupId, generateUniqueCode(), userId)));
         return toResponse(invite);
+    }
+
+    @Transactional
+    public InviteResponse regenerate(String authenticatedUserId, UUID groupId) {
+        UUID userId = requireAdmin(authenticatedUserId, groupId);
+        GroupInvite invite = groupInviteRepository.findByGroupId(groupId)
+                .orElseGet(() -> new GroupInvite(groupId, generateUniqueCode(), userId));
+
+        if (invite.getId() == null) {
+            return toResponse(groupInviteRepository.save(invite));
+        }
+
+        invite.regenerate(generateUniqueCode(), userId);
+        return toResponse(groupInviteRepository.save(invite));
     }
 
     @Transactional
@@ -78,6 +82,20 @@ public class GroupInviteService {
         GroupMember membership = groupMemberRepository.save(
                 new GroupMember(group.getId(), userId, GroupRole.MEMBER));
         return new JoinGroupResponse(group.getId(), group.getName(), membership.getRole(), false);
+    }
+
+    private UUID requireAdmin(String authenticatedUserId, UUID groupId) {
+        UUID userId = parseUserId(authenticatedUserId);
+        if (!groupRepository.existsById(groupId)) {
+            throw new GroupNotFoundException();
+        }
+
+        GroupMember membership = groupMemberRepository.findByGroupIdAndUserId(groupId, userId)
+                .orElseThrow(GroupAccessDeniedException::new);
+        if (membership.getRole() != GroupRole.ADMIN) {
+            throw new GroupAccessDeniedException();
+        }
+        return userId;
     }
 
     private String generateUniqueCode() {
