@@ -71,7 +71,8 @@ class PasswordResetServiceTest {
         when(userRepository.findByEmailIgnoreCase("user@example.com")).thenReturn(Optional.of(user));
         when(user.getId()).thenReturn(userId);
         when(resetCodeRepository.findTopByUserIdOrderByCreatedAtDesc(userId)).thenReturn(Optional.empty());
-        when(passwordEncoder.encode(argThat(code -> code != null && code.matches("\\d{6}"))))
+        when(passwordEncoder.encode(argThat(code ->
+                code != null && code.toString().matches("\\d{6}"))))
                 .thenReturn("code-hash");
 
         service.requestReset(new PasswordResetRequest("user@example.com"));
