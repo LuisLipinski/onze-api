@@ -41,6 +41,16 @@ media:
     api-key: ${CLOUDINARY_API_KEY:}
     api-secret: ${CLOUDINARY_API_SECRET:}
 
+matches:
+  processing:
+    delay-ms: ${MATCH_PROCESSING_DELAY_MS:60000}
+    initial-delay-ms: ${MATCH_PROCESSING_INITIAL_DELAY_MS:5000}
+
+notifications:
+  expo:
+    enabled: ${EXPO_PUSH_ENABLED:true}
+    endpoint: ${EXPO_PUSH_ENDPOINT:https://exp.host/--/api/v2/push/send}
+
 management:
   endpoint:
     health:
