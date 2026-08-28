@@ -10,6 +10,8 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class MatchLifecycleService {
 
+    private static final int MAX_CATCH_UP_ROUNDS = 104;
+
     private final FootballMatchRepository matchRepository;
     private final MatchSeriesRepository seriesRepository;
     private final MatchNotificationJobRepository notificationJobRepository;
@@ -29,30 +31,42 @@ public class MatchLifecycleService {
     @Transactional
     public int openDueAttendances() {
         Instant now = clock.instant();
-        List<FootballMatch> dueMatches = matchRepository
-                .findTop50ByStatusAndAttendanceOpenedAtIsNullAndAttendanceOpensAtLessThanEqualOrderByAttendanceOpensAtAsc(
-                        MatchStatus.SCHEDULED,
-                        now);
         int opened = 0;
 
-        for (FootballMatch due : dueMatches) {
-            FootballMatch match = matchRepository.findByIdForUpdate(due.getId()).orElse(null);
-            if (match == null
-                    || match.getStatus() != MatchStatus.SCHEDULED
-                    || match.getAttendanceOpenedAt() != null
-                    || match.getAttendanceOpensAt().isAfter(now)) {
-                continue;
+        for (int round = 0; round < MAX_CATCH_UP_ROUNDS; round++) {
+            List<FootballMatch> dueMatches = matchRepository
+                    .findTop50ByStatusAndAttendanceOpenedAtIsNullAndAttendanceOpensAtLessThanEqualOrderByAttendanceOpensAtAsc(
+                            MatchStatus.SCHEDULED,
+                            now);
+            if (dueMatches.isEmpty()) {
+                break;
             }
 
-            match.openAttendance(now);
-            if (match.getStartsAt().isAfter(now)) {
-                notificationJobRepository.save(new MatchNotificationJob(
-                        match.getId(),
-                        MatchNotificationType.ATTENDANCE_OPENED,
-                        now));
+            int openedThisRound = 0;
+            for (FootballMatch due : dueMatches) {
+                FootballMatch match = matchRepository.findByIdForUpdate(due.getId()).orElse(null);
+                if (match == null
+                        || match.getStatus() != MatchStatus.SCHEDULED
+                        || match.getAttendanceOpenedAt() != null
+                        || match.getAttendanceOpensAt().isAfter(now)) {
+                    continue;
+                }
+
+                match.openAttendance(now);
+                if (match.getStartsAt().isAfter(now)) {
+                    notificationJobRepository.save(new MatchNotificationJob(
+                            match.getId(),
+                            MatchNotificationType.ATTENDANCE_OPENED,
+                            now));
+                }
+                generateNextOccurrenceIfNeeded(match);
+                opened++;
+                openedThisRound++;
             }
-            generateNextOccurrenceIfNeeded(match);
-            opened++;
+
+            if (openedThisRound == 0) {
+                break;
+            }
         }
 
         return opened;
