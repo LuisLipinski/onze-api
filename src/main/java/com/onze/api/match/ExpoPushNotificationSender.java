@@ -34,13 +34,12 @@ public class ExpoPushNotificationSender {
             GroupRepository groupRepository,
             GroupMemberRepository groupMemberRepository,
             PushDeviceRepository pushDeviceRepository,
-            RestClient.Builder restClientBuilder,
             @Value("${notifications.expo.endpoint}") String endpoint,
             @Value("${notifications.expo.enabled:true}") boolean enabled) {
         this.groupRepository = groupRepository;
         this.groupMemberRepository = groupMemberRepository;
         this.pushDeviceRepository = pushDeviceRepository;
-        this.restClient = restClientBuilder.baseUrl(endpoint).build();
+        this.restClient = RestClient.builder().baseUrl(endpoint).build();
         this.enabled = enabled;
     }
 
