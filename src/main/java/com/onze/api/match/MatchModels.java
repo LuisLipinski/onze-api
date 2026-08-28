@@ -1,0 +1,73 @@
+package com.onze.api.match;
+
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalTime;
+import java.util.List;
+import java.util.UUID;
+
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Size;
+
+public final class MatchModels {
+
+    private MatchModels() {
+    }
+
+    public record CreateMatchRequest(
+            @NotNull LocalDate date,
+            @NotNull LocalTime startTime,
+            @NotBlank @Size(max = 64) String timeZone,
+            @NotBlank @Size(max = 255) String venue,
+            @Min(2) @Max(100) int maxPlayers,
+            @Size(max = 1000) String notes,
+            @NotNull MatchRecurrence recurrence) {
+    }
+
+    public record UpdateAttendanceRequest(
+            @NotNull AttendanceStatus status) {
+    }
+
+    public record AttendanceResponse(
+            UUID userId,
+            String displayName,
+            AttendanceStatus status,
+            boolean currentUser) {
+    }
+
+    public record MatchResponse(
+            UUID id,
+            UUID groupId,
+            String groupName,
+            UUID seriesId,
+            MatchRecurrence recurrence,
+            boolean seriesActive,
+            Instant startsAt,
+            String timeZone,
+            String venue,
+            int maxPlayers,
+            String notes,
+            MatchStatus status,
+            Instant attendanceOpensAt,
+            boolean attendanceOpen,
+            AttendanceStatus myAttendance,
+            int goingCount,
+            int notGoingCount,
+            List<AttendanceResponse> attendances,
+            boolean canManage) {
+    }
+
+    public record PushTokenRequest(
+            @NotBlank
+            @Size(max = 255)
+            @Pattern(regexp = "^(Expo(nent)?PushToken)\\[[A-Za-z0-9_-]+]$")
+            String token) {
+    }
+
+    public record ErrorResponse(String code, String message) {
+    }
+}
