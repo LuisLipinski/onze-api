@@ -23,6 +23,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 import tools.jackson.databind.json.JsonMapper;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -80,10 +81,11 @@ class GroupAdminIntegrationTest {
     }
 
     @Test
-    void shouldEnforcePrimaryAdminHierarchyAndTransfer() throws Exception {
+    void shouldEnforceDelegatedPermissionsAndKeepFormerPrimaryAsAdmin() throws Exception {
         AuthResponse creator = register("primary@example.com", "Principal");
         AuthResponse first = register("first-admin@example.com", "Admin Um");
         AuthResponse second = register("second-admin@example.com", "Admin Dois");
+        AuthResponse third = register("third-member@example.com", "Membro Três");
 
         GroupResponse group = createGroup(creator, "Pelada dos Admins");
         assertThat(group.role()).isEqualTo(GroupRole.PRIMARY_ADMIN);
@@ -91,29 +93,42 @@ class GroupAdminIntegrationTest {
         InviteResponse invite = createInvite(creator, group.id());
         join(first, invite.code());
         join(second, invite.code());
+        join(third, invite.code());
 
         GroupMember firstMembership = membership(group.id(), first);
         GroupMember secondMembership = membership(group.id(), second);
+        GroupMember thirdMembership = membership(group.id(), third);
 
         mockMvc.perform(put("/api/groups/{groupId}/members/{memberId}/promote", group.id(), firstMembership.getId())
                         .header(HttpHeaders.AUTHORIZATION, bearer(creator)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.role").value("ADMIN"));
+                .andExpect(jsonPath("$.role").value("ADMIN"))
+                .andExpect(jsonPath("$.permissions").isEmpty());
+
+        mockMvc.perform(put("/api/groups/{groupId}/members/{memberId}/promote", group.id(), secondMembership.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(first)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("GROUP_ACCESS_DENIED"));
+
+        mockMvc.perform(put("/api/groups/{groupId}/members/{memberId}/permissions", group.id(), firstMembership.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(creator))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"permissions": ["PROMOTE_MEMBERS"]}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.permissions[0]").value("PROMOTE_MEMBERS"));
 
         mockMvc.perform(put("/api/groups/{groupId}/members/{memberId}/promote", group.id(), secondMembership.getId())
                         .header(HttpHeaders.AUTHORIZATION, bearer(first)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.role").value("ADMIN"));
+                .andExpect(jsonPath("$.role").value("ADMIN"))
+                .andExpect(jsonPath("$.permissions").isEmpty());
 
         mockMvc.perform(put("/api/groups/{groupId}/members/{memberId}/demote", group.id(), secondMembership.getId())
                         .header(HttpHeaders.AUTHORIZATION, bearer(first)))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("PRIMARY_ADMIN_REQUIRED"));
-
-        mockMvc.perform(put("/api/groups/{groupId}/members/{memberId}/demote", group.id(), secondMembership.getId())
-                        .header(HttpHeaders.AUTHORIZATION, bearer(creator)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.role").value("MEMBER"));
 
         GroupMember creatorMembership = membership(group.id(), creator);
         mockMvc.perform(put("/api/groups/{groupId}/members/{memberId}/demote", group.id(), creatorMembership.getId())
@@ -126,31 +141,18 @@ class GroupAdminIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"replacementMemberId": "%s"}
-                                """.formatted(secondMembership.getId())))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value("REPLACEMENT_MUST_BE_ADMIN"));
-
-        mockMvc.perform(put("/api/groups/{groupId}/primary-admin", group.id())
-                        .header(HttpHeaders.AUTHORIZATION, bearer(creator))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {"replacementMemberId": "%s"}
                                 """.formatted(firstMembership.getId())))
                 .andExpect(status().isOk());
 
-        assertThat(membership(group.id(), creator).getRole()).isEqualTo(GroupRole.MEMBER);
+        assertThat(membership(group.id(), creator).getRole()).isEqualTo(GroupRole.ADMIN);
+        assertThat(membership(group.id(), creator).getPermissions()).isEmpty();
         assertThat(membership(group.id(), first).getRole()).isEqualTo(GroupRole.PRIMARY_ADMIN);
-        assertThat(membership(group.id(), second).getRole()).isEqualTo(GroupRole.MEMBER);
+        assertThat(membership(group.id(), second).getRole()).isEqualTo(GroupRole.ADMIN);
 
-        mockMvc.perform(put("/api/groups/{groupId}/members/{memberId}/promote", group.id(), secondMembership.getId())
+        mockMvc.perform(put("/api/groups/{groupId}/members/{memberId}/promote", group.id(), thirdMembership.getId())
                         .header(HttpHeaders.AUTHORIZATION, bearer(creator)))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("GROUP_ACCESS_DENIED"));
-
-        mockMvc.perform(put("/api/groups/{groupId}/members/{memberId}/promote", group.id(), secondMembership.getId())
-                        .header(HttpHeaders.AUTHORIZATION, bearer(first)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.role").value("ADMIN"));
 
         mockMvc.perform(put("/api/groups/{groupId}/members/{memberId}/demote", group.id(), secondMembership.getId())
                         .header(HttpHeaders.AUTHORIZATION, bearer(first)))
@@ -170,8 +172,10 @@ class GroupAdminIntegrationTest {
                         .header(HttpHeaders.AUTHORIZATION, bearer(creator)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].role").value("PRIMARY_ADMIN"))
+                .andExpect(jsonPath("$[0].permissions.length()").value(5))
                 .andExpect(jsonPath("$[0].currentUser").value(true))
                 .andExpect(jsonPath("$[1].role").value("MEMBER"))
+                .andExpect(jsonPath("$[1].permissions").isEmpty())
                 .andReturn();
 
         GroupMemberResponse[] members = jsonMapper.readValue(
@@ -183,6 +187,117 @@ class GroupAdminIntegrationTest {
                         .header(HttpHeaders.AUTHORIZATION, bearer(member)))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("GROUP_ACCESS_DENIED"));
+    }
+
+    @Test
+    void shouldAuthorizeOnlyFunctionsSelectedByPrimaryAdmin() throws Exception {
+        AuthResponse creator = register("permissions-primary@example.com", "Principal");
+        AuthResponse admin = register("permissions-admin@example.com", "Admin");
+        AuthResponse removable = register("permissions-remove@example.com", "Removível");
+        AuthResponse promotable = register("permissions-promote@example.com", "Promovível");
+
+        GroupResponse group = createGroup(creator, "Pelada das Permissões");
+        InviteResponse invite = createInvite(creator, group.id());
+        join(admin, invite.code());
+        join(removable, invite.code());
+        join(promotable, invite.code());
+
+        GroupMember adminMembership = membership(group.id(), admin);
+        GroupMember removableMembership = membership(group.id(), removable);
+        GroupMember promotableMembership = membership(group.id(), promotable);
+
+        mockMvc.perform(put("/api/groups/{groupId}/members/{memberId}/promote", group.id(), adminMembership.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(creator)))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/groups/{groupId}/invite", group.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(admin)))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(put("/api/groups/{groupId}/details", group.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(admin))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"city": "Curitiba", "schedules": []}
+                                """))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(delete("/api/groups/{groupId}/members/{memberId}", group.id(), removableMembership.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(admin)))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(put("/api/groups/{groupId}/members/{memberId}/permissions", group.id(), adminMembership.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(creator))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "permissions": [
+                                    "ADD_MEMBERS",
+                                    "REMOVE_MEMBERS",
+                                    "EDIT_GROUP",
+                                    "SCHEDULE_GAMES"
+                                  ]
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.permissions.length()").value(4));
+
+        mockMvc.perform(post("/api/groups/{groupId}/invite", group.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(admin)))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(put("/api/groups/{groupId}/details", group.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(admin))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"city": "Curitiba", "schedules": []}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.city").value("Curitiba"));
+
+        mockMvc.perform(delete("/api/groups/{groupId}/members/{memberId}", group.id(), removableMembership.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(admin)))
+                .andExpect(status().isNoContent());
+        assertThat(groupMemberRepository.findById(removableMembership.getId())).isEmpty();
+
+        mockMvc.perform(put("/api/groups/{groupId}/members/{memberId}/promote", group.id(), promotableMembership.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(admin)))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(put("/api/groups/{groupId}/members/{memberId}/permissions", group.id(), adminMembership.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(admin))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"permissions": ["PROMOTE_MEMBERS"]}
+                                """))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("PRIMARY_ADMIN_REQUIRED"));
+
+        mockMvc.perform(put("/api/groups/{groupId}/members/{memberId}/permissions", group.id(), adminMembership.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(creator))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "permissions": [
+                                    "ADD_MEMBERS",
+                                    "REMOVE_MEMBERS",
+                                    "PROMOTE_MEMBERS",
+                                    "EDIT_GROUP",
+                                    "SCHEDULE_GAMES"
+                                  ]
+                                }
+                                """))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(put("/api/groups/{groupId}/members/{memberId}/promote", group.id(), promotableMembership.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(admin)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.role").value("ADMIN"));
+
+        mockMvc.perform(delete("/api/groups/{groupId}/members/{memberId}", group.id(), promotableMembership.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(admin)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("MEMBER_ROLE_REQUIRED"));
     }
 
     private GroupMember membership(java.util.UUID groupId, AuthResponse user) {

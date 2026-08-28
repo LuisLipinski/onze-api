@@ -1,6 +1,7 @@
 package com.onze.api.group;
 
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 import com.onze.api.group.GroupModels.GroupMemberResponse;
@@ -36,7 +37,10 @@ public class GroupAdminService {
 
     @Transactional
     public GroupMemberResponse promote(String authenticatedUserId, UUID groupId, UUID memberId) {
-        UUID actorUserId = requireAdmin(authenticatedUserId, groupId).getUserId();
+        UUID actorUserId = requirePermission(
+                authenticatedUserId,
+                groupId,
+                GroupAdminPermission.PROMOTE_MEMBERS).getUserId();
         GroupMember target = requireMember(groupId, memberId);
         if (target.getRole() == GroupRole.MEMBER) {
             target.changeRole(GroupRole.ADMIN);
@@ -59,6 +63,32 @@ public class GroupAdminService {
     }
 
     @Transactional
+    public GroupMemberResponse updatePermissions(
+            String authenticatedUserId,
+            UUID groupId,
+            UUID memberId,
+            Set<GroupAdminPermission> permissions) {
+        GroupMember actor = requirePrimaryAdmin(authenticatedUserId, groupId);
+        GroupMember target = requireMember(groupId, memberId);
+        if (target.getRole() != GroupRole.ADMIN) {
+            throw new AdminRoleRequiredException();
+        }
+
+        target.replacePermissions(permissions);
+        return toResponse(target, actor.getUserId());
+    }
+
+    @Transactional
+    public void removeMember(String authenticatedUserId, UUID groupId, UUID memberId) {
+        requirePermission(authenticatedUserId, groupId, GroupAdminPermission.REMOVE_MEMBERS);
+        GroupMember target = requireMember(groupId, memberId);
+        if (target.getRole() != GroupRole.MEMBER) {
+            throw new MemberRoleRequiredException();
+        }
+        groupMemberRepository.delete(target);
+    }
+
+    @Transactional
     public List<GroupMemberResponse> transferPrimaryAndStepDown(
             String authenticatedUserId,
             UUID groupId,
@@ -70,7 +100,8 @@ public class GroupAdminService {
             throw new ReplacementMustBeAdminException();
         }
 
-        currentPrimary.changeRole(GroupRole.MEMBER);
+        currentPrimary.changeRole(GroupRole.ADMIN);
+        currentPrimary.replacePermissions(Set.of());
         groupMemberRepository.save(currentPrimary);
         groupMemberRepository.flush();
 
@@ -117,6 +148,17 @@ public class GroupAdminService {
         return membership;
     }
 
+    private GroupMember requirePermission(
+            String authenticatedUserId,
+            UUID groupId,
+            GroupAdminPermission permission) {
+        GroupMember membership = requireAdmin(authenticatedUserId, groupId);
+        if (!membership.hasPermission(permission)) {
+            throw new GroupService.GroupAccessDeniedException();
+        }
+        return membership;
+    }
+
     private GroupMember requireMember(UUID groupId, UUID memberId) {
         GroupMember member = groupMemberRepository.findById(memberId)
                 .orElseThrow(GroupMemberNotFoundException::new);
@@ -140,6 +182,7 @@ public class GroupAdminService {
                 member.getUserId(),
                 user.getDisplayName(),
                 member.getRole(),
+                member.getPermissions(),
                 member.getUserId().equals(actorUserId));
     }
 
@@ -164,6 +207,14 @@ public class GroupAdminService {
     }
 
     public static final class ReplacementMustBeAdminException extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+    }
+
+    public static final class AdminRoleRequiredException extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+    }
+
+    public static final class MemberRoleRequiredException extends RuntimeException {
         private static final long serialVersionUID = 1L;
     }
 }

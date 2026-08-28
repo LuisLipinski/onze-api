@@ -1,6 +1,8 @@
 package com.onze.api.group;
 
+import com.onze.api.group.GroupAdminService.AdminRoleRequiredException;
 import com.onze.api.group.GroupAdminService.GroupMemberNotFoundException;
+import com.onze.api.group.GroupAdminService.MemberRoleRequiredException;
 import com.onze.api.group.GroupAdminService.PrimaryAdminRequiredException;
 import com.onze.api.group.GroupAdminService.PrimaryAdminTransferRequiredException;
 import com.onze.api.group.GroupAdminService.ReplacementMustBeAdminException;
@@ -44,7 +46,7 @@ public class GroupExceptionHandler {
         return ResponseEntity.status(HttpStatus.FORBIDDEN)
                 .body(new ErrorResponse(
                         "PRIMARY_ADMIN_REQUIRED",
-                        "Somente o administrador principal pode rebaixar administradores."));
+                        "Somente o administrador principal pode realizar esta ação."));
     }
 
     @ExceptionHandler(PrimaryAdminTransferRequiredException.class)
@@ -61,6 +63,22 @@ public class GroupExceptionHandler {
                 .body(new ErrorResponse(
                         "REPLACEMENT_MUST_BE_ADMIN",
                         "O novo administrador principal precisa já ser administrador do grupo."));
+    }
+
+    @ExceptionHandler(AdminRoleRequiredException.class)
+    ResponseEntity<ErrorResponse> adminRoleRequired() {
+        return ResponseEntity.badRequest()
+                .body(new ErrorResponse(
+                        "ADMIN_ROLE_REQUIRED",
+                        "As permissões só podem ser editadas para um administrador comum."));
+    }
+
+    @ExceptionHandler(MemberRoleRequiredException.class)
+    ResponseEntity<ErrorResponse> memberRoleRequired() {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(new ErrorResponse(
+                        "MEMBER_ROLE_REQUIRED",
+                        "Rebaixe o administrador para membro antes de removê-lo do grupo."));
     }
 
     @ExceptionHandler(GroupUserNotFoundException.class)

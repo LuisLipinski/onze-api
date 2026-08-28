@@ -4,6 +4,7 @@ import java.time.DayOfWeek;
 import java.time.Instant;
 import java.time.LocalTime;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 import jakarta.validation.Valid;
@@ -48,6 +49,7 @@ public final class GroupModels {
             String venue,
             List<ScheduleResponse> schedules,
             GroupRole role,
+            Set<GroupAdminPermission> permissions,
             Instant createdAt) {
     }
 
@@ -56,7 +58,12 @@ public final class GroupModels {
             UUID userId,
             String displayName,
             GroupRole role,
+            Set<GroupAdminPermission> permissions,
             boolean currentUser) {
+    }
+
+    public record UpdateAdminPermissionsRequest(
+            @NotNull Set<@NotNull GroupAdminPermission> permissions) {
     }
 
     public record TransferPrimaryAdminRequest(

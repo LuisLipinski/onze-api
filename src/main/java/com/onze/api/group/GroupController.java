@@ -11,6 +11,7 @@ import com.onze.api.group.GroupModels.CreateGroupRequest;
 import com.onze.api.group.GroupModels.GroupMemberResponse;
 import com.onze.api.group.GroupModels.GroupResponse;
 import com.onze.api.group.GroupModels.TransferPrimaryAdminRequest;
+import com.onze.api.group.GroupModels.UpdateAdminPermissionsRequest;
 import com.onze.api.group.GroupModels.UpdateGroupDetailsRequest;
 
 import jakarta.validation.Valid;
@@ -112,6 +113,28 @@ public class GroupController {
             @PathVariable UUID groupId,
             @PathVariable UUID memberId) {
         return groupAdminService.demote(authentication.getName(), groupId, memberId);
+    }
+
+    @PutMapping("/{groupId}/members/{memberId}/permissions")
+    public GroupMemberResponse updateAdminPermissions(
+            Authentication authentication,
+            @PathVariable UUID groupId,
+            @PathVariable UUID memberId,
+            @Valid @RequestBody UpdateAdminPermissionsRequest request) {
+        return groupAdminService.updatePermissions(
+                authentication.getName(),
+                groupId,
+                memberId,
+                request.permissions());
+    }
+
+    @DeleteMapping("/{groupId}/members/{memberId}")
+    public ResponseEntity<Void> removeMember(
+            Authentication authentication,
+            @PathVariable UUID groupId,
+            @PathVariable UUID memberId) {
+        groupAdminService.removeMember(authentication.getName(), groupId, memberId);
+        return ResponseEntity.noContent().build();
     }
 
     @PutMapping("/{groupId}/primary-admin")

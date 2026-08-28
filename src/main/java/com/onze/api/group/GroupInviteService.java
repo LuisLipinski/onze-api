@@ -43,7 +43,7 @@ public class GroupInviteService {
 
     @Transactional
     public InviteResponse getOrCreate(String authenticatedUserId, UUID groupId) {
-        UUID userId = requireAdmin(authenticatedUserId, groupId);
+        UUID userId = requirePermission(authenticatedUserId, groupId, GroupAdminPermission.ADD_MEMBERS);
         GroupInvite invite = groupInviteRepository.findByGroupId(groupId)
                 .orElseGet(() -> groupInviteRepository.save(
                         new GroupInvite(groupId, generateUniqueCode(), userId)));
@@ -52,7 +52,7 @@ public class GroupInviteService {
 
     @Transactional
     public InviteResponse regenerate(String authenticatedUserId, UUID groupId) {
-        UUID userId = requireAdmin(authenticatedUserId, groupId);
+        UUID userId = requirePermission(authenticatedUserId, groupId, GroupAdminPermission.ADD_MEMBERS);
         GroupInvite invite = groupInviteRepository.findByGroupId(groupId)
                 .orElseGet(() -> new GroupInvite(groupId, generateUniqueCode(), userId));
 
@@ -93,7 +93,10 @@ public class GroupInviteService {
         return groupInviteRepository.findByCodeIgnoreCase(code).isPresent();
     }
 
-    private UUID requireAdmin(String authenticatedUserId, UUID groupId) {
+    private UUID requirePermission(
+            String authenticatedUserId,
+            UUID groupId,
+            GroupAdminPermission permission) {
         UUID userId = parseUserId(authenticatedUserId);
         if (!groupRepository.existsById(groupId)) {
             throw new GroupNotFoundException();
@@ -101,7 +104,7 @@ public class GroupInviteService {
 
         GroupMember membership = groupMemberRepository.findByGroupIdAndUserId(groupId, userId)
                 .orElseThrow(GroupAccessDeniedException::new);
-        if (membership.getRole() == GroupRole.MEMBER) {
+        if (!membership.hasPermission(permission)) {
             throw new GroupAccessDeniedException();
         }
         return userId;

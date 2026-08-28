@@ -7,6 +7,7 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 import com.onze.api.group.GroupModels.CreateGroupRequest;
@@ -54,7 +55,11 @@ public class GroupService {
                 creator.getId()));
 
         groupMemberRepository.save(new GroupMember(group.getId(), creator.getId(), GroupRole.PRIMARY_ADMIN));
-        return toResponse(group, GroupRole.PRIMARY_ADMIN, List.of());
+        return toResponse(
+                group,
+                GroupRole.PRIMARY_ADMIN,
+                Set.of(GroupAdminPermission.values()),
+                List.of());
     }
 
     @Transactional
@@ -64,7 +69,7 @@ public class GroupService {
             UpdateGroupDetailsRequest request) {
         UUID userId = parseUserId(authenticatedUserId);
         Group group = requireGroup(groupId);
-        GroupMember membership = requireAdmin(groupId, userId);
+        GroupMember membership = requirePermission(groupId, userId, GroupAdminPermission.EDIT_GROUP);
 
         group.updateOptionalDetails(
                 normalizeOptional(request.city()),
@@ -77,14 +82,14 @@ public class GroupService {
             groupScheduleRepository.saveAll(schedules);
         }
 
-        return toResponse(group, membership.getRole(), schedules);
+        return toResponse(group, membership.getRole(), membership.getPermissions(), schedules);
     }
 
     @Transactional
     public GroupResponse updatePhoto(String authenticatedUserId, UUID groupId, MultipartFile photo) {
         UUID userId = parseUserId(authenticatedUserId);
         Group group = requireGroup(groupId);
-        GroupMember membership = requireAdmin(groupId, userId);
+        GroupMember membership = requirePermission(groupId, userId, GroupAdminPermission.EDIT_GROUP);
         validatePhoto(photo);
 
         try {
@@ -93,6 +98,7 @@ public class GroupService {
             return toResponse(
                     group,
                     membership.getRole(),
+                    membership.getPermissions(),
                     groupScheduleRepository.findAllByGroupId(groupId));
         } catch (IOException exception) {
             throw new PhotoUploadFailedException(exception);
@@ -113,6 +119,7 @@ public class GroupService {
             result.add(toResponse(
                     group,
                     membership.getRole(),
+                    membership.getPermissions(),
                     groupScheduleRepository.findAllByGroupId(group.getId())));
         }
         return result;
@@ -137,10 +144,13 @@ public class GroupService {
         return groupRepository.findById(groupId).orElseThrow(GroupNotFoundException::new);
     }
 
-    private GroupMember requireAdmin(UUID groupId, UUID userId) {
+    private GroupMember requirePermission(
+            UUID groupId,
+            UUID userId,
+            GroupAdminPermission permission) {
         GroupMember membership = groupMemberRepository.findByGroupIdAndUserId(groupId, userId)
                 .orElseThrow(GroupAccessDeniedException::new);
-        if (membership.getRole() == GroupRole.MEMBER) {
+        if (!membership.hasPermission(permission)) {
             throw new GroupAccessDeniedException();
         }
         return membership;
@@ -169,7 +179,11 @@ public class GroupService {
         return new ArrayList<>(unique.values());
     }
 
-    private GroupResponse toResponse(Group group, GroupRole role, List<GroupSchedule> schedules) {
+    private GroupResponse toResponse(
+            Group group,
+            GroupRole role,
+            Set<GroupAdminPermission> permissions,
+            List<GroupSchedule> schedules) {
         List<ScheduleResponse> scheduleResponses = schedules.stream()
                 .sorted(Comparator
                         .comparing((GroupSchedule schedule) -> dayOrder(schedule.getDayOfWeek()))
@@ -187,6 +201,7 @@ public class GroupService {
                 group.getVenue(),
                 scheduleResponses,
                 role,
+                permissions,
                 group.getCreatedAt());
     }
 
