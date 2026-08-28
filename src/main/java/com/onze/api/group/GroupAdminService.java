@@ -84,6 +84,20 @@ public class GroupAdminService {
                 .toList();
     }
 
+    @Transactional
+    public void leave(String authenticatedUserId, UUID groupId) {
+        UUID userId = parseUserId(authenticatedUserId);
+        requireGroup(groupId);
+        GroupMember membership = groupMemberRepository.findByGroupIdAndUserId(groupId, userId)
+                .orElseThrow(GroupService.GroupAccessDeniedException::new);
+
+        if (membership.getRole() == GroupRole.PRIMARY_ADMIN) {
+            throw new PrimaryAdminTransferRequiredException();
+        }
+
+        groupMemberRepository.delete(membership);
+    }
+
     private GroupMember requireAdmin(String authenticatedUserId, UUID groupId) {
         UUID userId = parseUserId(authenticatedUserId);
         requireGroup(groupId);
