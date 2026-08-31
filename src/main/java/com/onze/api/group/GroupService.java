@@ -91,6 +91,7 @@ public class GroupService {
                 normalizeOptional(request.venue()));
 
         groupScheduleRepository.deleteAllByGroupId(groupId);
+        groupScheduleRepository.flush();
         List<GroupSchedule> schedules = uniqueSchedules(groupId, request.schedules());
         if (!schedules.isEmpty()) {
             groupScheduleRepository.saveAll(schedules);
