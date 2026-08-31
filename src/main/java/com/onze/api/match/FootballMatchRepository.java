@@ -25,6 +25,10 @@ public interface FootballMatchRepository extends JpaRepository<FootballMatch, UU
             MatchStatus status,
             Instant startsAt);
 
+    List<FootballMatch> findAllByStatusAndStartsAtAfterOrderByStartsAtAsc(
+            MatchStatus status,
+            Instant startsAt);
+
     List<FootballMatch> findTop50ByStatusAndAttendanceOpenedAtIsNullAndAttendanceOpensAtLessThanEqualOrderByAttendanceOpensAtAsc(
             MatchStatus status,
             Instant attendanceOpensAt);

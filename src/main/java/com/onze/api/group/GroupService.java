@@ -1,6 +1,7 @@
 package com.onze.api.group;
 
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.time.DayOfWeek;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -70,6 +71,19 @@ public class GroupService {
         UUID userId = parseUserId(authenticatedUserId);
         Group group = requireGroup(groupId);
         GroupMember membership = requirePermission(groupId, userId, GroupAdminPermission.EDIT_GROUP);
+
+        BigDecimal paymentAmount = request.defaultPaymentAmount();
+        String pixKey = normalizeOptional(request.defaultPixKey());
+        boolean paymentFieldsProvided = paymentAmount != null || pixKey != null;
+        if (request.defaultPaymentEnabled() != null || paymentFieldsProvided) {
+            if (Boolean.FALSE.equals(request.defaultPaymentEnabled())) {
+                paymentAmount = null;
+                pixKey = null;
+            } else if (paymentAmount == null || pixKey == null) {
+                throw new InvalidPaymentConfigurationException();
+            }
+            group.updatePaymentDetails(paymentAmount, pixKey);
+        }
 
         group.updateOptionalDetails(
                 normalizeOptional(request.city()),
@@ -199,6 +213,8 @@ public class GroupService {
                 group.getCity(),
                 group.getMascot(),
                 group.getVenue(),
+                group.getDefaultPaymentAmount(),
+                group.getDefaultPixKey(),
                 scheduleResponses,
                 role,
                 permissions,
@@ -246,5 +262,9 @@ public class GroupService {
         public PhotoUploadFailedException(Throwable cause) {
             super(cause);
         }
+    }
+
+    public static final class InvalidPaymentConfigurationException extends RuntimeException {
+        private static final long serialVersionUID = 1L;
     }
 }

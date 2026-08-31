@@ -8,6 +8,8 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface MatchNotificationJobRepository extends JpaRepository<MatchNotificationJob, UUID> {
 
+    boolean existsByDeduplicationKey(String deduplicationKey);
+
     List<MatchNotificationJob> findTop25ByStatusAndNextAttemptAtLessThanEqualOrderByCreatedAtAsc(
             MatchNotificationStatus status,
             Instant nextAttemptAt);

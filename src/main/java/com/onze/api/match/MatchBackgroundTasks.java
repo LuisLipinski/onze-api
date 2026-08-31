@@ -26,6 +26,7 @@ public class MatchBackgroundTasks {
     public void processMatchesAndNotifications() {
         try {
             lifecycleService.openDueAttendances();
+            lifecycleService.scheduleDueAttendanceReminders();
         } catch (RuntimeException exception) {
             LOGGER.error("Could not open due match attendances", exception);
         }

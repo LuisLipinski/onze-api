@@ -19,8 +19,8 @@ import jakarta.persistence.UniqueConstraint;
 @Table(
         name = "match_notification_jobs",
         uniqueConstraints = @UniqueConstraint(
-                name = "uk_match_notification_job",
-                columnNames = {"match_id", "notification_type"}))
+                name = "uk_match_notification_job_deduplication",
+                columnNames = "deduplication_key"))
 public class MatchNotificationJob {
 
     private static final int MAX_ATTEMPTS = 5;
@@ -32,9 +32,15 @@ public class MatchNotificationJob {
     @Column(name = "match_id", nullable = false)
     private UUID matchId;
 
+    @Column(name = "recipient_user_id")
+    private UUID recipientUserId;
+
     @Enumerated(EnumType.STRING)
-    @Column(name = "notification_type", nullable = false, length = 32)
+    @Column(name = "notification_type", nullable = false, length = 48)
     private MatchNotificationType notificationType;
+
+    @Column(name = "deduplication_key", nullable = false, unique = true, length = 255)
+    private String deduplicationKey;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 24)
@@ -58,12 +64,19 @@ public class MatchNotificationJob {
     protected MatchNotificationJob() {
     }
 
-    public MatchNotificationJob(UUID matchId, MatchNotificationType notificationType, Instant now) {
+    public MatchNotificationJob(
+            UUID matchId,
+            UUID recipientUserId,
+            MatchNotificationType notificationType,
+            String deduplicationKey,
+            Instant scheduledAt) {
         this.matchId = matchId;
+        this.recipientUserId = recipientUserId;
         this.notificationType = notificationType;
+        this.deduplicationKey = deduplicationKey;
         this.status = MatchNotificationStatus.PENDING;
         this.attempts = 0;
-        this.nextAttemptAt = now;
+        this.nextAttemptAt = scheduledAt;
     }
 
     @PrePersist
@@ -75,8 +88,16 @@ public class MatchNotificationJob {
         return matchId;
     }
 
+    public UUID getRecipientUserId() {
+        return recipientUserId;
+    }
+
     public MatchNotificationType getNotificationType() {
         return notificationType;
+    }
+
+    public String getDeduplicationKey() {
+        return deduplicationKey;
     }
 
     public MatchNotificationStatus getStatus() {

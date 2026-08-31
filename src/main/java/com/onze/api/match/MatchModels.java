@@ -1,5 +1,6 @@
 package com.onze.api.match;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
@@ -7,6 +8,8 @@ import java.util.List;
 import java.util.UUID;
 
 import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -24,6 +27,9 @@ public final class MatchModels {
             @NotBlank @Size(max = 64) String timeZone,
             @NotBlank @Size(max = 255) String venue,
             @Min(2) @Max(100) int maxPlayers,
+            Boolean paymentRequired,
+            @DecimalMin("0.01") @Digits(integer = 8, fraction = 2) BigDecimal paymentAmount,
+            @Size(max = 255) String pixKey,
             @Size(max = 1000) String notes,
             @NotNull MatchRecurrence recurrence) {
     }
@@ -36,6 +42,7 @@ public final class MatchModels {
             UUID userId,
             String displayName,
             AttendanceStatus status,
+            PaymentStatus paymentStatus,
             boolean currentUser) {
     }
 
@@ -50,11 +57,15 @@ public final class MatchModels {
             String timeZone,
             String venue,
             int maxPlayers,
+            boolean paymentRequired,
+            BigDecimal paymentAmount,
+            String pixKey,
             String notes,
             MatchStatus status,
             Instant attendanceOpensAt,
             boolean attendanceOpen,
             AttendanceStatus myAttendance,
+            PaymentStatus myPaymentStatus,
             int goingCount,
             int notGoingCount,
             List<AttendanceResponse> attendances,

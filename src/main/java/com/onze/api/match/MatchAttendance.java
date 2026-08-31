@@ -37,6 +37,16 @@ public class MatchAttendance {
     @Column(nullable = false, length = 24)
     private AttendanceStatus status;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "payment_status", length = 24)
+    private PaymentStatus paymentStatus;
+
+    @Column(name = "payment_reported_at")
+    private Instant paymentReportedAt;
+
+    @Column(name = "payment_confirmed_at")
+    private Instant paymentConfirmedAt;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -46,10 +56,17 @@ public class MatchAttendance {
     protected MatchAttendance() {
     }
 
-    public MatchAttendance(UUID matchId, UUID userId, AttendanceStatus status) {
+    public MatchAttendance(
+            UUID matchId,
+            UUID userId,
+            AttendanceStatus status,
+            boolean paymentRequired) {
         this.matchId = matchId;
         this.userId = userId;
         this.status = status;
+        if (status == AttendanceStatus.GOING && paymentRequired) {
+            this.paymentStatus = PaymentStatus.PENDING;
+        }
     }
 
     @PrePersist
@@ -80,7 +97,38 @@ public class MatchAttendance {
         return createdAt;
     }
 
-    public void changeStatus(AttendanceStatus status) {
+    public Instant getUpdatedAt() {
+        return updatedAt;
+    }
+
+    public PaymentStatus getPaymentStatus() {
+        return paymentStatus;
+    }
+
+    public Instant getPaymentReportedAt() {
+        return paymentReportedAt;
+    }
+
+    public Instant getPaymentConfirmedAt() {
+        return paymentConfirmedAt;
+    }
+
+    public void changeStatus(AttendanceStatus status, boolean paymentRequired) {
         this.status = status;
+        if (status == AttendanceStatus.GOING && paymentRequired && paymentStatus == null) {
+            paymentStatus = PaymentStatus.PENDING;
+        }
+    }
+
+    public void reportPayment(Instant now) {
+        if (paymentStatus == PaymentStatus.PENDING) {
+            paymentStatus = PaymentStatus.REPORTED;
+            paymentReportedAt = now;
+        }
+    }
+
+    public void confirmPayment(Instant now) {
+        paymentStatus = PaymentStatus.PAID;
+        paymentConfirmedAt = now;
     }
 }

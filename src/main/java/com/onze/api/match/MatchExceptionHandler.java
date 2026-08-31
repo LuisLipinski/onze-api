@@ -12,6 +12,9 @@ import com.onze.api.match.MatchService.MatchFullException;
 import com.onze.api.match.MatchService.MatchMustBeInFutureException;
 import com.onze.api.match.MatchService.MatchNotFoundException;
 import com.onze.api.match.MatchService.MatchSeriesNotFoundException;
+import com.onze.api.match.MatchService.InvalidPaymentConfigurationException;
+import com.onze.api.match.MatchService.PaymentNotRequiredException;
+import com.onze.api.match.MatchService.PaymentRequiresAttendanceException;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -63,6 +66,14 @@ public class MatchExceptionHandler {
                 .body(new ErrorResponse("INVALID_TIME_ZONE", "O fuso horário informado não é válido."));
     }
 
+    @ExceptionHandler(InvalidPaymentConfigurationException.class)
+    ResponseEntity<ErrorResponse> invalidPaymentConfiguration() {
+        return ResponseEntity.badRequest()
+                .body(new ErrorResponse(
+                        "INVALID_PAYMENT_CONFIGURATION",
+                        "Informe um valor e uma chave PIX válidos para esta partida."));
+    }
+
     @ExceptionHandler(AttendanceClosedException.class)
     ResponseEntity<ErrorResponse> attendanceClosed() {
         return ResponseEntity.status(HttpStatus.CONFLICT)
@@ -87,5 +98,21 @@ public class MatchExceptionHandler {
     ResponseEntity<ErrorResponse> matchAlreadyStarted() {
         return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(new ErrorResponse("MATCH_ALREADY_STARTED", "Não é possível cancelar um jogo que já começou."));
+    }
+
+    @ExceptionHandler(PaymentNotRequiredException.class)
+    ResponseEntity<ErrorResponse> paymentNotRequired() {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(new ErrorResponse(
+                        "PAYMENT_NOT_REQUIRED",
+                        "Esta partida não possui cobrança configurada."));
+    }
+
+    @ExceptionHandler(PaymentRequiresAttendanceException.class)
+    ResponseEntity<ErrorResponse> paymentRequiresAttendance() {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(new ErrorResponse(
+                        "PAYMENT_REQUIRES_ATTENDANCE",
+                        "Confirme que vai jogar antes de informar ou validar o pagamento."));
     }
 }

@@ -1,10 +1,12 @@
 package com.onze.api.match;
 
+import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.DateTimeException;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
 
@@ -29,7 +31,7 @@ public class MatchService {
     private final FootballMatchRepository matchRepository;
     private final MatchSeriesRepository seriesRepository;
     private final MatchAttendanceRepository attendanceRepository;
-    private final MatchNotificationJobRepository notificationJobRepository;
+    private final MatchNotificationQueue notificationQueue;
     private final GroupRepository groupRepository;
     private final GroupMemberRepository groupMemberRepository;
     private final UserRepository userRepository;
@@ -39,7 +41,7 @@ public class MatchService {
             FootballMatchRepository matchRepository,
             MatchSeriesRepository seriesRepository,
             MatchAttendanceRepository attendanceRepository,
-            MatchNotificationJobRepository notificationJobRepository,
+            MatchNotificationQueue notificationQueue,
             GroupRepository groupRepository,
             GroupMemberRepository groupMemberRepository,
             UserRepository userRepository,
@@ -47,7 +49,7 @@ public class MatchService {
         this.matchRepository = matchRepository;
         this.seriesRepository = seriesRepository;
         this.attendanceRepository = attendanceRepository;
-        this.notificationJobRepository = notificationJobRepository;
+        this.notificationQueue = notificationQueue;
         this.groupRepository = groupRepository;
         this.groupMemberRepository = groupMemberRepository;
         this.userRepository = userRepository;
@@ -70,6 +72,7 @@ public class MatchService {
 
         String venue = request.venue().trim();
         String notes = normalizeOptional(request.notes());
+        PaymentConfiguration payment = resolvePaymentConfiguration(group, request);
         FootballMatch match;
 
         if (request.recurrence() == MatchRecurrence.WEEKLY) {
@@ -79,6 +82,8 @@ public class MatchService {
                     zoneId.getId(),
                     venue,
                     request.maxPlayers(),
+                    payment.amount(),
+                    payment.pixKey(),
                     notes));
             match = matchRepository.save(new FootballMatch(
                     groupId,
@@ -88,6 +93,8 @@ public class MatchService {
                     zoneId.getId(),
                     venue,
                     request.maxPlayers(),
+                    payment.amount(),
+                    payment.pixKey(),
                     notes,
                     now,
                     now,
@@ -102,16 +109,20 @@ public class MatchService {
                     zoneId.getId(),
                     venue,
                     request.maxPlayers(),
+                    payment.amount(),
+                    payment.pixKey(),
                     notes,
                     now,
                     now,
                     userId));
         }
 
-        notificationJobRepository.save(new MatchNotificationJob(
+        notificationQueue.enqueue(
                 match.getId(),
+                null,
                 MatchNotificationType.MATCH_CREATED,
-                now));
+                "match:" + match.getId() + ":created",
+                now);
         return toResponse(match, group, membership, now);
     }
 
@@ -180,27 +191,108 @@ public class MatchService {
         GroupMember membership = requireMembership(match.getGroupId(), userId);
         Instant now = clock.instant();
 
-        if (match.getStatus() == MatchStatus.CANCELLED) {
-            throw new MatchCancelledException();
-        }
-        if (!match.isAttendanceOpen(now)) {
-            throw new AttendanceClosedException();
-        }
+        requireOpenMatch(match, now);
 
         MatchAttendance attendance = attendanceRepository.findByMatchIdAndUserId(matchId, userId)
                 .orElse(null);
         boolean joining = requestedStatus == AttendanceStatus.GOING
                 && (attendance == null || attendance.getStatus() != AttendanceStatus.GOING);
-        if (joining
-                && attendanceRepository.countByMatchIdAndStatus(matchId, AttendanceStatus.GOING)
-                        >= match.getMaxPlayers()) {
+        long goingBefore = attendanceRepository.countByMatchIdAndStatus(matchId, AttendanceStatus.GOING);
+        if (joining && goingBefore >= match.getMaxPlayers()) {
             throw new MatchFullException();
         }
 
         if (attendance == null) {
-            attendanceRepository.save(new MatchAttendance(matchId, userId, requestedStatus));
+            attendanceRepository.save(new MatchAttendance(
+                    matchId,
+                    userId,
+                    requestedStatus,
+                    match.isPaymentRequired()));
         } else {
-            attendance.changeStatus(requestedStatus);
+            attendance.changeStatus(requestedStatus, match.isPaymentRequired());
+        }
+
+        if (joining && goingBefore + 1 == match.getMaxPlayers()) {
+            notificationQueue.enqueue(
+                    match.getId(),
+                    null,
+                    MatchNotificationType.TEAM_FULL,
+                    "match:" + match.getId() + ":team-full:" + now.toEpochMilli(),
+                    now);
+        }
+
+        return toResponse(match, group, membership, now);
+    }
+
+    @Transactional
+    public MatchResponse reportPayment(String authenticatedUserId, UUID matchId) {
+        UUID userId = parseUserId(authenticatedUserId);
+        FootballMatch match = matchRepository.findByIdForUpdate(matchId)
+                .orElseThrow(MatchNotFoundException::new);
+        Group group = requireGroup(match.getGroupId());
+        GroupMember membership = requireMembership(match.getGroupId(), userId);
+        Instant now = clock.instant();
+        requireOpenMatch(match, now);
+        requirePayment(match);
+
+        MatchAttendance attendance = attendanceRepository.findByMatchIdAndUserId(matchId, userId)
+                .orElseThrow(PaymentRequiresAttendanceException::new);
+        if (attendance.getStatus() != AttendanceStatus.GOING) {
+            throw new PaymentRequiresAttendanceException();
+        }
+
+        boolean changed = attendance.getPaymentStatus() == PaymentStatus.PENDING;
+        attendance.reportPayment(now);
+        if (changed) {
+            for (GroupMember admin : groupMemberRepository
+                    .findAllByGroupIdOrderByCreatedAtAsc(match.getGroupId())) {
+                if (!admin.hasPermission(GroupAdminPermission.SCHEDULE_GAMES)) {
+                    continue;
+                }
+                notificationQueue.enqueue(
+                        match.getId(),
+                        admin.getUserId(),
+                        MatchNotificationType.PAYMENT_REPORTED,
+                        "match:" + match.getId() + ":payment-reported:"
+                                + userId + ":admin:" + admin.getUserId(),
+                        now);
+            }
+        }
+
+        return toResponse(match, group, membership, now);
+    }
+
+    @Transactional
+    public MatchResponse confirmPayment(
+            String authenticatedUserId,
+            UUID matchId,
+            UUID playerUserId) {
+        UUID adminUserId = parseUserId(authenticatedUserId);
+        FootballMatch match = matchRepository.findByIdForUpdate(matchId)
+                .orElseThrow(MatchNotFoundException::new);
+        Group group = requireGroup(match.getGroupId());
+        GroupMember membership = requireMembership(match.getGroupId(), adminUserId);
+        requireManagePermission(membership);
+        Instant now = clock.instant();
+        requireOpenMatch(match, now);
+        requirePayment(match);
+
+        MatchAttendance attendance = attendanceRepository.findByMatchIdAndUserId(matchId, playerUserId)
+                .orElseThrow(PaymentRequiresAttendanceException::new);
+        if (attendance.getStatus() != AttendanceStatus.GOING
+                || attendance.getPaymentStatus() == null) {
+            throw new PaymentRequiresAttendanceException();
+        }
+
+        boolean changed = attendance.getPaymentStatus() != PaymentStatus.PAID;
+        attendance.confirmPayment(now);
+        if (changed) {
+            notificationQueue.enqueue(
+                    match.getId(),
+                    playerUserId,
+                    MatchNotificationType.PAYMENT_CONFIRMED,
+                    "match:" + match.getId() + ":payment-confirmed:" + playerUserId,
+                    now);
         }
 
         return toResponse(match, group, membership, now);
@@ -213,11 +305,21 @@ public class MatchService {
                 .orElseThrow(MatchNotFoundException::new);
         GroupMember membership = requireMembership(match.getGroupId(), userId);
         requireManagePermission(membership);
-        if (!match.getStartsAt().isAfter(clock.instant())) {
+        Instant now = clock.instant();
+        if (!match.getStartsAt().isAfter(now)) {
             throw new MatchAlreadyStartedException();
+        }
+        if (match.getStatus() == MatchStatus.CANCELLED) {
+            return;
         }
 
         match.cancel();
+        notificationQueue.enqueue(
+                match.getId(),
+                null,
+                MatchNotificationType.MATCH_CANCELLED,
+                "match:" + match.getId() + ":cancelled",
+                now);
         generateNextAfterCancelledLastOccurrence(match);
     }
 
@@ -234,11 +336,23 @@ public class MatchService {
 
         series.deactivate();
         Instant now = clock.instant();
-        matchRepository.findAllBySeriesIdAndStatusAndStartsAtAfter(
+        List<FootballMatch> futureMatches = matchRepository
+                .findAllBySeriesIdAndStatusAndStartsAtAfter(
                         seriesId,
                         MatchStatus.SCHEDULED,
                         now)
-                .forEach(FootballMatch::cancel);
+                .stream()
+                .sorted(Comparator.comparing(FootballMatch::getStartsAt))
+                .toList();
+        futureMatches.forEach(FootballMatch::cancel);
+        if (!futureMatches.isEmpty()) {
+            notificationQueue.enqueue(
+                    futureMatches.get(0).getId(),
+                    null,
+                    MatchNotificationType.SERIES_CANCELLED,
+                    "series:" + seriesId + ":cancelled",
+                    now);
+        }
     }
 
     private void generateNextAfterCancelledLastOccurrence(FootballMatch cancelled) {
@@ -266,8 +380,10 @@ public class MatchService {
                 .findAllByMatchIdOrderByCreatedAtAsc(match.getId());
         List<AttendanceResponse> attendances = new ArrayList<>(storedAttendances.size());
         AttendanceStatus myAttendance = null;
+        PaymentStatus myPaymentStatus = null;
         int goingCount = 0;
         int notGoingCount = 0;
+        boolean canManage = membership.hasPermission(GroupAdminPermission.SCHEDULE_GAMES);
 
         for (MatchAttendance attendance : storedAttendances) {
             User user = userRepository.findById(attendance.getUserId()).orElse(null);
@@ -282,11 +398,13 @@ public class MatchService {
             boolean currentUser = attendance.getUserId().equals(membership.getUserId());
             if (currentUser) {
                 myAttendance = attendance.getStatus();
+                myPaymentStatus = attendance.getPaymentStatus();
             }
             attendances.add(new AttendanceResponse(
                     attendance.getUserId(),
                     user.getDisplayName(),
                     attendance.getStatus(),
+                    currentUser || canManage ? attendance.getPaymentStatus() : null,
                     currentUser));
         }
 
@@ -305,15 +423,57 @@ public class MatchService {
                 match.getTimeZone(),
                 match.getVenue(),
                 match.getMaxPlayers(),
+                match.isPaymentRequired(),
+                match.getPaymentAmount(),
+                match.getPixKey(),
                 match.getNotes(),
                 match.getStatus(),
                 match.getAttendanceOpensAt(),
                 match.isAttendanceOpen(now),
                 myAttendance,
+                myPaymentStatus,
                 goingCount,
                 notGoingCount,
                 List.copyOf(attendances),
-                membership.hasPermission(GroupAdminPermission.SCHEDULE_GAMES));
+                canManage);
+    }
+
+    private PaymentConfiguration resolvePaymentConfiguration(
+            Group group,
+            CreateMatchRequest request) {
+        if (Boolean.FALSE.equals(request.paymentRequired())) {
+            return PaymentConfiguration.none();
+        }
+
+        BigDecimal amount = request.paymentAmount() != null
+                ? request.paymentAmount()
+                : group.getDefaultPaymentAmount();
+        String requestedPixKey = normalizeOptional(request.pixKey());
+        String pixKey = requestedPixKey != null ? requestedPixKey : group.getDefaultPixKey();
+        boolean required = Boolean.TRUE.equals(request.paymentRequired())
+                || (request.paymentRequired() == null && (amount != null || pixKey != null));
+        if (!required) {
+            return PaymentConfiguration.none();
+        }
+        if (amount == null || pixKey == null) {
+            throw new InvalidPaymentConfigurationException();
+        }
+        return new PaymentConfiguration(amount, pixKey);
+    }
+
+    private void requireOpenMatch(FootballMatch match, Instant now) {
+        if (match.getStatus() == MatchStatus.CANCELLED) {
+            throw new MatchCancelledException();
+        }
+        if (!match.isAttendanceOpen(now)) {
+            throw new AttendanceClosedException();
+        }
+    }
+
+    private void requirePayment(FootballMatch match) {
+        if (!match.isPaymentRequired()) {
+            throw new PaymentNotRequiredException();
+        }
     }
 
     private Group requireGroup(UUID groupId) {
@@ -359,6 +519,12 @@ public class MatchService {
         return normalized.isEmpty() ? null : normalized;
     }
 
+    private record PaymentConfiguration(BigDecimal amount, String pixKey) {
+        private static PaymentConfiguration none() {
+            return new PaymentConfiguration(null, null);
+        }
+    }
+
     public static final class MatchNotFoundException extends RuntimeException {
         private static final long serialVersionUID = 1L;
     }
@@ -375,6 +541,10 @@ public class MatchService {
         private static final long serialVersionUID = 1L;
     }
 
+    public static final class InvalidPaymentConfigurationException extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+    }
+
     public static final class AttendanceClosedException extends RuntimeException {
         private static final long serialVersionUID = 1L;
     }
@@ -388,6 +558,14 @@ public class MatchService {
     }
 
     public static final class MatchAlreadyStartedException extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+    }
+
+    public static final class PaymentNotRequiredException extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+    }
+
+    public static final class PaymentRequiresAttendanceException extends RuntimeException {
         private static final long serialVersionUID = 1L;
     }
 }

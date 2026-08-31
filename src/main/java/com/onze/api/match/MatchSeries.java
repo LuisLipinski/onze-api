@@ -1,5 +1,6 @@
 package com.onze.api.match;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -35,6 +36,12 @@ public class MatchSeries {
     @Column(name = "max_players", nullable = false)
     private int maxPlayers;
 
+    @Column(name = "payment_amount", precision = 10, scale = 2)
+    private BigDecimal paymentAmount;
+
+    @Column(name = "pix_key", length = 255)
+    private String pixKey;
+
     @Column(length = 1000)
     private String notes;
 
@@ -56,12 +63,16 @@ public class MatchSeries {
             String timeZone,
             String venue,
             int maxPlayers,
+            BigDecimal paymentAmount,
+            String pixKey,
             String notes) {
         this.groupId = groupId;
         this.createdBy = createdBy;
         this.timeZone = timeZone;
         this.venue = venue;
         this.maxPlayers = maxPlayers;
+        this.paymentAmount = paymentAmount;
+        this.pixKey = pixKey;
         this.notes = notes;
         this.active = true;
     }
@@ -100,6 +111,14 @@ public class MatchSeries {
 
     public int getMaxPlayers() {
         return maxPlayers;
+    }
+
+    public BigDecimal getPaymentAmount() {
+        return paymentAmount;
+    }
+
+    public String getPixKey() {
+        return pixKey;
     }
 
     public String getNotes() {

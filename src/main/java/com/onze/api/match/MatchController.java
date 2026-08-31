@@ -71,6 +71,24 @@ public class MatchController {
         return matchService.updateAttendance(authentication.getName(), matchId, request.status());
     }
 
+    @PutMapping("/api/matches/{matchId}/payment/reported")
+    public MatchResponse reportPayment(
+            Authentication authentication,
+            @PathVariable UUID matchId) {
+        return matchService.reportPayment(authentication.getName(), matchId);
+    }
+
+    @PutMapping("/api/matches/{matchId}/payments/{playerUserId}/confirm")
+    public MatchResponse confirmPayment(
+            Authentication authentication,
+            @PathVariable UUID matchId,
+            @PathVariable UUID playerUserId) {
+        return matchService.confirmPayment(
+                authentication.getName(),
+                matchId,
+                playerUserId);
+    }
+
     @DeleteMapping("/api/matches/{matchId}")
     public ResponseEntity<Void> cancelOccurrence(
             Authentication authentication,

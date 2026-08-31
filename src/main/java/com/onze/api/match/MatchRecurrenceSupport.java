@@ -30,6 +30,8 @@ final class MatchRecurrenceSupport {
                 series.getTimeZone(),
                 series.getVenue(),
                 series.getMaxPlayers(),
+                series.getPaymentAmount(),
+                series.getPixKey(),
                 series.getNotes(),
                 nextAttendanceOpening,
                 null,

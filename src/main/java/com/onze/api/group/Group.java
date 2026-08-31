@@ -1,5 +1,6 @@
 package com.onze.api.group;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -37,6 +38,12 @@ public class Group {
 
     @Column(length = 255)
     private String venue;
+
+    @Column(name = "default_payment_amount", precision = 10, scale = 2)
+    private BigDecimal defaultPaymentAmount;
+
+    @Column(name = "default_pix_key", length = 255)
+    private String defaultPixKey;
 
     @Column(name = "created_by", nullable = false)
     private UUID createdBy;
@@ -96,6 +103,14 @@ public class Group {
         return venue;
     }
 
+    public BigDecimal getDefaultPaymentAmount() {
+        return defaultPaymentAmount;
+    }
+
+    public String getDefaultPixKey() {
+        return defaultPixKey;
+    }
+
     public UUID getCreatedBy() {
         return createdBy;
     }
@@ -122,5 +137,10 @@ public class Group {
 
     public void updatePhotoUrl(String photoUrl) {
         this.photoUrl = photoUrl;
+    }
+
+    public void updatePaymentDetails(BigDecimal paymentAmount, String pixKey) {
+        this.defaultPaymentAmount = paymentAmount;
+        this.defaultPixKey = pixKey;
     }
 }

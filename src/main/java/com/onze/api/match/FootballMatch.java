@@ -1,5 +1,6 @@
 package com.onze.api.match;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -48,6 +49,12 @@ public class FootballMatch {
     @Column(name = "max_players", nullable = false)
     private int maxPlayers;
 
+    @Column(name = "payment_amount", precision = 10, scale = 2)
+    private BigDecimal paymentAmount;
+
+    @Column(name = "pix_key", length = 255)
+    private String pixKey;
+
     @Column(length = 1000)
     private String notes;
 
@@ -81,6 +88,8 @@ public class FootballMatch {
             String timeZone,
             String venue,
             int maxPlayers,
+            BigDecimal paymentAmount,
+            String pixKey,
             String notes,
             Instant attendanceOpensAt,
             Instant attendanceOpenedAt,
@@ -92,6 +101,8 @@ public class FootballMatch {
         this.timeZone = timeZone;
         this.venue = venue;
         this.maxPlayers = maxPlayers;
+        this.paymentAmount = paymentAmount;
+        this.pixKey = pixKey;
         this.notes = notes;
         this.status = MatchStatus.SCHEDULED;
         this.attendanceOpensAt = attendanceOpensAt;
@@ -143,6 +154,18 @@ public class FootballMatch {
         return maxPlayers;
     }
 
+    public BigDecimal getPaymentAmount() {
+        return paymentAmount;
+    }
+
+    public String getPixKey() {
+        return pixKey;
+    }
+
+    public boolean isPaymentRequired() {
+        return paymentAmount != null && pixKey != null;
+    }
+
     public String getNotes() {
         return notes;
     }
@@ -161,6 +184,10 @@ public class FootballMatch {
 
     public UUID getCreatedBy() {
         return createdBy;
+    }
+
+    public Instant getCreatedAt() {
+        return createdAt;
     }
 
     public boolean isAttendanceOpen(Instant now) {

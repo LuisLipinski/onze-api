@@ -12,6 +12,7 @@ import com.onze.api.group.GroupService.GroupAccessDeniedException;
 import com.onze.api.group.GroupService.GroupNotFoundException;
 import com.onze.api.group.GroupService.GroupUserNotFoundException;
 import com.onze.api.group.GroupService.InvalidGroupPhotoException;
+import com.onze.api.group.GroupService.InvalidPaymentConfigurationException;
 import com.onze.api.group.GroupService.PhotoStorageNotConfiguredException;
 import com.onze.api.group.GroupService.PhotoUploadFailedException;
 
@@ -101,6 +102,14 @@ public class GroupExceptionHandler {
                 .body(new ErrorResponse(
                         "INVALID_GROUP_PHOTO",
                         "Escolha uma imagem válida de até 5 MB."));
+    }
+
+    @ExceptionHandler(InvalidPaymentConfigurationException.class)
+    ResponseEntity<ErrorResponse> invalidPaymentConfiguration() {
+        return ResponseEntity.badRequest()
+                .body(new ErrorResponse(
+                        "INVALID_PAYMENT_CONFIGURATION",
+                        "Informe o valor e a chave PIX juntos, ou deixe os dois campos vazios."));
     }
 
     @ExceptionHandler(PhotoStorageNotConfiguredException.class)

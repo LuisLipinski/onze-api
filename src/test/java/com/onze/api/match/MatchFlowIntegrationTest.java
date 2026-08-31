@@ -32,6 +32,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 import tools.jackson.databind.json.JsonMapper;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.nullValue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -239,6 +240,9 @@ class MatchFlowIntegrationTest {
         mockMvc.perform(delete("/api/matches/{matchId}", second.id())
                         .header(HttpHeaders.AUTHORIZATION, bearer(admin)))
                 .andExpect(status().isNoContent());
+        assertThat(notificationJobRepository.findAll())
+                .extracting(MatchNotificationJob::getNotificationType)
+                .contains(MatchNotificationType.MATCH_CANCELLED);
         mockMvc.perform(get("/api/matches/{matchId}", third.id())
                         .header(HttpHeaders.AUTHORIZATION, bearer(admin)))
                 .andExpect(status().isOk())
@@ -252,6 +256,100 @@ class MatchFlowIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("CANCELLED"))
                 .andExpect(jsonPath("$.seriesActive").value(false));
+        assertThat(notificationJobRepository.findAll())
+                .extracting(MatchNotificationJob::getNotificationType)
+                .contains(MatchNotificationType.SERIES_CANCELLED);
+    }
+
+    @Test
+    void shouldTrackPaymentsNotifyFullTeamAndQueueCancellation() throws Exception {
+        AuthResponse creator = register("payment-primary@example.com", "Principal Pagamentos");
+        AuthResponse member = register("payment-member@example.com", "Jogador Pagamentos");
+        GroupResponse group = createGroup(creator, "Pelada com PIX");
+        InviteResponse invite = createInvite(creator, group.id());
+        join(member, invite.code());
+
+        mockMvc.perform(put("/api/groups/{groupId}/details", group.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(creator))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "defaultPaymentEnabled": true,
+                                  "defaultPaymentAmount": 25.50,
+                                  "defaultPixKey": "pix@onze.app",
+                                  "schedules": []
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.defaultPaymentAmount").value(25.50))
+                .andExpect(jsonPath("$.defaultPixKey").value("pix@onze.app"));
+
+        LocalDate date = LocalDate.now(SAO_PAULO).plusDays(3);
+        var createResult = mockMvc.perform(post("/api/groups/{groupId}/matches", group.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(creator))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(paidMatchBody(date, 2)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.paymentRequired").value(true))
+                .andExpect(jsonPath("$.paymentAmount").value(25.50))
+                .andExpect(jsonPath("$.pixKey").value("pix@onze.app"))
+                .andReturn();
+        MatchResponse match = jsonMapper.readValue(
+                createResult.getResponse().getContentAsString(),
+                MatchResponse.class);
+
+        confirmAttendance(match.id(), creator, "GOING")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.myPaymentStatus").value("PENDING"));
+        confirmAttendance(match.id(), member, "GOING")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.myPaymentStatus").value("PENDING"))
+                .andExpect(jsonPath("$.goingCount").value(2));
+
+        mockMvc.perform(put("/api/matches/{matchId}/payment/reported", match.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(member)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.myPaymentStatus").value("REPORTED"));
+
+        mockMvc.perform(put(
+                        "/api/matches/{matchId}/payments/{playerUserId}/confirm",
+                        match.id(),
+                        member.user().id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(member)))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(put(
+                        "/api/matches/{matchId}/payments/{playerUserId}/confirm",
+                        match.id(),
+                        member.user().id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(creator)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.attendances[1].paymentStatus").value("PAID"));
+
+        mockMvc.perform(get("/api/matches/{matchId}", match.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(member)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.myPaymentStatus").value("PAID"))
+                .andExpect(jsonPath("$.attendances[0].paymentStatus").value(nullValue()));
+
+        assertThat(notificationJobRepository.findAll())
+                .extracting(MatchNotificationJob::getNotificationType)
+                .contains(
+                        MatchNotificationType.MATCH_CREATED,
+                        MatchNotificationType.TEAM_FULL,
+                        MatchNotificationType.PAYMENT_REPORTED,
+                        MatchNotificationType.PAYMENT_CONFIRMED);
+
+        mockMvc.perform(delete("/api/matches/{matchId}", match.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(creator)))
+                .andExpect(status().isNoContent());
+
+        assertThat(notificationJobRepository.findAll())
+                .extracting(MatchNotificationJob::getNotificationType)
+                .contains(MatchNotificationType.MATCH_CANCELLED);
+        assertThat(notificationJobRepository.findAll())
+                .extracting(MatchNotificationJob::getDeduplicationKey)
+                .doesNotHaveDuplicates();
     }
 
     private org.springframework.test.web.servlet.ResultActions confirmAttendance(
@@ -286,6 +384,21 @@ class MatchFlowIntegrationTest {
                   "recurrence": "%s"
                 }
                 """.formatted(date, maxPlayers, recurrence);
+    }
+
+    private String paidMatchBody(LocalDate date, int maxPlayers) {
+        return """
+                {
+                  "date": "%s",
+                  "startTime": "20:30:00",
+                  "timeZone": "America/Sao_Paulo",
+                  "venue": "Arena Onze",
+                  "maxPlayers": %d,
+                  "paymentRequired": true,
+                  "notes": "Pagamento via PIX",
+                  "recurrence": "NONE"
+                }
+                """.formatted(date, maxPlayers);
     }
 
     private void join(AuthResponse user, String code) throws Exception {
