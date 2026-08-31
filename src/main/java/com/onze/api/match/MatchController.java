@@ -6,6 +6,7 @@ import java.util.UUID;
 
 import com.onze.api.match.MatchModels.CreateMatchRequest;
 import com.onze.api.match.MatchModels.MatchResponse;
+import com.onze.api.match.MatchModels.ResolvePaymentSettlementRequest;
 import com.onze.api.match.MatchModels.UpdateAttendanceRequest;
 
 import jakarta.validation.Valid;
@@ -87,6 +88,19 @@ public class MatchController {
                 authentication.getName(),
                 matchId,
                 playerUserId);
+    }
+
+    @PutMapping("/api/matches/{matchId}/payments/{playerUserId}/settlement")
+    public MatchResponse resolvePaymentSettlement(
+            Authentication authentication,
+            @PathVariable UUID matchId,
+            @PathVariable UUID playerUserId,
+            @Valid @RequestBody ResolvePaymentSettlementRequest request) {
+        return matchService.resolvePaymentSettlement(
+                authentication.getName(),
+                matchId,
+                playerUserId,
+                request.resolution());
     }
 
     @DeleteMapping("/api/matches/{matchId}")

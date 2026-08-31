@@ -38,11 +38,16 @@ public final class MatchModels {
             @NotNull AttendanceStatus status) {
     }
 
+    public record ResolvePaymentSettlementRequest(
+            @NotNull PaymentSettlementResolution resolution) {
+    }
+
     public record AttendanceResponse(
             UUID userId,
             String displayName,
             AttendanceStatus status,
             PaymentStatus paymentStatus,
+            PaymentSettlementStatus paymentSettlementStatus,
             boolean currentUser) {
     }
 
@@ -66,6 +71,7 @@ public final class MatchModels {
             boolean attendanceOpen,
             AttendanceStatus myAttendance,
             PaymentStatus myPaymentStatus,
+            PaymentSettlementStatus myPaymentSettlementStatus,
             int goingCount,
             int notGoingCount,
             List<AttendanceResponse> attendances,

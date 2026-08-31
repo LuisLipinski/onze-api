@@ -197,6 +197,10 @@ public class MatchService {
                 .orElse(null);
         boolean joining = requestedStatus == AttendanceStatus.GOING
                 && (attendance == null || attendance.getStatus() != AttendanceStatus.GOING);
+        boolean leaving = requestedStatus == AttendanceStatus.NOT_GOING
+                && attendance != null
+                && attendance.getStatus() == AttendanceStatus.GOING;
+        PaymentStatus paymentBefore = attendance == null ? null : attendance.getPaymentStatus();
         long goingBefore = attendanceRepository.countByMatchIdAndStatus(matchId, AttendanceStatus.GOING);
         if (joining && goingBefore >= match.getMaxPlayers()) {
             throw new MatchFullException();
@@ -209,7 +213,15 @@ public class MatchService {
                     requestedStatus,
                     match.isPaymentRequired()));
         } else {
-            attendance.changeStatus(requestedStatus, match.isPaymentRequired());
+            attendance.changeStatus(requestedStatus, match.isPaymentRequired(), now);
+        }
+
+        if (leaving && (paymentBefore == PaymentStatus.REPORTED || paymentBefore == PaymentStatus.PAID)) {
+            enqueueForManagers(
+                    match,
+                    MatchNotificationType.PAYMENT_SETTLEMENT_REQUIRED,
+                    "payment-settlement-required:" + userId + ":" + now.toEpochMilli(),
+                    now);
         }
 
         if (joining && goingBefore + 1 == match.getMaxPlayers()) {
@@ -244,21 +256,51 @@ public class MatchService {
         boolean changed = attendance.getPaymentStatus() == PaymentStatus.PENDING;
         attendance.reportPayment(now);
         if (changed) {
-            for (GroupMember admin : groupMemberRepository
-                    .findAllByGroupIdOrderByCreatedAtAsc(match.getGroupId())) {
-                if (!admin.hasPermission(GroupAdminPermission.SCHEDULE_GAMES)) {
-                    continue;
-                }
-                notificationQueue.enqueue(
-                        match.getId(),
-                        admin.getUserId(),
-                        MatchNotificationType.PAYMENT_REPORTED,
-                        "match:" + match.getId() + ":payment-reported:"
-                                + userId + ":admin:" + admin.getUserId(),
-                        now);
-            }
+            enqueueForManagers(
+                    match,
+                    MatchNotificationType.PAYMENT_REPORTED,
+                    "payment-reported:" + userId,
+                    now);
         }
 
+        return toResponse(match, group, membership, now);
+    }
+
+    @Transactional
+    public MatchResponse resolvePaymentSettlement(
+            String authenticatedUserId,
+            UUID matchId,
+            UUID playerUserId,
+            PaymentSettlementResolution resolution) {
+        UUID adminUserId = parseUserId(authenticatedUserId);
+        FootballMatch match = matchRepository.findByIdForUpdate(matchId)
+                .orElseThrow(MatchNotFoundException::new);
+        Group group = requireGroup(match.getGroupId());
+        GroupMember membership = requireMembership(match.getGroupId(), adminUserId);
+        requireManagePermission(membership);
+        requirePayment(match);
+
+        MatchAttendance attendance = attendanceRepository.findByMatchIdAndUserId(matchId, playerUserId)
+                .orElseThrow(PaymentSettlementNotOpenException::new);
+        if (attendance.getStatus() != AttendanceStatus.NOT_GOING
+                || (attendance.getPaymentSettlementStatus() != PaymentSettlementStatus.REVIEW_REQUIRED
+                        && attendance.getPaymentSettlementStatus() != PaymentSettlementStatus.PENDING)) {
+            throw new PaymentSettlementNotOpenException();
+        }
+
+        Instant now = clock.instant();
+        try {
+            attendance.resolveSettlement(resolution, now);
+        } catch (IllegalArgumentException exception) {
+            throw new InvalidPaymentSettlementResolutionException();
+        }
+        notificationQueue.enqueue(
+                match.getId(),
+                playerUserId,
+                MatchNotificationType.PAYMENT_SETTLEMENT_RESOLVED,
+                "match:" + match.getId() + ":payment-settlement-resolved:"
+                        + playerUserId + ":" + now.toEpochMilli(),
+                now);
         return toResponse(match, group, membership, now);
     }
 
@@ -381,6 +423,7 @@ public class MatchService {
         List<AttendanceResponse> attendances = new ArrayList<>(storedAttendances.size());
         AttendanceStatus myAttendance = null;
         PaymentStatus myPaymentStatus = null;
+        PaymentSettlementStatus myPaymentSettlementStatus = null;
         int goingCount = 0;
         int notGoingCount = 0;
         boolean canManage = membership.hasPermission(GroupAdminPermission.SCHEDULE_GAMES);
@@ -399,12 +442,14 @@ public class MatchService {
             if (currentUser) {
                 myAttendance = attendance.getStatus();
                 myPaymentStatus = attendance.getPaymentStatus();
+                myPaymentSettlementStatus = attendance.getPaymentSettlementStatus();
             }
             attendances.add(new AttendanceResponse(
                     attendance.getUserId(),
                     user.getDisplayName(),
                     attendance.getStatus(),
                     currentUser || canManage ? attendance.getPaymentStatus() : null,
+                    currentUser || canManage ? attendance.getPaymentSettlementStatus() : null,
                     currentUser));
         }
 
@@ -432,10 +477,30 @@ public class MatchService {
                 match.isAttendanceOpen(now),
                 myAttendance,
                 myPaymentStatus,
+                myPaymentSettlementStatus,
                 goingCount,
                 notGoingCount,
                 List.copyOf(attendances),
                 canManage);
+    }
+
+    private void enqueueForManagers(
+            FootballMatch match,
+            MatchNotificationType notificationType,
+            String eventKey,
+            Instant now) {
+        for (GroupMember admin : groupMemberRepository
+                .findAllByGroupIdOrderByCreatedAtAsc(match.getGroupId())) {
+            if (!admin.hasPermission(GroupAdminPermission.SCHEDULE_GAMES)) {
+                continue;
+            }
+            notificationQueue.enqueue(
+                    match.getId(),
+                    admin.getUserId(),
+                    notificationType,
+                    "match:" + match.getId() + ":" + eventKey + ":admin:" + admin.getUserId(),
+                    now);
+        }
     }
 
     private PaymentConfiguration resolvePaymentConfiguration(
@@ -566,6 +631,14 @@ public class MatchService {
     }
 
     public static final class PaymentRequiresAttendanceException extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+    }
+
+    public static final class PaymentSettlementNotOpenException extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+    }
+
+    public static final class InvalidPaymentSettlementResolutionException extends RuntimeException {
         private static final long serialVersionUID = 1L;
     }
 }

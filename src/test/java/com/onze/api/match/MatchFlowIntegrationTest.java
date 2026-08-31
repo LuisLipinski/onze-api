@@ -332,13 +332,63 @@ class MatchFlowIntegrationTest {
                 .andExpect(jsonPath("$.myPaymentStatus").value("PAID"))
                 .andExpect(jsonPath("$.attendances[0].paymentStatus").value(nullValue()));
 
+        confirmAttendance(match.id(), member, "NOT_GOING")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.goingCount").value(1))
+                .andExpect(jsonPath("$.myPaymentStatus").value("PAID"))
+                .andExpect(jsonPath("$.myPaymentSettlementStatus").value("PENDING"));
+
+        mockMvc.perform(put(
+                        "/api/matches/{matchId}/payments/{playerUserId}/settlement",
+                        match.id(),
+                        member.user().id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(member))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"resolution": "REFUNDED"}
+                                """))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(put(
+                        "/api/matches/{matchId}/payments/{playerUserId}/settlement",
+                        match.id(),
+                        member.user().id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(creator))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"resolution": "NOT_RECEIVED"}
+                                """))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("INVALID_PAYMENT_SETTLEMENT_RESOLUTION"));
+
+        mockMvc.perform(put(
+                        "/api/matches/{matchId}/payments/{playerUserId}/settlement",
+                        match.id(),
+                        member.user().id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(creator))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"resolution": "REFUNDED"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.attendances[1].paymentStatus").value("PAID"))
+                .andExpect(jsonPath("$.attendances[1].paymentSettlementStatus").value("REFUNDED"));
+
+        mockMvc.perform(get("/api/matches/{matchId}", match.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(member)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.myPaymentSettlementStatus").value("REFUNDED"))
+                .andExpect(jsonPath("$.attendances[0].paymentSettlementStatus").value(nullValue()));
+
         assertThat(notificationJobRepository.findAll())
                 .extracting(MatchNotificationJob::getNotificationType)
                 .contains(
                         MatchNotificationType.MATCH_CREATED,
                         MatchNotificationType.TEAM_FULL,
                         MatchNotificationType.PAYMENT_REPORTED,
-                        MatchNotificationType.PAYMENT_CONFIRMED);
+                        MatchNotificationType.PAYMENT_CONFIRMED,
+                        MatchNotificationType.PAYMENT_SETTLEMENT_REQUIRED,
+                        MatchNotificationType.PAYMENT_SETTLEMENT_RESOLVED);
 
         mockMvc.perform(delete("/api/matches/{matchId}", match.id())
                         .header(HttpHeaders.AUTHORIZATION, bearer(creator)))
@@ -350,6 +400,72 @@ class MatchFlowIntegrationTest {
         assertThat(notificationJobRepository.findAll())
                 .extracting(MatchNotificationJob::getDeduplicationKey)
                 .doesNotHaveDuplicates();
+    }
+
+    @Test
+    void shouldCancelUnpaidChargeAndReviewPaymentReportedBeforeWithdrawal() throws Exception {
+        AuthResponse creator = register("withdrawal-primary@example.com", "Principal Acertos");
+        AuthResponse member = register("withdrawal-member@example.com", "Jogador Acertos");
+        GroupResponse group = createGroup(creator, "Pelada com acertos");
+        InviteResponse invite = createInvite(creator, group.id());
+        join(member, invite.code());
+
+        mockMvc.perform(put("/api/groups/{groupId}/details", group.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(creator))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "defaultPaymentEnabled": true,
+                                  "defaultPaymentAmount": 20.00,
+                                  "defaultPixKey": "acertos@onze.app",
+                                  "schedules": []
+                                }
+                                """))
+                .andExpect(status().isOk());
+
+        LocalDate date = LocalDate.now(SAO_PAULO).plusDays(3);
+        var createResult = mockMvc.perform(post("/api/groups/{groupId}/matches", group.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(creator))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(paidMatchBody(date, 4)))
+                .andExpect(status().isCreated())
+                .andReturn();
+        MatchResponse match = jsonMapper.readValue(
+                createResult.getResponse().getContentAsString(),
+                MatchResponse.class);
+
+        confirmAttendance(match.id(), member, "GOING")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.myPaymentStatus").value("PENDING"));
+        confirmAttendance(match.id(), member, "NOT_GOING")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.myPaymentStatus").value("CANCELLED"))
+                .andExpect(jsonPath("$.myPaymentSettlementStatus").value(nullValue()));
+
+        confirmAttendance(match.id(), member, "GOING")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.myPaymentStatus").value("PENDING"));
+        mockMvc.perform(put("/api/matches/{matchId}/payment/reported", match.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(member)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.myPaymentStatus").value("REPORTED"));
+        confirmAttendance(match.id(), member, "NOT_GOING")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.myPaymentStatus").value("REPORTED"))
+                .andExpect(jsonPath("$.myPaymentSettlementStatus").value("REVIEW_REQUIRED"));
+
+        mockMvc.perform(put(
+                        "/api/matches/{matchId}/payments/{playerUserId}/settlement",
+                        match.id(),
+                        member.user().id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(creator))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"resolution": "NOT_RECEIVED"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.attendances[0].paymentStatus").value("CANCELLED"))
+                .andExpect(jsonPath("$.attendances[0].paymentSettlementStatus").value("NOT_RECEIVED"));
     }
 
     private org.springframework.test.web.servlet.ResultActions confirmAttendance(
