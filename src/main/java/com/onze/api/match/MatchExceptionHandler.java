@@ -13,8 +13,10 @@ import com.onze.api.match.MatchService.MatchMustBeInFutureException;
 import com.onze.api.match.MatchService.MatchNotFoundException;
 import com.onze.api.match.MatchService.MatchSeriesNotFoundException;
 import com.onze.api.match.MatchService.InvalidPaymentConfigurationException;
+import com.onze.api.match.MatchService.InvalidPaymentSettlementResolutionException;
 import com.onze.api.match.MatchService.PaymentNotRequiredException;
 import com.onze.api.match.MatchService.PaymentRequiresAttendanceException;
+import com.onze.api.match.MatchService.PaymentSettlementNotOpenException;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -114,5 +116,21 @@ public class MatchExceptionHandler {
                 .body(new ErrorResponse(
                         "PAYMENT_REQUIRES_ATTENDANCE",
                         "Confirme que vai jogar antes de informar ou validar o pagamento."));
+    }
+
+    @ExceptionHandler(PaymentSettlementNotOpenException.class)
+    ResponseEntity<ErrorResponse> paymentSettlementNotOpen() {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(new ErrorResponse(
+                        "PAYMENT_SETTLEMENT_NOT_OPEN",
+                        "Este pagamento não possui um acerto pendente."));
+    }
+
+    @ExceptionHandler(InvalidPaymentSettlementResolutionException.class)
+    ResponseEntity<ErrorResponse> invalidPaymentSettlementResolution() {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(new ErrorResponse(
+                        "INVALID_PAYMENT_SETTLEMENT_RESOLUTION",
+                        "Um pagamento já confirmado não pode ser marcado como não recebido."));
     }
 }

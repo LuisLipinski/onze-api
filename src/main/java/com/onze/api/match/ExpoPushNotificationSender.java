@@ -115,6 +115,10 @@ public class ExpoPushNotificationSender {
                     amount == null
                             ? "Seu pagamento para o jogo de " + group.getName() + " foi confirmado."
                             : "Seu pagamento de " + amount + " para " + group.getName() + " foi confirmado.");
+            case PAYMENT_SETTLEMENT_REQUIRED -> new NotificationCopy(
+                    "Jogador saiu após o pagamento ⚠️",
+                    "Há um acerto financeiro aguardando sua decisão no jogo de " + group.getName() + ".");
+            case PAYMENT_SETTLEMENT_RESOLVED -> settlementResolvedCopy(match, group, recipientUserId);
             case MATCH_TOMORROW -> tomorrowCopy(match, group, recipientUserId, amount);
             case TEAM_FULL -> new NotificationCopy(
                     "Time fechado ✅",
@@ -131,6 +135,41 @@ public class ExpoPushNotificationSender {
             case SERIES_CANCELLED -> new NotificationCopy(
                     "Jogos semanais encerrados ⚠️",
                     "Os próximos jogos semanais de " + group.getName() + " foram encerrados.");
+        };
+    }
+
+    private NotificationCopy settlementResolvedCopy(
+            FootballMatch match,
+            Group group,
+            UUID recipientUserId) {
+        PaymentSettlementStatus status = recipientUserId == null
+                ? null
+                : attendanceRepository.findByMatchIdAndUserId(match.getId(), recipientUserId)
+                        .map(MatchAttendance::getPaymentSettlementStatus)
+                        .orElse(null);
+        if (status == null) {
+            return new NotificationCopy(
+                    "Acerto financeiro atualizado",
+                    "Consulte o jogo de " + group.getName() + " para ver o resultado.");
+        }
+        return switch (status) {
+            case NOT_RECEIVED -> new NotificationCopy(
+                    "Cobrança encerrada",
+                    "O administrador informou que nenhum pagamento foi localizado para "
+                            + group.getName() + ".");
+            case REFUNDED -> new NotificationCopy(
+                    "Pagamento reembolsado ✅",
+                    "O reembolso do jogo de " + group.getName() + " foi registrado.");
+            case CREDITED -> new NotificationCopy(
+                    "Crédito registrado ✅",
+                    "Seu pagamento virou crédito para uma próxima partida de " + group.getName() + ".");
+            case RETAINED -> new NotificationCopy(
+                    "Pagamento mantido",
+                    "O administrador registrou que o pagamento do jogo de " + group.getName()
+                            + " será mantido.");
+            default -> new NotificationCopy(
+                    "Acerto financeiro atualizado",
+                    "Consulte o jogo de " + group.getName() + " para ver o resultado.");
         };
     }
 

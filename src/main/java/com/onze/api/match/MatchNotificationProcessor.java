@@ -62,13 +62,18 @@ public class MatchNotificationProcessor {
     }
 
     private boolean shouldSkip(MatchNotificationJob job, FootballMatch match, Instant now) {
-        if (match == null || !match.getStartsAt().isAfter(now)) {
+        if (match == null) {
             return true;
         }
 
-        boolean cancellationNotification = job.getNotificationType() == MatchNotificationType.MATCH_CANCELLED
-                || job.getNotificationType() == MatchNotificationType.SERIES_CANCELLED;
-        if (match.getStatus() == MatchStatus.CANCELLED && !cancellationNotification) {
+        boolean stateIndependentNotification = job.getNotificationType() == MatchNotificationType.MATCH_CANCELLED
+                || job.getNotificationType() == MatchNotificationType.SERIES_CANCELLED
+                || job.getNotificationType() == MatchNotificationType.PAYMENT_SETTLEMENT_REQUIRED
+                || job.getNotificationType() == MatchNotificationType.PAYMENT_SETTLEMENT_RESOLVED;
+        if (!match.getStartsAt().isAfter(now) && !stateIndependentNotification) {
+            return true;
+        }
+        if (match.getStatus() == MatchStatus.CANCELLED && !stateIndependentNotification) {
             return true;
         }
 

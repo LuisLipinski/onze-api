@@ -47,6 +47,16 @@ public class MatchAttendance {
     @Column(name = "payment_confirmed_at")
     private Instant paymentConfirmedAt;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "payment_settlement_status", length = 32)
+    private PaymentSettlementStatus paymentSettlementStatus;
+
+    @Column(name = "payment_settlement_requested_at")
+    private Instant paymentSettlementRequestedAt;
+
+    @Column(name = "payment_settlement_resolved_at")
+    private Instant paymentSettlementResolvedAt;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -113,10 +123,49 @@ public class MatchAttendance {
         return paymentConfirmedAt;
     }
 
-    public void changeStatus(AttendanceStatus status, boolean paymentRequired) {
+    public PaymentSettlementStatus getPaymentSettlementStatus() {
+        return paymentSettlementStatus;
+    }
+
+    public Instant getPaymentSettlementRequestedAt() {
+        return paymentSettlementRequestedAt;
+    }
+
+    public Instant getPaymentSettlementResolvedAt() {
+        return paymentSettlementResolvedAt;
+    }
+
+    public void changeStatus(AttendanceStatus status, boolean paymentRequired, Instant now) {
+        AttendanceStatus previousStatus = this.status;
         this.status = status;
-        if (status == AttendanceStatus.GOING && paymentRequired && paymentStatus == null) {
+        if (!paymentRequired || previousStatus == status) {
+            return;
+        }
+
+        if (status == AttendanceStatus.NOT_GOING) {
+            if (paymentStatus == PaymentStatus.PENDING) {
+                paymentStatus = PaymentStatus.CANCELLED;
+            } else if (paymentStatus == PaymentStatus.REPORTED) {
+                requestSettlement(PaymentSettlementStatus.REVIEW_REQUIRED, now);
+            } else if (paymentStatus == PaymentStatus.PAID) {
+                requestSettlement(PaymentSettlementStatus.PENDING, now);
+            }
+            return;
+        }
+
+        if (paymentSettlementStatus == PaymentSettlementStatus.NOT_RECEIVED
+                || paymentSettlementStatus == PaymentSettlementStatus.REFUNDED) {
             paymentStatus = PaymentStatus.PENDING;
+        } else if (paymentSettlementStatus == PaymentSettlementStatus.CREDITED
+                || paymentSettlementStatus == PaymentSettlementStatus.RETAINED) {
+            paymentStatus = PaymentStatus.PAID;
+        } else if (paymentStatus == null || paymentStatus == PaymentStatus.CANCELLED) {
+            paymentStatus = PaymentStatus.PENDING;
+        }
+        if (paymentSettlementStatus != null) {
+            paymentSettlementStatus = null;
+            paymentSettlementRequestedAt = null;
+            paymentSettlementResolvedAt = null;
         }
     }
 
@@ -130,5 +179,38 @@ public class MatchAttendance {
     public void confirmPayment(Instant now) {
         paymentStatus = PaymentStatus.PAID;
         paymentConfirmedAt = now;
+    }
+
+    public void resolveSettlement(PaymentSettlementResolution resolution, Instant now) {
+        boolean reviewRequired = paymentSettlementStatus == PaymentSettlementStatus.REVIEW_REQUIRED;
+        boolean settlementPending = paymentSettlementStatus == PaymentSettlementStatus.PENDING;
+        if (!reviewRequired && !settlementPending) {
+            throw new IllegalStateException("Payment settlement is not open");
+        }
+        if (!reviewRequired && resolution == PaymentSettlementResolution.NOT_RECEIVED) {
+            throw new IllegalArgumentException("A confirmed payment cannot be marked as not received");
+        }
+
+        if (resolution == PaymentSettlementResolution.NOT_RECEIVED) {
+            paymentStatus = PaymentStatus.CANCELLED;
+        } else {
+            paymentStatus = PaymentStatus.PAID;
+            if (paymentConfirmedAt == null) {
+                paymentConfirmedAt = now;
+            }
+        }
+        paymentSettlementStatus = switch (resolution) {
+            case NOT_RECEIVED -> PaymentSettlementStatus.NOT_RECEIVED;
+            case REFUNDED -> PaymentSettlementStatus.REFUNDED;
+            case CREDITED -> PaymentSettlementStatus.CREDITED;
+            case RETAINED -> PaymentSettlementStatus.RETAINED;
+        };
+        paymentSettlementResolvedAt = now;
+    }
+
+    private void requestSettlement(PaymentSettlementStatus status, Instant now) {
+        paymentSettlementStatus = status;
+        paymentSettlementRequestedAt = now;
+        paymentSettlementResolvedAt = null;
     }
 }
