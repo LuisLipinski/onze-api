@@ -156,6 +156,50 @@ class GroupFlowIntegrationTest {
     }
 
     @Test
+    void shouldUpdateGroupWithoutFailingWhenScheduleIsKeptUnchanged() throws Exception {
+        AuthResponse creator = register("schedule-update@example.com", "Criador");
+        GroupResponse group = createGroup(creator, "Pelada de sábado");
+
+        mockMvc.perform(put("/api/groups/{groupId}/details", group.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(creator))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "venue": "Arena zeroum",
+                                  "schedules": [
+                                    {"dayOfWeek": "SATURDAY", "startTime": "18:00:00"}
+                                  ]
+                                }
+                                """))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(put("/api/groups/{groupId}/details", group.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(creator))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "mascot": "Fenix",
+                                  "venue": "Arena zeroum",
+                                  "defaultPaymentEnabled": true,
+                                  "defaultPaymentAmount": 20.00,
+                                  "defaultPixKey": "teste@teste.com",
+                                  "schedules": [
+                                    {"dayOfWeek": "SATURDAY", "startTime": "18:00:00"}
+                                  ]
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.mascot").value("Fenix"))
+                .andExpect(jsonPath("$.venue").value("Arena zeroum"))
+                .andExpect(jsonPath("$.defaultPaymentAmount").value(20.00))
+                .andExpect(jsonPath("$.defaultPixKey").value("teste@teste.com"))
+                .andExpect(jsonPath("$.schedules[0].dayOfWeek").value("SATURDAY"))
+                .andExpect(jsonPath("$.schedules[0].startTime").value("18:00:00"));
+
+        assertThat(groupScheduleRepository.findAllByGroupId(group.id())).hasSize(1);
+    }
+
+    @Test
     void shouldKeepDefaultPhotoWhenCloudinaryIsNotConfigured() throws Exception {
         AuthResponse creator = register("photo@example.com", "Foto");
         GroupResponse group = createGroup(creator, "Grupo com foto");
