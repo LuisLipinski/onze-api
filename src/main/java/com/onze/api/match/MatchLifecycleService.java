@@ -28,6 +28,7 @@ public class MatchLifecycleService {
     private final MatchAttendanceRepository attendanceRepository;
     private final GroupMemberRepository groupMemberRepository;
     private final MatchNotificationQueue notificationQueue;
+    private final PlayerCreditService playerCreditService;
     private final Clock clock;
 
     public MatchLifecycleService(
@@ -36,18 +37,21 @@ public class MatchLifecycleService {
             MatchAttendanceRepository attendanceRepository,
             GroupMemberRepository groupMemberRepository,
             MatchNotificationQueue notificationQueue,
+            PlayerCreditService playerCreditService,
             Clock clock) {
         this.matchRepository = matchRepository;
         this.seriesRepository = seriesRepository;
         this.attendanceRepository = attendanceRepository;
         this.groupMemberRepository = groupMemberRepository;
         this.notificationQueue = notificationQueue;
+        this.playerCreditService = playerCreditService;
         this.clock = clock;
     }
 
     @Transactional
     public int openDueAttendances() {
         Instant now = clock.instant();
+        releaseExpiredCreditReservations(now);
         int opened = 0;
 
         for (int round = 0; round < MAX_CATCH_UP_ROUNDS; round++) {
@@ -118,7 +122,7 @@ public class MatchLifecycleService {
             for (GroupMember member : groupMemberRepository
                     .findAllByGroupIdOrderByCreatedAtAsc(match.getGroupId())) {
                 MatchAttendance attendance = attendanceByUser.get(member.getUserId());
-                if (attendance == null) {
+                if (attendance == null || attendance.getStatus() == AttendanceStatus.PENDING) {
                     String key = "match:" + match.getId()
                             + ":attendance-reminder:"
                             + member.getUserId()
@@ -186,5 +190,27 @@ public class MatchLifecycleService {
         }
 
         matchRepository.save(MatchRecurrenceSupport.nextOccurrence(match, series));
+        playerCreditService.reserveAvailableCreditsForGroup(match.getGroupId(), clock.instant());
+    }
+
+    private void releaseExpiredCreditReservations(Instant now) {
+        for (FootballMatch match : matchRepository
+                .findAllByStatusAndStartsAtLessThanEqualOrderByStartsAtAsc(
+                        MatchStatus.SCHEDULED,
+                        now)) {
+            for (MatchAttendance attendance : attendanceRepository
+                    .findAllByMatchIdOrderByCreatedAtAsc(match.getId())) {
+                if (attendance.getStatus() != AttendanceStatus.PENDING
+                        || !attendance.hasActiveCredit()) {
+                    continue;
+                }
+                playerCreditService.releaseReservation(match.getGroupId(), attendance, now);
+                attendance.markAutomaticCreditReturn(now);
+                playerCreditService.reserveForNextMatch(
+                        match.getGroupId(),
+                        attendance.getUserId(),
+                        now);
+            }
+        }
     }
 }

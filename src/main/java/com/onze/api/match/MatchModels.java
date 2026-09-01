@@ -10,6 +10,7 @@ import java.util.UUID;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Digits;
+import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -42,12 +43,31 @@ public final class MatchModels {
             @NotNull PaymentSettlementResolution resolution) {
     }
 
+    public record BulkResolvePaymentSettlementsRequest(
+            @NotEmpty @Size(max = 100) List<@NotNull UUID> playerUserIds,
+            @NotNull PaymentSettlementResolution resolution) {
+    }
+
     public record AttendanceResponse(
             UUID userId,
             String displayName,
             AttendanceStatus status,
             PaymentStatus paymentStatus,
             PaymentSettlementStatus paymentSettlementStatus,
+            BigDecimal creditAppliedAmount,
+            BigDecimal remainingPaymentAmount,
+            CreditAllocationStatus creditAllocationStatus,
+            boolean currentUser) {
+    }
+
+    public record PlayerCreditResponse(
+            UUID userId,
+            String displayName,
+            BigDecimal availableAmount,
+            BigDecimal allocatedAmount,
+            CreditAllocationStatus allocationStatus,
+            UUID allocatedMatchId,
+            Instant allocatedMatchStartsAt,
             boolean currentUser) {
     }
 
@@ -72,6 +92,9 @@ public final class MatchModels {
             AttendanceStatus myAttendance,
             PaymentStatus myPaymentStatus,
             PaymentSettlementStatus myPaymentSettlementStatus,
+            BigDecimal myCreditAppliedAmount,
+            BigDecimal myRemainingPaymentAmount,
+            CreditAllocationStatus myCreditAllocationStatus,
             int goingCount,
             int notGoingCount,
             List<AttendanceResponse> attendances,

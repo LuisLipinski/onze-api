@@ -1,5 +1,6 @@
 package com.onze.api.match;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -57,6 +58,21 @@ public class MatchAttendance {
     @Column(name = "payment_settlement_resolved_at")
     private Instant paymentSettlementResolvedAt;
 
+    @Column(name = "credit_applied_amount", nullable = false, precision = 10, scale = 2)
+    private BigDecimal creditAppliedAmount;
+
+    @Column(name = "cash_amount_due", nullable = false, precision = 10, scale = 2)
+    private BigDecimal cashAmountDue;
+
+    @Column(name = "cash_paid_amount", nullable = false, precision = 10, scale = 2)
+    private BigDecimal cashPaidAmount;
+
+    @Column(name = "credit_consumed_at")
+    private Instant creditConsumedAt;
+
+    @Column(name = "credit_returned_at")
+    private Instant creditReturnedAt;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -70,11 +86,14 @@ public class MatchAttendance {
             UUID matchId,
             UUID userId,
             AttendanceStatus status,
-            boolean paymentRequired) {
+            BigDecimal paymentAmount) {
         this.matchId = matchId;
         this.userId = userId;
         this.status = status;
-        if (status == AttendanceStatus.GOING && paymentRequired) {
+        this.creditAppliedAmount = BigDecimal.ZERO;
+        this.cashAmountDue = paymentAmount == null ? BigDecimal.ZERO : paymentAmount;
+        this.cashPaidAmount = BigDecimal.ZERO;
+        if (status != AttendanceStatus.NOT_GOING && paymentAmount != null) {
             this.paymentStatus = PaymentStatus.PENDING;
         }
     }
@@ -135,10 +154,38 @@ public class MatchAttendance {
         return paymentSettlementResolvedAt;
     }
 
-    public void changeStatus(AttendanceStatus status, boolean paymentRequired, Instant now) {
+    public BigDecimal getCreditAppliedAmount() {
+        return creditAppliedAmount;
+    }
+
+    public BigDecimal getCashAmountDue() {
+        return cashAmountDue;
+    }
+
+    public BigDecimal getCashPaidAmount() {
+        return cashPaidAmount;
+    }
+
+    public Instant getCreditConsumedAt() {
+        return creditConsumedAt;
+    }
+
+    public Instant getCreditReturnedAt() {
+        return creditReturnedAt;
+    }
+
+    public boolean hasActiveCredit() {
+        return creditAppliedAmount.signum() > 0 && creditReturnedAt == null;
+    }
+
+    public boolean isCreditConsumed() {
+        return hasActiveCredit() && creditConsumedAt != null;
+    }
+
+    public void changeStatus(AttendanceStatus status, BigDecimal paymentAmount, Instant now) {
         AttendanceStatus previousStatus = this.status;
         this.status = status;
-        if (!paymentRequired || previousStatus == status) {
+        if (paymentAmount == null || previousStatus == status) {
             return;
         }
 
@@ -147,20 +194,28 @@ public class MatchAttendance {
                 paymentStatus = PaymentStatus.CANCELLED;
             } else if (paymentStatus == PaymentStatus.REPORTED) {
                 requestSettlement(PaymentSettlementStatus.REVIEW_REQUIRED, now);
-            } else if (paymentStatus == PaymentStatus.PAID) {
+            } else if (paymentStatus == PaymentStatus.PAID && cashPaidAmount.signum() > 0) {
                 requestSettlement(PaymentSettlementStatus.PENDING, now);
+            } else if (paymentStatus == PaymentStatus.PAID) {
+                paymentStatus = PaymentStatus.CANCELLED;
             }
             return;
         }
 
         if (paymentSettlementStatus == PaymentSettlementStatus.NOT_RECEIVED
-                || paymentSettlementStatus == PaymentSettlementStatus.REFUNDED) {
+                || paymentSettlementStatus == PaymentSettlementStatus.REFUNDED
+                || paymentSettlementStatus == PaymentSettlementStatus.CREDITED) {
             paymentStatus = PaymentStatus.PENDING;
-        } else if (paymentSettlementStatus == PaymentSettlementStatus.CREDITED
-                || paymentSettlementStatus == PaymentSettlementStatus.RETAINED) {
+            cashAmountDue = paymentAmount;
+            cashPaidAmount = BigDecimal.ZERO;
+        } else if (paymentSettlementStatus == PaymentSettlementStatus.RETAINED) {
             paymentStatus = PaymentStatus.PAID;
+            cashAmountDue = paymentAmount;
+            cashPaidAmount = paymentAmount;
         } else if (paymentStatus == null || paymentStatus == PaymentStatus.CANCELLED) {
             paymentStatus = PaymentStatus.PENDING;
+            cashAmountDue = paymentAmount;
+            cashPaidAmount = BigDecimal.ZERO;
         }
         if (paymentSettlementStatus != null) {
             paymentSettlementStatus = null;
@@ -170,7 +225,7 @@ public class MatchAttendance {
     }
 
     public void reportPayment(Instant now) {
-        if (paymentStatus == PaymentStatus.PENDING) {
+        if (paymentStatus == PaymentStatus.PENDING && cashAmountDue.signum() > 0) {
             paymentStatus = PaymentStatus.REPORTED;
             paymentReportedAt = now;
         }
@@ -178,10 +233,14 @@ public class MatchAttendance {
 
     public void confirmPayment(Instant now) {
         paymentStatus = PaymentStatus.PAID;
+        cashPaidAmount = cashAmountDue;
         paymentConfirmedAt = now;
     }
 
-    public void resolveSettlement(PaymentSettlementResolution resolution, Instant now) {
+    public void resolveSettlement(
+            PaymentSettlementResolution resolution,
+            BigDecimal settlementAmount,
+            Instant now) {
         boolean reviewRequired = paymentSettlementStatus == PaymentSettlementStatus.REVIEW_REQUIRED;
         boolean settlementPending = paymentSettlementStatus == PaymentSettlementStatus.PENDING;
         if (!reviewRequired && !settlementPending) {
@@ -193,8 +252,12 @@ public class MatchAttendance {
 
         if (resolution == PaymentSettlementResolution.NOT_RECEIVED) {
             paymentStatus = PaymentStatus.CANCELLED;
+            cashPaidAmount = BigDecimal.ZERO;
         } else {
             paymentStatus = PaymentStatus.PAID;
+            if (cashPaidAmount.signum() == 0) {
+                cashPaidAmount = settlementAmount;
+            }
             if (paymentConfirmedAt == null) {
                 paymentConfirmedAt = now;
             }
@@ -206,6 +269,64 @@ public class MatchAttendance {
             case RETAINED -> PaymentSettlementStatus.RETAINED;
         };
         paymentSettlementResolvedAt = now;
+    }
+
+    public void reserveCredit(BigDecimal amount, BigDecimal paymentAmount, Instant now) {
+        if (amount == null || amount.signum() <= 0 || paymentAmount == null) {
+            throw new IllegalArgumentException("Credit reservation must be positive");
+        }
+        creditAppliedAmount = amount.min(paymentAmount);
+        creditConsumedAt = null;
+        creditReturnedAt = null;
+        cashAmountDue = paymentAmount.subtract(creditAppliedAmount);
+        cashPaidAmount = BigDecimal.ZERO;
+        paymentStatus = cashAmountDue.signum() == 0
+                ? PaymentStatus.PAID
+                : PaymentStatus.PENDING;
+        paymentReportedAt = null;
+        paymentConfirmedAt = cashAmountDue.signum() == 0 ? now : null;
+    }
+
+    public void consumeCredit(Instant now) {
+        if (!hasActiveCredit()) {
+            throw new IllegalStateException("Credit reservation is not active");
+        }
+        creditConsumedAt = now;
+    }
+
+    public void releaseCredit(Instant now) {
+        if (!hasActiveCredit()) {
+            return;
+        }
+        creditReturnedAt = now;
+        if (cashPaidAmount.signum() > 0) {
+            paymentStatus = PaymentStatus.PAID;
+        } else if (paymentStatus != PaymentStatus.REPORTED) {
+            paymentStatus = PaymentStatus.PENDING;
+        }
+    }
+
+    public void prepareCancellationSettlement(Instant now) {
+        if (paymentSettlementStatus != null) {
+            return;
+        }
+        if (paymentStatus == PaymentStatus.REPORTED) {
+            requestSettlement(PaymentSettlementStatus.REVIEW_REQUIRED, now);
+        } else if (cashPaidAmount.signum() > 0) {
+            requestSettlement(PaymentSettlementStatus.PENDING, now);
+        } else if (paymentStatus != null) {
+            paymentStatus = PaymentStatus.CANCELLED;
+        }
+    }
+
+    public void markAutomaticCreditReturn(Instant now) {
+        paymentSettlementStatus = PaymentSettlementStatus.CREDITED;
+        paymentSettlementRequestedAt = now;
+        paymentSettlementResolvedAt = now;
+    }
+
+    public BigDecimal settlementAmount() {
+        return cashPaidAmount.signum() > 0 ? cashPaidAmount : cashAmountDue;
     }
 
     private void requestSettlement(PaymentSettlementStatus status, Instant now) {

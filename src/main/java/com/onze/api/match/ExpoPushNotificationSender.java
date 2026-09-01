@@ -92,6 +92,7 @@ public class ExpoPushNotificationSender {
         String amount = match.getPaymentAmount() == null
                 ? null
                 : NumberFormat.getCurrencyInstance(PORTUGUESE_BRAZIL).format(match.getPaymentAmount());
+        String remainingAmount = remainingPaymentAmount(match, recipientUserId, amount);
 
         return switch (notificationType) {
             case MATCH_CREATED -> new NotificationCopy(
@@ -106,7 +107,7 @@ public class ExpoPushNotificationSender {
             case PAYMENT_REMINDER -> new NotificationCopy(
                     "Pagamento pendente 💳",
                     "Sua vaga em " + group.getName() + " está reservada. O pagamento de "
-                            + amount + " continua pendente.");
+                            + remainingAmount + " continua pendente.");
             case PAYMENT_REPORTED -> new NotificationCopy(
                     "Pagamento informado 💳",
                     "Há um pagamento aguardando sua validação no jogo de " + group.getName() + ".");
@@ -119,7 +120,8 @@ public class ExpoPushNotificationSender {
                     "Jogador saiu após o pagamento ⚠️",
                     "Há um acerto financeiro aguardando sua decisão no jogo de " + group.getName() + ".");
             case PAYMENT_SETTLEMENT_RESOLVED -> settlementResolvedCopy(match, group, recipientUserId);
-            case MATCH_TOMORROW -> tomorrowCopy(match, group, recipientUserId, amount);
+            case CREDIT_APPLIED -> creditAppliedCopy(match, group, recipientUserId, amount);
+            case MATCH_TOMORROW -> tomorrowCopy(match, group, recipientUserId, remainingAmount);
             case TEAM_FULL -> new NotificationCopy(
                     "Time fechado ✅",
                     group.getName() + " chegou a "
@@ -162,7 +164,7 @@ public class ExpoPushNotificationSender {
                     "O reembolso do jogo de " + group.getName() + " foi registrado.");
             case CREDITED -> new NotificationCopy(
                     "Crédito registrado ✅",
-                    "Seu pagamento virou crédito para uma próxima partida de " + group.getName() + ".");
+                    "Seu saldo será aplicado automaticamente à próxima partida de " + group.getName() + ".");
             case RETAINED -> new NotificationCopy(
                     "Pagamento mantido",
                     "O administrador registrou que o pagamento do jogo de " + group.getName()
@@ -171,6 +173,32 @@ public class ExpoPushNotificationSender {
                     "Acerto financeiro atualizado",
                     "Consulte o jogo de " + group.getName() + " para ver o resultado.");
         };
+    }
+
+    private NotificationCopy creditAppliedCopy(
+            FootballMatch match,
+            Group group,
+            UUID recipientUserId,
+            String matchAmount) {
+        MatchAttendance attendance = recipientUserId == null
+                ? null
+                : attendanceRepository.findByMatchIdAndUserId(match.getId(), recipientUserId)
+                        .orElse(null);
+        if (attendance != null && attendance.isCreditConsumed()) {
+            return new NotificationCopy(
+                    "Pagamento confirmado com crédito ✅",
+                    "Seu crédito foi aplicado ao jogo de " + group.getName() + ".");
+        }
+        String creditAmount = attendance == null
+                ? matchAmount
+                : NumberFormat.getCurrencyInstance(PORTUGUESE_BRAZIL)
+                        .format(attendance.getCreditAppliedAmount());
+        return new NotificationCopy(
+                "Crédito reservado para o próximo jogo 💳",
+                creditAmount == null
+                        ? "Seu crédito foi reservado para a próxima partida de " + group.getName() + "."
+                        : "Seu crédito foi reservado para a partida de " + group.getName()
+                                + " no valor de " + creditAmount + ". Confirme sua presença para utilizá-lo.");
     }
 
     private NotificationCopy tomorrowCopy(
@@ -197,6 +225,21 @@ public class ExpoPushNotificationSender {
         return new NotificationCopy(
                 "Jogo amanhã ⚽",
                 "Sua presença está confirmada. Prepare-se para o jogo de " + group.getName() + ".");
+    }
+
+    private String remainingPaymentAmount(
+            FootballMatch match,
+            UUID recipientUserId,
+            String fallbackAmount) {
+        if (recipientUserId == null) {
+            return fallbackAmount;
+        }
+        return attendanceRepository.findByMatchIdAndUserId(match.getId(), recipientUserId)
+                .map(attendance -> attendance.getCashAmountDue()
+                        .subtract(attendance.getCashPaidAmount())
+                        .max(java.math.BigDecimal.ZERO))
+                .map(value -> NumberFormat.getCurrencyInstance(PORTUGUESE_BRAZIL).format(value))
+                .orElse(fallbackAmount);
     }
 
     @SuppressWarnings("unchecked")

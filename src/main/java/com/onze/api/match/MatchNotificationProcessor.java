@@ -83,6 +83,14 @@ public class MatchNotificationProcessor {
                     AttendanceStatus.GOING) < match.getMaxPlayers();
         }
 
+        if (job.getNotificationType() == MatchNotificationType.CREDIT_APPLIED) {
+            return job.getRecipientUserId() == null
+                    || attendanceRepository
+                            .findByMatchIdAndUserId(match.getId(), job.getRecipientUserId())
+                            .map(attendance -> !attendance.hasActiveCredit())
+                            .orElse(true);
+        }
+
         if (job.getNotificationType() != MatchNotificationType.ATTENDANCE_REMINDER
                 && job.getNotificationType() != MatchNotificationType.PAYMENT_REMINDER
                 && job.getNotificationType() != MatchNotificationType.MATCH_TOMORROW) {
@@ -95,7 +103,7 @@ public class MatchNotificationProcessor {
                 .findByMatchIdAndUserId(match.getId(), job.getRecipientUserId())
                 .orElse(null);
         if (job.getNotificationType() == MatchNotificationType.ATTENDANCE_REMINDER) {
-            return attendance != null;
+            return attendance != null && attendance.getStatus() != AttendanceStatus.PENDING;
         }
         if (attendance == null || attendance.getStatus() != AttendanceStatus.GOING) {
             return true;
