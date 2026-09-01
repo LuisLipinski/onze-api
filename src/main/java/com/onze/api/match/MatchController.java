@@ -5,7 +5,9 @@ import java.util.List;
 import java.util.UUID;
 
 import com.onze.api.match.MatchModels.CreateMatchRequest;
+import com.onze.api.match.MatchModels.BulkResolvePaymentSettlementsRequest;
 import com.onze.api.match.MatchModels.MatchResponse;
+import com.onze.api.match.MatchModels.PlayerCreditResponse;
 import com.onze.api.match.MatchModels.ResolvePaymentSettlementRequest;
 import com.onze.api.match.MatchModels.UpdateAttendanceRequest;
 
@@ -55,6 +57,13 @@ public class MatchController {
         return matchService.listForGroup(authentication.getName(), groupId);
     }
 
+    @GetMapping("/api/groups/{groupId}/credits")
+    public List<PlayerCreditResponse> listPlayerCredits(
+            Authentication authentication,
+            @PathVariable UUID groupId) {
+        return matchService.listPlayerCredits(authentication.getName(), groupId);
+    }
+
     @GetMapping("/api/matches/{matchId}")
     public MatchResponse get(
             Authentication authentication,
@@ -100,6 +109,18 @@ public class MatchController {
                 authentication.getName(),
                 matchId,
                 playerUserId,
+                request.resolution());
+    }
+
+    @PutMapping("/api/matches/{matchId}/payment-settlements")
+    public MatchResponse resolvePaymentSettlements(
+            Authentication authentication,
+            @PathVariable UUID matchId,
+            @Valid @RequestBody BulkResolvePaymentSettlementsRequest request) {
+        return matchService.resolvePaymentSettlements(
+                authentication.getName(),
+                matchId,
+                request.playerUserIds(),
                 request.resolution());
     }
 

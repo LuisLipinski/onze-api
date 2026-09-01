@@ -29,12 +29,14 @@ class MatchLifecycleServiceTest {
         MatchAttendanceRepository attendanceRepository = mock(MatchAttendanceRepository.class);
         GroupMemberRepository groupMemberRepository = mock(GroupMemberRepository.class);
         MatchNotificationQueue notificationQueue = mock(MatchNotificationQueue.class);
+        PlayerCreditService playerCreditService = mock(PlayerCreditService.class);
         MatchLifecycleService service = new MatchLifecycleService(
                 matchRepository,
                 seriesRepository,
                 attendanceRepository,
                 groupMemberRepository,
                 notificationQueue,
+                playerCreditService,
                 clock);
 
         UUID matchId = UUID.randomUUID();
@@ -91,12 +93,14 @@ class MatchLifecycleServiceTest {
         MatchAttendanceRepository attendanceRepository = mock(MatchAttendanceRepository.class);
         GroupMemberRepository groupMemberRepository = mock(GroupMemberRepository.class);
         MatchNotificationQueue notificationQueue = mock(MatchNotificationQueue.class);
+        PlayerCreditService playerCreditService = mock(PlayerCreditService.class);
         MatchLifecycleService service = new MatchLifecycleService(
                 matchRepository,
                 seriesRepository,
                 attendanceRepository,
                 groupMemberRepository,
                 notificationQueue,
+                playerCreditService,
                 clock);
 
         UUID matchId = UUID.randomUUID();
