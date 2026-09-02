@@ -222,6 +222,8 @@ class MatchFlowIntegrationTest {
         assertThat(second.attendanceOpensAt().atZone(SAO_PAULO).toLocalTime().getHour()).isEqualTo(9);
         assertThat(second.attendanceOpensAt().atZone(SAO_PAULO).toLocalDate())
                 .isEqualTo(first.startsAt().atZone(SAO_PAULO).toLocalDate().plusDays(1));
+        assertThat(second.signupDeadline().atZone(SAO_PAULO).toLocalDateTime())
+                .isEqualTo(first.signupDeadline().atZone(SAO_PAULO).toLocalDateTime().plusWeeks(1));
 
         jdbcTemplate.update(
                 "UPDATE football_matches SET attendance_opens_at = NOW() - INTERVAL '1 minute' WHERE id = ?",
@@ -661,6 +663,113 @@ class MatchFlowIntegrationTest {
                 .andExpect(jsonPath("$[1].availableAmount").value(20.00));
     }
 
+    @Test
+    void shouldEnforceSignupAndPaymentDeadlinesAndKeepPaidPlayersLocked() throws Exception {
+        AuthResponse creator = register("deadlines-primary@example.com", "Principal Prazos");
+        AuthResponse unpaid = register("deadlines-unpaid@example.com", "Jogador Pendente");
+        AuthResponse paid = register("deadlines-paid@example.com", "Jogador Pago");
+        AuthResponse reported = register("deadlines-reported@example.com", "Pagamento Informado");
+        AuthResponse late = register("deadlines-late@example.com", "Jogador Atrasado");
+        GroupResponse group = createGroup(creator, "Pelada com prazos");
+        InviteResponse invite = createInvite(creator, group.id());
+        for (AuthResponse member : List.of(unpaid, paid, reported, late)) {
+            join(member, invite.code());
+        }
+
+        mockMvc.perform(put("/api/groups/{groupId}/details", group.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(creator))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "defaultPaymentEnabled": true,
+                                  "defaultPaymentAmount": 20.00,
+                                  "defaultPixKey": "prazos@onze.app",
+                                  "schedules": []
+                                }
+                                """))
+                .andExpect(status().isOk());
+
+        LocalDate matchDate = LocalDate.now(SAO_PAULO).plusDays(3);
+        var createResult = mockMvc.perform(post("/api/groups/{groupId}/matches", group.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(creator))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(paidMatchWithDeadlinesBody(matchDate, 10)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.signupOpen").value(true))
+                .andExpect(jsonPath("$.paymentOpen").value(true))
+                .andExpect(jsonPath("$.signupDeadline").isNotEmpty())
+                .andExpect(jsonPath("$.paymentDeadline").isNotEmpty())
+                .andReturn();
+        MatchResponse match = jsonMapper.readValue(
+                createResult.getResponse().getContentAsString(),
+                MatchResponse.class);
+
+        for (AuthResponse member : List.of(unpaid, paid, reported)) {
+            confirmAttendance(match.id(), member, "GOING")
+                    .andExpect(status().isOk());
+        }
+
+        mockMvc.perform(put("/api/matches/{matchId}/payment/reported", match.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(paid)))
+                .andExpect(status().isOk());
+        mockMvc.perform(put(
+                        "/api/matches/{matchId}/payments/{playerUserId}/confirm",
+                        match.id(),
+                        paid.user().id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(creator)))
+                .andExpect(status().isOk());
+        mockMvc.perform(put("/api/matches/{matchId}/payment/reported", match.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(reported)))
+                .andExpect(status().isOk());
+
+        jdbcTemplate.update(
+                """
+                        UPDATE football_matches
+                        SET signup_deadline = NOW() - INTERVAL '2 minutes',
+                            payment_deadline = NOW() - INTERVAL '1 minute'
+                        WHERE id = ?
+                        """,
+                match.id());
+
+        confirmAttendance(match.id(), late, "GOING")
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("SIGNUP_DEADLINE_PASSED"));
+
+        mockMvc.perform(get("/api/matches/{matchId}", match.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(unpaid)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.signupOpen").value(false))
+                .andExpect(jsonPath("$.paymentOpen").value(false))
+                .andExpect(jsonPath("$.myAttendance").value("NOT_GOING"))
+                .andExpect(jsonPath("$.myPaymentStatus").value("CANCELLED"))
+                .andExpect(jsonPath("$.myPaymentDeadlineRemovedAt").isNotEmpty())
+                .andExpect(jsonPath("$.goingCount").value(2));
+
+        confirmAttendance(match.id(), paid, "NOT_GOING")
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("PAID_ATTENDANCE_LOCKED"));
+        confirmAttendance(match.id(), reported, "NOT_GOING")
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("PAID_ATTENDANCE_LOCKED"));
+
+        mockMvc.perform(put(
+                        "/api/matches/{matchId}/payments/{playerUserId}/confirm",
+                        match.id(),
+                        reported.user().id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(creator)))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/api/matches/{matchId}", match.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(reported)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.myAttendance").value("GOING"))
+                .andExpect(jsonPath("$.myPaymentStatus").value("PAID"))
+                .andExpect(jsonPath("$.canWithdraw").value(false));
+
+        assertThat(notificationJobRepository.findAll())
+                .extracting(MatchNotificationJob::getNotificationType)
+                .contains(MatchNotificationType.PAYMENT_DEADLINE_REMOVAL);
+    }
+
     private org.springframework.test.web.servlet.ResultActions confirmAttendance(
             java.util.UUID matchId,
             AuthResponse user,
@@ -708,6 +817,25 @@ class MatchFlowIntegrationTest {
                   "recurrence": "NONE"
                 }
                 """.formatted(date, maxPlayers);
+    }
+
+    private String paidMatchWithDeadlinesBody(LocalDate date, int maxPlayers) {
+        return """
+                {
+                  "date": "%s",
+                  "startTime": "20:30:00",
+                  "timeZone": "America/Sao_Paulo",
+                  "venue": "Arena Onze",
+                  "maxPlayers": %d,
+                  "signupDeadlineDate": "%s",
+                  "signupDeadlineTime": "18:00:00",
+                  "paymentDeadlineDate": "%s",
+                  "paymentDeadlineTime": "18:00:00",
+                  "paymentRequired": true,
+                  "notes": "Pagamento via PIX",
+                  "recurrence": "NONE"
+                }
+                """.formatted(date, maxPlayers, date.minusDays(2), date.minusDays(1));
     }
 
     private void join(AuthResponse user, String code) throws Exception {

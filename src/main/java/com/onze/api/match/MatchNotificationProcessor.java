@@ -103,12 +103,14 @@ public class MatchNotificationProcessor {
                 .findByMatchIdAndUserId(match.getId(), job.getRecipientUserId())
                 .orElse(null);
         if (job.getNotificationType() == MatchNotificationType.ATTENDANCE_REMINDER) {
-            return attendance != null && attendance.getStatus() != AttendanceStatus.PENDING;
+            return !match.isSignupOpen(now)
+                    || (attendance != null && attendance.getStatus() != AttendanceStatus.PENDING);
         }
         if (attendance == null || attendance.getStatus() != AttendanceStatus.GOING) {
             return true;
         }
         return job.getNotificationType() == MatchNotificationType.PAYMENT_REMINDER
-                && attendance.getPaymentStatus() != PaymentStatus.PENDING;
+                && (!match.isPaymentOpen(now)
+                        || attendance.getPaymentStatus() != PaymentStatus.PENDING);
     }
 }

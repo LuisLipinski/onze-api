@@ -108,6 +108,10 @@ public class ExpoPushNotificationSender {
                     "Pagamento pendente 💳",
                     "Sua vaga em " + group.getName() + " está reservada. O pagamento de "
                             + remainingAmount + " continua pendente.");
+            case PAYMENT_DEADLINE_REMOVAL -> new NotificationCopy(
+                    "Vaga liberada por falta de pagamento",
+                    "O prazo de pagamento do jogo de " + group.getName()
+                            + " terminou e seu nome foi removido da lista.");
             case PAYMENT_REPORTED -> new NotificationCopy(
                     "Pagamento informado 💳",
                     "Há um pagamento aguardando sua validação no jogo de " + group.getName() + ".");

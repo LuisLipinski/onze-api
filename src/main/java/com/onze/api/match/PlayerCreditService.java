@@ -59,6 +59,9 @@ public class PlayerCreditService {
                         MatchStatus.SCHEDULED,
                         now);
         for (FootballMatch candidate : upcoming) {
+            if (!candidate.isSignupOpen(now)) {
+                continue;
+            }
             MatchAttendance attendance = attendanceRepository
                     .findByMatchIdAndUserId(candidate.getId(), userId)
                     .orElse(null);
@@ -70,6 +73,9 @@ public class PlayerCreditService {
         }
 
         for (FootballMatch candidate : upcoming) {
+            if (!candidate.isSignupOpen(now)) {
+                continue;
+            }
             MatchAttendance attendance = attendanceRepository
                     .findByMatchIdAndUserId(candidate.getId(), userId)
                     .orElse(null);

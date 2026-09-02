@@ -61,6 +61,7 @@ public class MatchController {
     public List<PlayerCreditResponse> listPlayerCredits(
             Authentication authentication,
             @PathVariable UUID groupId) {
+        lifecycleService.openDueAttendances();
         return matchService.listPlayerCredits(authentication.getName(), groupId);
     }
 
@@ -85,6 +86,7 @@ public class MatchController {
     public MatchResponse reportPayment(
             Authentication authentication,
             @PathVariable UUID matchId) {
+        lifecycleService.openDueAttendances();
         return matchService.reportPayment(authentication.getName(), matchId);
     }
 
@@ -93,6 +95,7 @@ public class MatchController {
             Authentication authentication,
             @PathVariable UUID matchId,
             @PathVariable UUID playerUserId) {
+        lifecycleService.openDueAttendances();
         return matchService.confirmPayment(
                 authentication.getName(),
                 matchId,

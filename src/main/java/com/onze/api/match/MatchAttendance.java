@@ -73,6 +73,9 @@ public class MatchAttendance {
     @Column(name = "credit_returned_at")
     private Instant creditReturnedAt;
 
+    @Column(name = "payment_deadline_removed_at")
+    private Instant paymentDeadlineRemovedAt;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -174,6 +177,10 @@ public class MatchAttendance {
         return creditReturnedAt;
     }
 
+    public Instant getPaymentDeadlineRemovedAt() {
+        return paymentDeadlineRemovedAt;
+    }
+
     public boolean hasActiveCredit() {
         return creditAppliedAmount.signum() > 0 && creditReturnedAt == null;
     }
@@ -185,6 +192,9 @@ public class MatchAttendance {
     public void changeStatus(AttendanceStatus status, BigDecimal paymentAmount, Instant now) {
         AttendanceStatus previousStatus = this.status;
         this.status = status;
+        if (status == AttendanceStatus.GOING) {
+            paymentDeadlineRemovedAt = null;
+        }
         if (paymentAmount == null || previousStatus == status) {
             return;
         }
@@ -222,6 +232,21 @@ public class MatchAttendance {
             paymentSettlementRequestedAt = null;
             paymentSettlementResolvedAt = null;
         }
+    }
+
+    public void expireUnconfirmedCredit(BigDecimal paymentAmount, Instant now) {
+        if (status != AttendanceStatus.PENDING) {
+            return;
+        }
+        changeStatus(AttendanceStatus.NOT_GOING, paymentAmount, now);
+    }
+
+    public void removeForMissedPayment(BigDecimal paymentAmount, Instant now) {
+        if (status != AttendanceStatus.GOING || paymentStatus != PaymentStatus.PENDING) {
+            return;
+        }
+        changeStatus(AttendanceStatus.NOT_GOING, paymentAmount, now);
+        paymentDeadlineRemovedAt = now;
     }
 
     public void reportPayment(Instant now) {

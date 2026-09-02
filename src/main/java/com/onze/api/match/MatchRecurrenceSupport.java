@@ -21,6 +21,16 @@ final class MatchRecurrenceSupport {
                 .atTime(WEEKLY_ATTENDANCE_OPENING_TIME)
                 .atZone(zoneId)
                 .toInstant();
+        Instant nextSignupDeadline = previous.getSignupDeadline()
+                .atZone(zoneId)
+                .plusWeeks(1)
+                .toInstant();
+        Instant nextPaymentDeadline = previous.getPaymentDeadline() == null
+                ? null
+                : previous.getPaymentDeadline()
+                        .atZone(zoneId)
+                        .plusWeeks(1)
+                        .toInstant();
 
         return new FootballMatch(
                 series.getGroupId(),
@@ -35,6 +45,8 @@ final class MatchRecurrenceSupport {
                 series.getNotes(),
                 nextAttendanceOpening,
                 null,
+                nextSignupDeadline,
+                nextPaymentDeadline,
                 series.getCreatedBy());
     }
 }

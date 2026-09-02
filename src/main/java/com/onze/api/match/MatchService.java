@@ -79,6 +79,12 @@ public class MatchService {
         String venue = request.venue().trim();
         String notes = normalizeOptional(request.notes());
         PaymentConfiguration payment = resolvePaymentConfiguration(group, request);
+        DeadlineConfiguration deadlines = resolveDeadlines(
+                request,
+                zoneId,
+                startsAt,
+                payment.amount() != null,
+                now);
         FootballMatch match;
 
         if (request.recurrence() == MatchRecurrence.WEEKLY) {
@@ -104,6 +110,8 @@ public class MatchService {
                     notes,
                     now,
                     now,
+                    deadlines.signupDeadline(),
+                    deadlines.paymentDeadline(),
                     userId));
             matchRepository.save(MatchRecurrenceSupport.nextOccurrence(match, series));
         } else {
@@ -120,6 +128,8 @@ public class MatchService {
                     notes,
                     now,
                     now,
+                    deadlines.signupDeadline(),
+                    deadlines.paymentDeadline(),
                     userId));
         }
 
@@ -257,6 +267,12 @@ public class MatchService {
         boolean withdrawing = requestedStatus == AttendanceStatus.NOT_GOING
                 && attendance != null
                 && attendance.getStatus() != AttendanceStatus.NOT_GOING;
+        if (joining && !match.isSignupOpen(now)) {
+            throw new SignupDeadlinePassedException();
+        }
+        if (withdrawing && !canWithdraw(match, attendance, now)) {
+            throw new PaidAttendanceLockedException();
+        }
         long goingBefore = attendanceRepository.countByMatchIdAndStatus(matchId, AttendanceStatus.GOING);
         if (joining && goingBefore >= match.getMaxPlayers()) {
             throw new MatchFullException();
@@ -320,6 +336,9 @@ public class MatchService {
         Instant now = clock.instant();
         requireOpenMatch(match, now);
         requirePayment(match);
+        if (!match.isPaymentOpen(now)) {
+            throw new PaymentDeadlinePassedException();
+        }
 
         MatchAttendance attendance = attendanceRepository.findByMatchIdAndUserId(matchId, userId)
                 .orElseThrow(PaymentRequiresAttendanceException::new);
@@ -574,6 +593,8 @@ public class MatchService {
         BigDecimal myCreditAppliedAmount = null;
         BigDecimal myRemainingPaymentAmount = null;
         CreditAllocationStatus myCreditAllocationStatus = null;
+        Instant myPaymentDeadlineRemovedAt = null;
+        MatchAttendance currentUserAttendance = null;
         int goingCount = 0;
         int notGoingCount = 0;
         boolean canManage = membership.hasPermission(GroupAdminPermission.SCHEDULE_GAMES);
@@ -598,6 +619,8 @@ public class MatchService {
                 myCreditAppliedAmount = attendance.getCreditAppliedAmount();
                 myRemainingPaymentAmount = remainingPaymentAmount;
                 myCreditAllocationStatus = creditAllocationStatus;
+                myPaymentDeadlineRemovedAt = attendance.getPaymentDeadlineRemovedAt();
+                currentUserAttendance = attendance;
             }
             boolean financialDetailsVisible = currentUser || canManage;
             attendances.add(new AttendanceResponse(
@@ -609,6 +632,7 @@ public class MatchService {
                     financialDetailsVisible ? attendance.getCreditAppliedAmount() : null,
                     financialDetailsVisible ? remainingPaymentAmount : null,
                     financialDetailsVisible ? creditAllocationStatus : null,
+                    financialDetailsVisible ? attendance.getPaymentDeadlineRemovedAt() : null,
                     currentUser));
         }
 
@@ -634,12 +658,18 @@ public class MatchService {
                 match.getStatus(),
                 match.getAttendanceOpensAt(),
                 match.isAttendanceOpen(now),
+                match.getSignupDeadline(),
+                match.isSignupOpen(now),
+                match.getPaymentDeadline(),
+                match.isPaymentOpen(now),
+                canWithdraw(match, currentUserAttendance, now),
                 myAttendance,
                 myPaymentStatus,
                 myPaymentSettlementStatus,
                 myCreditAppliedAmount,
                 myRemainingPaymentAmount,
                 myCreditAllocationStatus,
+                myPaymentDeadlineRemovedAt,
                 goingCount,
                 notGoingCount,
                 List.copyOf(attendances),
@@ -664,6 +694,20 @@ public class MatchService {
     private boolean isSettlementOpen(MatchAttendance attendance) {
         return attendance.getPaymentSettlementStatus() == PaymentSettlementStatus.REVIEW_REQUIRED
                 || attendance.getPaymentSettlementStatus() == PaymentSettlementStatus.PENDING;
+    }
+
+    private boolean canWithdraw(
+            FootballMatch match,
+            MatchAttendance attendance,
+            Instant now) {
+        if (attendance == null
+                || attendance.getStatus() != AttendanceStatus.GOING
+                || !match.isAttendanceOpen(now)) {
+            return false;
+        }
+        return !match.isPaymentRequired()
+                || match.getPaymentDeadline() == null
+                || !now.isAfter(match.getPaymentDeadline());
     }
 
     private void enqueueForManagers(
@@ -706,6 +750,69 @@ public class MatchService {
             throw new InvalidPaymentConfigurationException();
         }
         return new PaymentConfiguration(amount, pixKey);
+    }
+
+    private DeadlineConfiguration resolveDeadlines(
+            CreateMatchRequest request,
+            ZoneId zoneId,
+            Instant startsAt,
+            boolean paymentRequired,
+            Instant now) {
+        boolean signupDateProvided = request.signupDeadlineDate() != null;
+        boolean signupTimeProvided = request.signupDeadlineTime() != null;
+        if (signupDateProvided != signupTimeProvided) {
+            throw new InvalidMatchDeadlinesException();
+        }
+
+        Instant signupDeadline = signupDateProvided
+                ? request.signupDeadlineDate()
+                        .atTime(request.signupDeadlineTime())
+                        .atZone(zoneId)
+                        .toInstant()
+                : startsAt;
+        if (!signupDeadline.isAfter(now)
+                || (signupDateProvided && !signupDeadline.isBefore(startsAt))) {
+            throw new InvalidMatchDeadlinesException();
+        }
+
+        boolean paymentDateProvided = request.paymentDeadlineDate() != null;
+        boolean paymentTimeProvided = request.paymentDeadlineTime() != null;
+        if (paymentDateProvided != paymentTimeProvided
+                || (!paymentRequired && paymentDateProvided)) {
+            throw new InvalidMatchDeadlinesException();
+        }
+
+        Instant paymentDeadline = null;
+        if (paymentRequired) {
+            paymentDeadline = paymentDateProvided
+                    ? request.paymentDeadlineDate()
+                            .atTime(request.paymentDeadlineTime())
+                            .atZone(zoneId)
+                            .toInstant()
+                    : startsAt;
+            if (!paymentDeadline.isAfter(now)
+                    || paymentDeadline.isBefore(signupDeadline)
+                    || (paymentDateProvided && !paymentDeadline.isBefore(startsAt))) {
+                throw new InvalidMatchDeadlinesException();
+            }
+        }
+
+        if (request.recurrence() == MatchRecurrence.WEEKLY) {
+            Instant nextAttendanceOpening = startsAt.atZone(zoneId)
+                    .toLocalDate()
+                    .plusDays(1)
+                    .atTime(MatchRecurrenceSupport.WEEKLY_ATTENDANCE_OPENING_TIME)
+                    .atZone(zoneId)
+                    .toInstant();
+            Instant nextSignupDeadline = signupDeadline.atZone(zoneId)
+                    .plusWeeks(1)
+                    .toInstant();
+            if (!nextSignupDeadline.isAfter(nextAttendanceOpening)) {
+                throw new InvalidMatchDeadlinesException();
+            }
+        }
+
+        return new DeadlineConfiguration(signupDeadline, paymentDeadline);
     }
 
     private void requireOpenMatch(FootballMatch match, Instant now) {
@@ -772,6 +879,9 @@ public class MatchService {
         }
     }
 
+    private record DeadlineConfiguration(Instant signupDeadline, Instant paymentDeadline) {
+    }
+
     public static final class MatchNotFoundException extends RuntimeException {
         private static final long serialVersionUID = 1L;
     }
@@ -792,7 +902,23 @@ public class MatchService {
         private static final long serialVersionUID = 1L;
     }
 
+    public static final class InvalidMatchDeadlinesException extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+    }
+
     public static final class AttendanceClosedException extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+    }
+
+    public static final class SignupDeadlinePassedException extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+    }
+
+    public static final class PaymentDeadlinePassedException extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+    }
+
+    public static final class PaidAttendanceLockedException extends RuntimeException {
         private static final long serialVersionUID = 1L;
     }
 
