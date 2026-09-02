@@ -14,9 +14,13 @@ import com.onze.api.match.MatchService.MatchNotFoundException;
 import com.onze.api.match.MatchService.MatchSeriesNotFoundException;
 import com.onze.api.match.MatchService.InvalidPaymentConfigurationException;
 import com.onze.api.match.MatchService.InvalidPaymentSettlementResolutionException;
+import com.onze.api.match.MatchService.InvalidMatchDeadlinesException;
+import com.onze.api.match.MatchService.PaidAttendanceLockedException;
+import com.onze.api.match.MatchService.PaymentDeadlinePassedException;
 import com.onze.api.match.MatchService.PaymentNotRequiredException;
 import com.onze.api.match.MatchService.PaymentRequiresAttendanceException;
 import com.onze.api.match.MatchService.PaymentSettlementNotOpenException;
+import com.onze.api.match.MatchService.SignupDeadlinePassedException;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -76,12 +80,44 @@ public class MatchExceptionHandler {
                         "Informe um valor e uma chave PIX válidos para esta partida."));
     }
 
+    @ExceptionHandler(InvalidMatchDeadlinesException.class)
+    ResponseEntity<ErrorResponse> invalidMatchDeadlines() {
+        return ResponseEntity.badRequest()
+                .body(new ErrorResponse(
+                        "INVALID_MATCH_DEADLINES",
+                        "Defina prazos futuros, na ordem correta e antes do início do jogo."));
+    }
+
     @ExceptionHandler(AttendanceClosedException.class)
     ResponseEntity<ErrorResponse> attendanceClosed() {
         return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(new ErrorResponse(
                         "ATTENDANCE_CLOSED",
                         "A confirmação de presença ainda não abriu ou este jogo já começou."));
+    }
+
+    @ExceptionHandler(SignupDeadlinePassedException.class)
+    ResponseEntity<ErrorResponse> signupDeadlinePassed() {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(new ErrorResponse(
+                        "SIGNUP_DEADLINE_PASSED",
+                        "O prazo para entrar na lista terminou."));
+    }
+
+    @ExceptionHandler(PaymentDeadlinePassedException.class)
+    ResponseEntity<ErrorResponse> paymentDeadlinePassed() {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(new ErrorResponse(
+                        "PAYMENT_DEADLINE_PASSED",
+                        "O prazo para informar o pagamento terminou."));
+    }
+
+    @ExceptionHandler(PaidAttendanceLockedException.class)
+    ResponseEntity<ErrorResponse> paidAttendanceLocked() {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(new ErrorResponse(
+                        "PAID_ATTENDANCE_LOCKED",
+                        "Após o prazo de pagamento, uma presença paga não pode ser retirada da lista."));
     }
 
     @ExceptionHandler(MatchCancelledException.class)

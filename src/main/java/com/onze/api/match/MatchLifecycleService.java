@@ -51,6 +51,7 @@ public class MatchLifecycleService {
     @Transactional
     public int openDueAttendances() {
         Instant now = clock.instant();
+        enforceExpiredDeadlines(now);
         releaseExpiredCreditReservations(now);
         int opened = 0;
 
@@ -95,6 +96,70 @@ public class MatchLifecycleService {
         return opened;
     }
 
+    private void enforceExpiredDeadlines(Instant now) {
+        for (FootballMatch candidate : matchRepository
+                .findAllByStatusAndStartsAtAfterOrderByStartsAtAsc(
+                        MatchStatus.SCHEDULED,
+                        now)) {
+            boolean signupExpired = candidate.getSignupDeadline() != null
+                    && now.isAfter(candidate.getSignupDeadline());
+            boolean paymentExpired = candidate.getPaymentDeadline() != null
+                    && now.isAfter(candidate.getPaymentDeadline());
+            if (!signupExpired && !paymentExpired) {
+                continue;
+            }
+
+            FootballMatch match = matchRepository.findByIdForUpdate(candidate.getId()).orElse(null);
+            if (match == null || match.getStatus() != MatchStatus.SCHEDULED) {
+                continue;
+            }
+
+            List<UUID> releasedCreditUsers = new java.util.ArrayList<>();
+            for (MatchAttendance attendance : attendanceRepository
+                    .findAllByMatchIdOrderByCreatedAtAsc(match.getId())) {
+                if (signupExpired && attendance.getStatus() == AttendanceStatus.PENDING) {
+                    boolean creditReleased = playerCreditService.releaseReservation(
+                            match.getGroupId(),
+                            attendance,
+                            now);
+                    attendance.expireUnconfirmedCredit(match.getPaymentAmount(), now);
+                    if (creditReleased) {
+                        attendance.markAutomaticCreditReturn(now);
+                        releasedCreditUsers.add(attendance.getUserId());
+                    }
+                    continue;
+                }
+
+                if (!paymentExpired
+                        || attendance.getStatus() != AttendanceStatus.GOING
+                        || attendance.getPaymentStatus() != PaymentStatus.PENDING) {
+                    continue;
+                }
+
+                boolean creditReleased = playerCreditService.releaseReservation(
+                        match.getGroupId(),
+                        attendance,
+                        now);
+                attendance.removeForMissedPayment(match.getPaymentAmount(), now);
+                if (creditReleased) {
+                    attendance.markAutomaticCreditReturn(now);
+                    releasedCreditUsers.add(attendance.getUserId());
+                }
+                notificationQueue.enqueue(
+                        match.getId(),
+                        attendance.getUserId(),
+                        MatchNotificationType.PAYMENT_DEADLINE_REMOVAL,
+                        "match:" + match.getId() + ":payment-deadline-removal:"
+                                + attendance.getUserId(),
+                        now);
+            }
+
+            for (UUID userId : releasedCreditUsers.stream().distinct().toList()) {
+                playerCreditService.reserveForNextMatch(match.getGroupId(), userId, now);
+            }
+        }
+    }
+
     @Transactional
     public int scheduleDueAttendanceReminders() {
         Instant now = clock.instant();
@@ -123,6 +188,9 @@ public class MatchLifecycleService {
                     .findAllByGroupIdOrderByCreatedAtAsc(match.getGroupId())) {
                 MatchAttendance attendance = attendanceByUser.get(member.getUserId());
                 if (attendance == null || attendance.getStatus() == AttendanceStatus.PENDING) {
+                    if (match.getSignupDeadline() != null && !match.isSignupOpen(now)) {
+                        continue;
+                    }
                     String key = "match:" + match.getId()
                             + ":attendance-reminder:"
                             + member.getUserId()
@@ -155,6 +223,7 @@ public class MatchLifecycleService {
                         scheduled++;
                     }
                 } else if (attendance.getPaymentStatus() == PaymentStatus.PENDING
+                        && (match.getPaymentDeadline() == null || match.isPaymentOpen(now))
                         && today.isAfter(attendance.getUpdatedAt().atZone(zoneId).toLocalDate())) {
                     if (notificationQueue.enqueue(
                             match.getId(),

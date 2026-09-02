@@ -68,6 +68,12 @@ public class FootballMatch {
     @Column(name = "attendance_opened_at")
     private Instant attendanceOpenedAt;
 
+    @Column(name = "signup_deadline", nullable = false)
+    private Instant signupDeadline;
+
+    @Column(name = "payment_deadline")
+    private Instant paymentDeadline;
+
     @Column(name = "created_by", nullable = false)
     private UUID createdBy;
 
@@ -93,6 +99,8 @@ public class FootballMatch {
             String notes,
             Instant attendanceOpensAt,
             Instant attendanceOpenedAt,
+            Instant signupDeadline,
+            Instant paymentDeadline,
             UUID createdBy) {
         this.groupId = groupId;
         this.seriesId = seriesId;
@@ -107,6 +115,8 @@ public class FootballMatch {
         this.status = MatchStatus.SCHEDULED;
         this.attendanceOpensAt = attendanceOpensAt;
         this.attendanceOpenedAt = attendanceOpenedAt;
+        this.signupDeadline = signupDeadline;
+        this.paymentDeadline = paymentDeadline;
         this.createdBy = createdBy;
     }
 
@@ -182,6 +192,14 @@ public class FootballMatch {
         return attendanceOpenedAt;
     }
 
+    public Instant getSignupDeadline() {
+        return signupDeadline;
+    }
+
+    public Instant getPaymentDeadline() {
+        return paymentDeadline;
+    }
+
     public UUID getCreatedBy() {
         return createdBy;
     }
@@ -194,6 +212,19 @@ public class FootballMatch {
         return status == MatchStatus.SCHEDULED
                 && attendanceOpenedAt != null
                 && startsAt.isAfter(now);
+    }
+
+    public boolean isSignupOpen(Instant now) {
+        return isAttendanceOpen(now)
+                && signupDeadline != null
+                && !now.isAfter(signupDeadline);
+    }
+
+    public boolean isPaymentOpen(Instant now) {
+        return isPaymentRequired()
+                && isAttendanceOpen(now)
+                && paymentDeadline != null
+                && !now.isAfter(paymentDeadline);
     }
 
     public void openAttendance(Instant openedAt) {

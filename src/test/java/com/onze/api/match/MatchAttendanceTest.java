@@ -130,6 +130,18 @@ class MatchAttendanceTest {
         assertThat(attendance.settlementAmount()).isEqualByComparingTo("5.00");
     }
 
+    @Test
+    void shouldRemoveUnpaidPlayerWhenPaymentDeadlineExpires() {
+        MatchAttendance attendance = paidAttendance();
+
+        attendance.removeForMissedPayment(PAYMENT_AMOUNT, NOW);
+
+        assertThat(attendance.getStatus()).isEqualTo(AttendanceStatus.NOT_GOING);
+        assertThat(attendance.getPaymentStatus()).isEqualTo(PaymentStatus.CANCELLED);
+        assertThat(attendance.getPaymentDeadlineRemovedAt()).isEqualTo(NOW);
+        assertThat(attendance.getPaymentSettlementStatus()).isNull();
+    }
+
     private MatchAttendance paidAttendance() {
         return new MatchAttendance(
                 UUID.randomUUID(),
