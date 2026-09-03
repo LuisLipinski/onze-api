@@ -5,6 +5,7 @@ import com.onze.api.group.GroupService.GroupNotFoundException;
 import com.onze.api.group.GroupService.GroupUserNotFoundException;
 import com.onze.api.match.MatchModels.ErrorResponse;
 import com.onze.api.match.MatchService.AttendanceClosedException;
+import com.onze.api.match.MatchService.AdministratorReentryRequiredException;
 import com.onze.api.match.MatchService.InvalidTimeZoneException;
 import com.onze.api.match.MatchService.MatchAlreadyStartedException;
 import com.onze.api.match.MatchService.MatchCancelledException;
@@ -15,12 +16,14 @@ import com.onze.api.match.MatchService.MatchSeriesNotFoundException;
 import com.onze.api.match.MatchService.InvalidPaymentConfigurationException;
 import com.onze.api.match.MatchService.InvalidPaymentSettlementResolutionException;
 import com.onze.api.match.MatchService.InvalidMatchDeadlinesException;
-import com.onze.api.match.MatchService.PaidAttendanceLockedException;
 import com.onze.api.match.MatchService.PaymentDeadlinePassedException;
 import com.onze.api.match.MatchService.PaymentNotRequiredException;
 import com.onze.api.match.MatchService.PaymentRequiresAttendanceException;
 import com.onze.api.match.MatchService.PaymentSettlementNotOpenException;
 import com.onze.api.match.MatchService.SignupDeadlinePassedException;
+import com.onze.api.match.MatchService.ReplacementPlayerUnavailableException;
+import com.onze.api.match.MatchService.ReplacementRequiredForSettlementException;
+import com.onze.api.match.MatchService.ReplacementVacancyNotOpenException;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -112,12 +115,36 @@ public class MatchExceptionHandler {
                         "O prazo para informar o pagamento terminou."));
     }
 
-    @ExceptionHandler(PaidAttendanceLockedException.class)
-    ResponseEntity<ErrorResponse> paidAttendanceLocked() {
+    @ExceptionHandler(AdministratorReentryRequiredException.class)
+    ResponseEntity<ErrorResponse> administratorReentryRequired() {
         return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(new ErrorResponse(
-                        "PAID_ATTENDANCE_LOCKED",
-                        "Após o prazo de pagamento, uma presença paga não pode ser retirada da lista."));
+                        "ADMINISTRATOR_REENTRY_REQUIRED",
+                        "Depois de sair com pagamento registrado, somente um administrador pode colocar você novamente na lista."));
+    }
+
+    @ExceptionHandler(ReplacementVacancyNotOpenException.class)
+    ResponseEntity<ErrorResponse> replacementVacancyNotOpen() {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(new ErrorResponse(
+                        "REPLACEMENT_VACANCY_NOT_OPEN",
+                        "Esta saída não possui uma vaga aguardando reposição."));
+    }
+
+    @ExceptionHandler(ReplacementPlayerUnavailableException.class)
+    ResponseEntity<ErrorResponse> replacementPlayerUnavailable() {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(new ErrorResponse(
+                        "REPLACEMENT_PLAYER_UNAVAILABLE",
+                        "Escolha um membro que ainda não esteja confirmado nem aguardando outro acerto nesta partida."));
+    }
+
+    @ExceptionHandler(ReplacementRequiredForSettlementException.class)
+    ResponseEntity<ErrorResponse> replacementRequiredForSettlement() {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(new ErrorResponse(
+                        "REPLACEMENT_REQUIRED_FOR_SETTLEMENT",
+                        "O acerto ficará bloqueado até um administrador preencher a vaga deste jogador."));
     }
 
     @ExceptionHandler(MatchCancelledException.class)

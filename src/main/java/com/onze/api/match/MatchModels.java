@@ -52,6 +52,10 @@ public final class MatchModels {
             @NotNull PaymentSettlementResolution resolution) {
     }
 
+    public record AddMatchReplacementRequest(
+            @NotNull UUID replacementUserId) {
+    }
+
     public record AttendanceResponse(
             UUID userId,
             String displayName,
@@ -62,6 +66,13 @@ public final class MatchModels {
             BigDecimal remainingPaymentAmount,
             CreditAllocationStatus creditAllocationStatus,
             Instant paymentDeadlineRemovedAt,
+            Instant replacementRequiredAt,
+            UUID replacementUserId,
+            String replacementDisplayName,
+            Instant replacementFilledAt,
+            Instant addedAsReplacementAt,
+            UUID replacementForUserId,
+            boolean settlementAvailable,
             boolean currentUser) {
     }
 
@@ -98,6 +109,8 @@ public final class MatchModels {
             boolean signupOpen,
             Instant paymentDeadline,
             boolean paymentOpen,
+            boolean canReportPayment,
+            boolean canJoin,
             boolean canWithdraw,
             AttendanceStatus myAttendance,
             PaymentStatus myPaymentStatus,

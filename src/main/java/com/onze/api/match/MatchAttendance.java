@@ -76,6 +76,21 @@ public class MatchAttendance {
     @Column(name = "payment_deadline_removed_at")
     private Instant paymentDeadlineRemovedAt;
 
+    @Column(name = "replacement_required_at")
+    private Instant replacementRequiredAt;
+
+    @Column(name = "replacement_user_id")
+    private UUID replacementUserId;
+
+    @Column(name = "replacement_filled_at")
+    private Instant replacementFilledAt;
+
+    @Column(name = "added_as_replacement_at")
+    private Instant addedAsReplacementAt;
+
+    @Column(name = "replacement_for_user_id")
+    private UUID replacementForUserId;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -181,6 +196,38 @@ public class MatchAttendance {
         return paymentDeadlineRemovedAt;
     }
 
+    public Instant getReplacementRequiredAt() {
+        return replacementRequiredAt;
+    }
+
+    public UUID getReplacementUserId() {
+        return replacementUserId;
+    }
+
+    public Instant getReplacementFilledAt() {
+        return replacementFilledAt;
+    }
+
+    public Instant getAddedAsReplacementAt() {
+        return addedAsReplacementAt;
+    }
+
+    public UUID getReplacementForUserId() {
+        return replacementForUserId;
+    }
+
+    public boolean isAwaitingReplacement() {
+        return replacementRequiredAt != null && replacementFilledAt == null;
+    }
+
+    public boolean requiresAdministratorToRejoin() {
+        return replacementRequiredAt != null;
+    }
+
+    public boolean wasAddedAsReplacement() {
+        return addedAsReplacementAt != null;
+    }
+
     public boolean hasActiveCredit() {
         return creditAppliedAmount.signum() > 0 && creditReturnedAt == null;
     }
@@ -204,7 +251,8 @@ public class MatchAttendance {
                 paymentStatus = PaymentStatus.CANCELLED;
             } else if (paymentStatus == PaymentStatus.REPORTED) {
                 requestSettlement(PaymentSettlementStatus.REVIEW_REQUIRED, now);
-            } else if (paymentStatus == PaymentStatus.PAID && cashPaidAmount.signum() > 0) {
+            } else if (paymentStatus == PaymentStatus.PAID
+                    && (cashPaidAmount.signum() > 0 || isCreditConsumed())) {
                 requestSettlement(PaymentSettlementStatus.PENDING, now);
             } else if (paymentStatus == PaymentStatus.PAID) {
                 paymentStatus = PaymentStatus.CANCELLED;
@@ -348,6 +396,40 @@ public class MatchAttendance {
         paymentSettlementStatus = PaymentSettlementStatus.CREDITED;
         paymentSettlementRequestedAt = now;
         paymentSettlementResolvedAt = now;
+    }
+
+    public void requireReplacement(Instant now) {
+        replacementRequiredAt = now;
+        replacementUserId = null;
+        replacementFilledAt = null;
+    }
+
+    public void fillReplacement(UUID userId, Instant now) {
+        if (!isAwaitingReplacement()) {
+            throw new IllegalStateException("Attendance is not awaiting a replacement");
+        }
+        replacementUserId = userId;
+        replacementFilledAt = now;
+    }
+
+    public void markAddedAsReplacement(UUID departedUserId, Instant now) {
+        addedAsReplacementAt = now;
+        replacementForUserId = departedUserId;
+    }
+
+    public void reinstateByAdministrator(BigDecimal paymentAmount, Instant now) {
+        changeStatus(AttendanceStatus.GOING, paymentAmount, now);
+        replacementRequiredAt = null;
+        replacementUserId = null;
+        replacementFilledAt = null;
+        addedAsReplacementAt = now;
+        replacementForUserId = null;
+    }
+
+    public void closeRetainedCredit(Instant now) {
+        if (hasActiveCredit()) {
+            creditReturnedAt = now;
+        }
     }
 
     public BigDecimal settlementAmount() {

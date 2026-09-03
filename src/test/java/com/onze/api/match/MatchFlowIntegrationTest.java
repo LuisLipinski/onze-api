@@ -268,9 +268,11 @@ class MatchFlowIntegrationTest {
     void shouldTrackPaymentsNotifyFullTeamAndQueueCancellation() throws Exception {
         AuthResponse creator = register("payment-primary@example.com", "Principal Pagamentos");
         AuthResponse member = register("payment-member@example.com", "Jogador Pagamentos");
+        AuthResponse replacement = register("payment-replacement@example.com", "Jogador Reposição");
         GroupResponse group = createGroup(creator, "Pelada com PIX");
         InviteResponse invite = createInvite(creator, group.id());
         join(member, invite.code());
+        join(replacement, invite.code());
 
         mockMvc.perform(put("/api/groups/{groupId}/details", group.id())
                         .header(HttpHeaders.AUTHORIZATION, bearer(creator))
@@ -363,6 +365,19 @@ class MatchFlowIntegrationTest {
                                 """))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("INVALID_PAYMENT_SETTLEMENT_RESOLUTION"));
+
+        mockMvc.perform(put(
+                        "/api/matches/{matchId}/replacements/{departedUserId}",
+                        match.id(),
+                        member.user().id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(creator))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"replacementUserId": "%s"}
+                                """.formatted(replacement.user().id())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.goingCount").value(2))
+                .andExpect(jsonPath("$.attendances[1].settlementAvailable").value(true));
 
         mockMvc.perform(put(
                         "/api/matches/{matchId}/payments/{playerUserId}/settlement",
@@ -517,6 +532,16 @@ class MatchFlowIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.myPaymentSettlementStatus").value("PENDING"));
         mockMvc.perform(put(
+                        "/api/matches/{matchId}/replacements/{departedUserId}",
+                        firstMatch.id(),
+                        member.user().id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(creator))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"replacementUserId": "%s"}
+                                """.formatted(creator.user().id())))
+                .andExpect(status().isOk());
+        mockMvc.perform(put(
                         "/api/matches/{matchId}/payments/{playerUserId}/settlement",
                         firstMatch.id(),
                         member.user().id())
@@ -566,8 +591,34 @@ class MatchFlowIntegrationTest {
 
         confirmAttendance(secondMatch.id(), member, "NOT_GOING")
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.myPaymentStatus").value("CANCELLED"))
-                .andExpect(jsonPath("$.myPaymentSettlementStatus").value("CREDITED"));
+                .andExpect(jsonPath("$.myPaymentStatus").value("PAID"))
+                .andExpect(jsonPath("$.myPaymentSettlementStatus").value("PENDING"))
+                .andExpect(jsonPath("$.attendances[0].replacementRequiredAt").isNotEmpty())
+                .andExpect(jsonPath("$.attendances[0].settlementAvailable").value(false));
+
+        mockMvc.perform(put(
+                        "/api/matches/{matchId}/replacements/{departedUserId}",
+                        secondMatch.id(),
+                        member.user().id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(creator))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"replacementUserId": "%s"}
+                                """.formatted(creator.user().id())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.attendances[0].settlementAvailable").value(true));
+
+        mockMvc.perform(put(
+                        "/api/matches/{matchId}/payments/{playerUserId}/settlement",
+                        secondMatch.id(),
+                        member.user().id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(creator))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"resolution": "CREDITED"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.attendances[0].paymentSettlementStatus").value("CREDITED"));
 
         mockMvc.perform(get("/api/groups/{groupId}/credits", group.id())
                         .header(HttpHeaders.AUTHORIZATION, bearer(creator)))
@@ -664,7 +715,7 @@ class MatchFlowIntegrationTest {
     }
 
     @Test
-    void shouldEnforceSignupAndPaymentDeadlinesAndKeepPaidPlayersLocked() throws Exception {
+    void shouldEnforceDeadlinesAndAllowPaidWithdrawalWithAdministratorReplacement() throws Exception {
         AuthResponse creator = register("deadlines-primary@example.com", "Principal Prazos");
         AuthResponse unpaid = register("deadlines-unpaid@example.com", "Jogador Pendente");
         AuthResponse paid = register("deadlines-paid@example.com", "Jogador Pago");
@@ -746,24 +797,87 @@ class MatchFlowIntegrationTest {
                 .andExpect(jsonPath("$.goingCount").value(2));
 
         confirmAttendance(match.id(), paid, "NOT_GOING")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.myAttendance").value("NOT_GOING"))
+                .andExpect(jsonPath("$.myPaymentSettlementStatus").value("PENDING"))
+                .andExpect(jsonPath("$.attendances[1].replacementRequiredAt").isNotEmpty())
+                .andExpect(jsonPath("$.attendances[1].settlementAvailable").value(false));
+
+        confirmAttendance(match.id(), paid, "GOING")
                 .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.code").value("PAID_ATTENDANCE_LOCKED"));
-        confirmAttendance(match.id(), reported, "NOT_GOING")
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.code").value("PAID_ATTENDANCE_LOCKED"));
+                .andExpect(jsonPath("$.code").value("ADMINISTRATOR_REENTRY_REQUIRED"));
 
         mockMvc.perform(put(
-                        "/api/matches/{matchId}/payments/{playerUserId}/confirm",
+                        "/api/matches/{matchId}/payments/{playerUserId}/settlement",
+                        match.id(),
+                        paid.user().id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(creator))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"resolution": "REFUNDED"}
+                                """))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("REPLACEMENT_REQUIRED_FOR_SETTLEMENT"));
+
+        mockMvc.perform(put(
+                        "/api/matches/{matchId}/replacements/{departedUserId}",
+                        match.id(),
+                        paid.user().id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(creator))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"replacementUserId": "%s"}
+                                """.formatted(late.user().id())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.attendances[1].replacementUserId")
+                        .value(late.user().id().toString()))
+                .andExpect(jsonPath("$.attendances[1].replacementDisplayName")
+                        .value("Jogador Atrasado"))
+                .andExpect(jsonPath("$.attendances[1].settlementAvailable").value(true))
+                .andExpect(jsonPath("$.attendances[3].status").value("GOING"));
+
+        mockMvc.perform(get("/api/matches/{matchId}", match.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(late)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.canReportPayment").value(true));
+        mockMvc.perform(put("/api/matches/{matchId}/payment/reported", match.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(late)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.myPaymentStatus").value("REPORTED"));
+
+        mockMvc.perform(put(
+                        "/api/matches/{matchId}/payments/{playerUserId}/settlement",
+                        match.id(),
+                        paid.user().id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(creator))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"resolution": "REFUNDED"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.attendances[1].paymentSettlementStatus").value("REFUNDED"));
+
+        confirmAttendance(match.id(), reported, "NOT_GOING")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.myPaymentSettlementStatus").value("REVIEW_REQUIRED"));
+
+        mockMvc.perform(put(
+                        "/api/matches/{matchId}/replacements/{departedUserId}",
                         match.id(),
                         reported.user().id())
-                        .header(HttpHeaders.AUTHORIZATION, bearer(creator)))
+                        .header(HttpHeaders.AUTHORIZATION, bearer(creator))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"replacementUserId": "%s"}
+                                """.formatted(reported.user().id())))
                 .andExpect(status().isOk());
         mockMvc.perform(get("/api/matches/{matchId}", match.id())
                         .header(HttpHeaders.AUTHORIZATION, bearer(reported)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.myAttendance").value("GOING"))
-                .andExpect(jsonPath("$.myPaymentStatus").value("PAID"))
-                .andExpect(jsonPath("$.canWithdraw").value(false));
+                .andExpect(jsonPath("$.myPaymentStatus").value("REPORTED"))
+                .andExpect(jsonPath("$.myPaymentSettlementStatus").value(nullValue()))
+                .andExpect(jsonPath("$.canWithdraw").value(true));
 
         assertThat(notificationJobRepository.findAll())
                 .extracting(MatchNotificationJob::getNotificationType)

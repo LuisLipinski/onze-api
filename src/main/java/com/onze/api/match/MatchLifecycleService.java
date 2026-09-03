@@ -132,7 +132,8 @@ public class MatchLifecycleService {
 
                 if (!paymentExpired
                         || attendance.getStatus() != AttendanceStatus.GOING
-                        || attendance.getPaymentStatus() != PaymentStatus.PENDING) {
+                        || attendance.getPaymentStatus() != PaymentStatus.PENDING
+                        || wasAddedAfterPaymentDeadline(match, attendance)) {
                     continue;
                 }
 
@@ -158,6 +159,14 @@ public class MatchLifecycleService {
                 playerCreditService.reserveForNextMatch(match.getGroupId(), userId, now);
             }
         }
+    }
+
+    private boolean wasAddedAfterPaymentDeadline(
+            FootballMatch match,
+            MatchAttendance attendance) {
+        return match.getPaymentDeadline() != null
+                && attendance.getAddedAsReplacementAt() != null
+                && !attendance.getAddedAsReplacementAt().isBefore(match.getPaymentDeadline());
     }
 
     @Transactional

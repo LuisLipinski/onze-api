@@ -267,11 +267,12 @@ public class MatchService {
         boolean withdrawing = requestedStatus == AttendanceStatus.NOT_GOING
                 && attendance != null
                 && attendance.getStatus() != AttendanceStatus.NOT_GOING;
+        boolean protectedWithdrawal = withdrawing && hasProtectedPayment(attendance);
+        if (joining && attendance != null && attendance.requiresAdministratorToRejoin()) {
+            throw new AdministratorReentryRequiredException();
+        }
         if (joining && !match.isSignupOpen(now)) {
             throw new SignupDeadlinePassedException();
-        }
-        if (withdrawing && !canWithdraw(match, attendance, now)) {
-            throw new PaidAttendanceLockedException();
         }
         long goingBefore = attendanceRepository.countByMatchIdAndStatus(matchId, AttendanceStatus.GOING);
         if (joining && goingBefore >= match.getMaxPlayers()) {
@@ -286,18 +287,22 @@ public class MatchService {
                     requestedStatus,
                     match.getPaymentAmount()));
         } else {
-            if (withdrawing) {
+            if (withdrawing && !protectedWithdrawal) {
                 creditReleased = playerCreditService.releaseReservation(
                         match.getGroupId(),
                         attendance,
                         now);
             }
             attendance.changeStatus(requestedStatus, match.getPaymentAmount(), now);
+            if (protectedWithdrawal && isSettlementOpen(attendance)) {
+                attendance.requireReplacement(now);
+            }
         }
 
         if (joining) {
             playerCreditService.reserveForNextMatch(match.getGroupId(), userId, now);
             playerCreditService.consumeReservation(match.getGroupId(), attendance, now);
+            fillOldestReplacementVacancy(match, userId, now);
         } else if (withdrawing && creditReleased) {
             if (!isSettlementOpen(attendance)
                     && attendance.getCashAmountDue().signum() == 0) {
@@ -327,6 +332,90 @@ public class MatchService {
     }
 
     @Transactional
+    public MatchResponse addReplacement(
+            String authenticatedUserId,
+            UUID matchId,
+            UUID departedUserId,
+            UUID replacementUserId) {
+        UUID adminUserId = parseUserId(authenticatedUserId);
+        FootballMatch match = matchRepository.findByIdForUpdate(matchId)
+                .orElseThrow(MatchNotFoundException::new);
+        Group group = requireGroup(match.getGroupId());
+        GroupMember membership = requireMembership(match.getGroupId(), adminUserId);
+        requireManagePermission(membership);
+        Instant now = clock.instant();
+        requireOpenMatch(match, now);
+
+        MatchAttendance departed = attendanceRepository
+                .findByMatchIdAndUserId(matchId, departedUserId)
+                .orElseThrow(ReplacementVacancyNotOpenException::new);
+        if (departed.getStatus() != AttendanceStatus.NOT_GOING
+                || !isSettlementOpen(departed)
+                || !departed.isAwaitingReplacement()) {
+            throw new ReplacementVacancyNotOpenException();
+        }
+        requireMembership(match.getGroupId(), replacementUserId);
+
+        long goingBefore = attendanceRepository.countByMatchIdAndStatus(
+                matchId,
+                AttendanceStatus.GOING);
+        if (goingBefore >= match.getMaxPlayers()) {
+            throw new MatchFullException();
+        }
+
+        MatchAttendance replacement = attendanceRepository
+                .findByMatchIdAndUserId(matchId, replacementUserId)
+                .orElse(null);
+        if (replacement != null && replacement.getStatus() == AttendanceStatus.GOING) {
+            throw new ReplacementPlayerUnavailableException();
+        }
+        if (!replacementUserId.equals(departedUserId)
+                && replacement != null
+                && replacement.requiresAdministratorToRejoin()
+                && isSettlementOpen(replacement)) {
+            throw new ReplacementPlayerUnavailableException();
+        }
+
+        if (replacementUserId.equals(departedUserId)) {
+            departed.reinstateByAdministrator(match.getPaymentAmount(), now);
+            replacement = departed;
+        } else {
+            if (replacement == null) {
+                replacement = attendanceRepository.save(new MatchAttendance(
+                        matchId,
+                        replacementUserId,
+                        AttendanceStatus.GOING,
+                        match.getPaymentAmount()));
+            } else {
+                replacement.reinstateByAdministrator(match.getPaymentAmount(), now);
+            }
+            replacement.markAddedAsReplacement(departedUserId, now);
+            playerCreditService.reserveForNextMatch(match.getGroupId(), replacementUserId, now);
+            playerCreditService.consumeReservation(match.getGroupId(), replacement, now);
+            departed.fillReplacement(replacementUserId, now);
+            enqueueReplacementFilled(match, departed, now);
+        }
+
+        notificationQueue.enqueue(
+                match.getId(),
+                replacementUserId,
+                MatchNotificationType.REPLACEMENT_ADDED,
+                "match:" + match.getId() + ":replacement-added:"
+                        + departedUserId + ":" + replacementUserId + ":" + now.toEpochMilli(),
+                now);
+        if (goingBefore + 1 == match.getMaxPlayers()) {
+            notificationQueue.enqueue(
+                    match.getId(),
+                    null,
+                    MatchNotificationType.TEAM_FULL,
+                    "match:" + match.getId() + ":team-full:" + now.toEpochMilli(),
+                    now);
+        }
+
+        return toResponse(match, group, membership, now);
+    }
+
+    @Transactional
     public MatchResponse reportPayment(String authenticatedUserId, UUID matchId) {
         UUID userId = parseUserId(authenticatedUserId);
         FootballMatch match = matchRepository.findByIdForUpdate(matchId)
@@ -336,14 +425,15 @@ public class MatchService {
         Instant now = clock.instant();
         requireOpenMatch(match, now);
         requirePayment(match);
-        if (!match.isPaymentOpen(now)) {
-            throw new PaymentDeadlinePassedException();
-        }
 
         MatchAttendance attendance = attendanceRepository.findByMatchIdAndUserId(matchId, userId)
                 .orElseThrow(PaymentRequiresAttendanceException::new);
         if (attendance.getStatus() != AttendanceStatus.GOING) {
             throw new PaymentRequiresAttendanceException();
+        }
+        if (!match.isPaymentOpen(now)
+                && !wasAddedAfterPaymentDeadline(match, attendance)) {
+            throw new PaymentDeadlinePassedException();
         }
 
         boolean changed = attendance.getPaymentStatus() == PaymentStatus.PENDING;
@@ -401,11 +491,25 @@ public class MatchService {
                     && resolution == PaymentSettlementResolution.NOT_RECEIVED) {
                 throw new InvalidPaymentSettlementResolutionException();
             }
+            if (match.getStatus() != MatchStatus.CANCELLED
+                    && attendance.isAwaitingReplacement()
+                    && resolution != PaymentSettlementResolution.NOT_RECEIVED) {
+                throw new ReplacementRequiredForSettlementException();
+            }
         }
 
         Instant now = clock.instant();
         for (MatchAttendance attendance : settlements) {
             BigDecimal settlementAmount = attendance.settlementAmount();
+            boolean creditReleased = false;
+            if (resolution == PaymentSettlementResolution.RETAINED) {
+                attendance.closeRetainedCredit(now);
+            } else {
+                creditReleased = playerCreditService.releaseReservation(
+                        match.getGroupId(),
+                        attendance,
+                        now);
+            }
             try {
                 attendance.resolveSettlement(resolution, settlementAmount, now);
             } catch (IllegalArgumentException exception) {
@@ -417,6 +521,12 @@ public class MatchService {
                         match.getGroupId(),
                         attendance.getUserId(),
                         settlementAmount,
+                        now);
+            }
+            if (creditReleased) {
+                playerCreditService.reserveForNextMatch(
+                        match.getGroupId(),
+                        attendance.getUserId(),
                         now);
             }
             notificationQueue.enqueue(
@@ -623,6 +733,11 @@ public class MatchService {
                 currentUserAttendance = attendance;
             }
             boolean financialDetailsVisible = currentUser || canManage;
+            String replacementDisplayName = attendance.getReplacementUserId() == null
+                    ? null
+                    : userRepository.findById(attendance.getReplacementUserId())
+                            .map(User::getDisplayName)
+                            .orElse(null);
             attendances.add(new AttendanceResponse(
                     attendance.getUserId(),
                     user.getDisplayName(),
@@ -633,6 +748,13 @@ public class MatchService {
                     financialDetailsVisible ? remainingPaymentAmount : null,
                     financialDetailsVisible ? creditAllocationStatus : null,
                     financialDetailsVisible ? attendance.getPaymentDeadlineRemovedAt() : null,
+                    financialDetailsVisible ? attendance.getReplacementRequiredAt() : null,
+                    financialDetailsVisible ? attendance.getReplacementUserId() : null,
+                    financialDetailsVisible ? replacementDisplayName : null,
+                    financialDetailsVisible ? attendance.getReplacementFilledAt() : null,
+                    financialDetailsVisible ? attendance.getAddedAsReplacementAt() : null,
+                    financialDetailsVisible ? attendance.getReplacementForUserId() : null,
+                    financialDetailsVisible && settlementAvailable(match, attendance),
                     currentUser));
         }
 
@@ -662,6 +784,8 @@ public class MatchService {
                 match.isSignupOpen(now),
                 match.getPaymentDeadline(),
                 match.isPaymentOpen(now),
+                canReportPayment(match, currentUserAttendance, now),
+                canJoin(match, currentUserAttendance, now),
                 canWithdraw(match, currentUserAttendance, now),
                 myAttendance,
                 myPaymentStatus,
@@ -705,9 +829,77 @@ public class MatchService {
                 || !match.isAttendanceOpen(now)) {
             return false;
         }
-        return !match.isPaymentRequired()
-                || match.getPaymentDeadline() == null
-                || !now.isAfter(match.getPaymentDeadline());
+        return true;
+    }
+
+    private boolean canJoin(
+            FootballMatch match,
+            MatchAttendance attendance,
+            Instant now) {
+        return match.isAttendanceOpen(now)
+                && match.isSignupOpen(now)
+                && (attendance == null || attendance.getStatus() != AttendanceStatus.GOING)
+                && (attendance == null || !attendance.requiresAdministratorToRejoin());
+    }
+
+    private boolean canReportPayment(
+            FootballMatch match,
+            MatchAttendance attendance,
+            Instant now) {
+        return attendance != null
+                && attendance.getStatus() == AttendanceStatus.GOING
+                && attendance.getPaymentStatus() == PaymentStatus.PENDING
+                && (match.isPaymentOpen(now)
+                        || wasAddedAfterPaymentDeadline(match, attendance));
+    }
+
+    private boolean hasProtectedPayment(MatchAttendance attendance) {
+        return attendance.getPaymentStatus() == PaymentStatus.REPORTED
+                || attendance.getPaymentStatus() == PaymentStatus.PAID;
+    }
+
+    private boolean settlementAvailable(FootballMatch match, MatchAttendance attendance) {
+        return match.getStatus() == MatchStatus.CANCELLED
+                || !attendance.isAwaitingReplacement();
+    }
+
+    private boolean wasAddedAfterPaymentDeadline(
+            FootballMatch match,
+            MatchAttendance attendance) {
+        return match.getPaymentDeadline() != null
+                && attendance.getAddedAsReplacementAt() != null
+                && !attendance.getAddedAsReplacementAt().isBefore(match.getPaymentDeadline());
+    }
+
+    private void fillOldestReplacementVacancy(
+            FootballMatch match,
+            UUID replacementUserId,
+            Instant now) {
+        MatchAttendance departed = attendanceRepository
+                .findAllByMatchIdOrderByCreatedAtAsc(match.getId())
+                .stream()
+                .filter(MatchAttendance::isAwaitingReplacement)
+                .filter(attendance -> !attendance.getUserId().equals(replacementUserId))
+                .min(Comparator.comparing(MatchAttendance::getReplacementRequiredAt))
+                .orElse(null);
+        if (departed == null) {
+            return;
+        }
+        departed.fillReplacement(replacementUserId, now);
+        enqueueReplacementFilled(match, departed, now);
+    }
+
+    private void enqueueReplacementFilled(
+            FootballMatch match,
+            MatchAttendance departed,
+            Instant now) {
+        notificationQueue.enqueue(
+                match.getId(),
+                departed.getUserId(),
+                MatchNotificationType.REPLACEMENT_FILLED,
+                "match:" + match.getId() + ":replacement-filled:"
+                        + departed.getUserId() + ":" + now.toEpochMilli(),
+                now);
     }
 
     private void enqueueForManagers(
@@ -918,7 +1110,19 @@ public class MatchService {
         private static final long serialVersionUID = 1L;
     }
 
-    public static final class PaidAttendanceLockedException extends RuntimeException {
+    public static final class AdministratorReentryRequiredException extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+    }
+
+    public static final class ReplacementVacancyNotOpenException extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+    }
+
+    public static final class ReplacementPlayerUnavailableException extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+    }
+
+    public static final class ReplacementRequiredForSettlementException extends RuntimeException {
         private static final long serialVersionUID = 1L;
     }
 
