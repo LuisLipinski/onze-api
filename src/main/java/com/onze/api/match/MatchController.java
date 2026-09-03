@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.UUID;
 
 import com.onze.api.match.MatchModels.CreateMatchRequest;
+import com.onze.api.match.MatchModels.AddMatchReplacementRequest;
 import com.onze.api.match.MatchModels.BulkResolvePaymentSettlementsRequest;
 import com.onze.api.match.MatchModels.MatchResponse;
 import com.onze.api.match.MatchModels.PlayerCreditResponse;
@@ -125,6 +126,20 @@ public class MatchController {
                 matchId,
                 request.playerUserIds(),
                 request.resolution());
+    }
+
+    @PutMapping("/api/matches/{matchId}/replacements/{departedUserId}")
+    public MatchResponse addReplacement(
+            Authentication authentication,
+            @PathVariable UUID matchId,
+            @PathVariable UUID departedUserId,
+            @Valid @RequestBody AddMatchReplacementRequest request) {
+        lifecycleService.openDueAttendances();
+        return matchService.addReplacement(
+                authentication.getName(),
+                matchId,
+                departedUserId,
+                request.replacementUserId());
     }
 
     @DeleteMapping("/api/matches/{matchId}")

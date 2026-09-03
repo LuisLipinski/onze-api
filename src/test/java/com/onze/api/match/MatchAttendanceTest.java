@@ -75,6 +75,41 @@ class MatchAttendanceTest {
     }
 
     @Test
+    void shouldKeepPaidValueBlockedUntilReplacementIsFilled() {
+        UUID replacementUserId = UUID.randomUUID();
+        MatchAttendance attendance = paidAttendance();
+        attendance.confirmPayment(NOW.minusSeconds(60));
+
+        attendance.changeStatus(AttendanceStatus.NOT_GOING, PAYMENT_AMOUNT, NOW);
+        attendance.requireReplacement(NOW);
+
+        assertThat(attendance.isAwaitingReplacement()).isTrue();
+        assertThat(attendance.getReplacementFilledAt()).isNull();
+
+        attendance.fillReplacement(replacementUserId, NOW.plusSeconds(60));
+
+        assertThat(attendance.isAwaitingReplacement()).isFalse();
+        assertThat(attendance.getReplacementUserId()).isEqualTo(replacementUserId);
+        assertThat(attendance.getReplacementFilledAt()).isEqualTo(NOW.plusSeconds(60));
+    }
+
+    @Test
+    void shouldAllowAdministratorToReinstatePaidPlayer() {
+        MatchAttendance attendance = paidAttendance();
+        attendance.confirmPayment(NOW.minusSeconds(60));
+        attendance.changeStatus(AttendanceStatus.NOT_GOING, PAYMENT_AMOUNT, NOW);
+        attendance.requireReplacement(NOW);
+
+        attendance.reinstateByAdministrator(PAYMENT_AMOUNT, NOW.plusSeconds(60));
+
+        assertThat(attendance.getStatus()).isEqualTo(AttendanceStatus.GOING);
+        assertThat(attendance.getPaymentStatus()).isEqualTo(PaymentStatus.PAID);
+        assertThat(attendance.getPaymentSettlementStatus()).isNull();
+        assertThat(attendance.getReplacementRequiredAt()).isNull();
+        assertThat(attendance.getAddedAsReplacementAt()).isEqualTo(NOW.plusSeconds(60));
+    }
+
+    @Test
     void shouldCancelOpenSettlementWhenPlayerRejoins() {
         MatchAttendance attendance = paidAttendance();
         attendance.confirmPayment(NOW.minusSeconds(60));

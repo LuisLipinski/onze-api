@@ -69,7 +69,9 @@ public class MatchNotificationProcessor {
         boolean stateIndependentNotification = job.getNotificationType() == MatchNotificationType.MATCH_CANCELLED
                 || job.getNotificationType() == MatchNotificationType.SERIES_CANCELLED
                 || job.getNotificationType() == MatchNotificationType.PAYMENT_SETTLEMENT_REQUIRED
-                || job.getNotificationType() == MatchNotificationType.PAYMENT_SETTLEMENT_RESOLVED;
+                || job.getNotificationType() == MatchNotificationType.PAYMENT_SETTLEMENT_RESOLVED
+                || job.getNotificationType() == MatchNotificationType.REPLACEMENT_ADDED
+                || job.getNotificationType() == MatchNotificationType.REPLACEMENT_FILLED;
         if (!match.getStartsAt().isAfter(now) && !stateIndependentNotification) {
             return true;
         }

@@ -125,6 +125,14 @@ public class ExpoPushNotificationSender {
                     "Há um acerto financeiro aguardando sua decisão no jogo de " + group.getName() + ".");
             case PAYMENT_SETTLEMENT_RESOLVED -> settlementResolvedCopy(match, group, recipientUserId);
             case CREDIT_APPLIED -> creditAppliedCopy(match, group, recipientUserId, amount);
+            case REPLACEMENT_ADDED -> new NotificationCopy(
+                    "Você entrou na lista ⚽",
+                    "Um administrador adicionou você ao jogo de " + group.getName()
+                            + ". Confira sua presença e o pagamento.");
+            case REPLACEMENT_FILLED -> new NotificationCopy(
+                    "Sua vaga foi preenchida ✅",
+                    "O acerto do seu pagamento no jogo de " + group.getName()
+                            + " já pode ser resolvido pelo administrador.");
             case MATCH_TOMORROW -> tomorrowCopy(match, group, recipientUserId, remainingAmount);
             case TEAM_FULL -> new NotificationCopy(
                     "Time fechado ✅",
