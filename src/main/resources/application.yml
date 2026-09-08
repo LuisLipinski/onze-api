@@ -1,0 +1,62 @@
+server:
+  port: ${PORT:8080}
+
+spring:
+  application:
+    name: onze-api
+  datasource:
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/onze}
+    username: ${DATABASE_USERNAME:onze}
+    password: ${DATABASE_PASSWORD:onze}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    baseline-version: 0
+  servlet:
+    multipart:
+      max-file-size: 5MB
+      max-request-size: 6MB
+
+app:
+  public-base-url: ${PUBLIC_BASE_URL:https://onze-organizador-de-pelada.onrender.com}
+
+security:
+  jwt:
+    issuer: ${JWT_ISSUER:onze-api}
+    secret: ${JWT_SECRET}
+    access-token-ttl: ${JWT_ACCESS_TOKEN_TTL:PT2H}
+
+email:
+  resend:
+    api-key: ${RESEND_API_KEY:}
+    from: ${RESEND_FROM:}
+
+media:
+  cloudinary:
+    cloud-name: ${CLOUDINARY_CLOUD_NAME:}
+    api-key: ${CLOUDINARY_API_KEY:}
+    api-secret: ${CLOUDINARY_API_SECRET:}
+
+matches:
+  processing:
+    delay-ms: ${MATCH_PROCESSING_DELAY_MS:60000}
+    initial-delay-ms: ${MATCH_PROCESSING_INITIAL_DELAY_MS:5000}
+
+notifications:
+  expo:
+    enabled: ${EXPO_PUSH_ENABLED:true}
+    endpoint: ${EXPO_PUSH_ENDPOINT:https://exp.host/--/api/v2/push/send}
+
+management:
+  endpoint:
+    health:
+      probes:
+        enabled: true
+  endpoints:
+    web:
+      exposure:
+        include: health,info
