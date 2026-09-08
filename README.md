@@ -9,7 +9,7 @@ Backend do **Onze — Organizador de Pelada**.
 | Branch | Estado |
 |---|---|
 | `development` | Integração atual do backend e fonte do deploy no Render. Contém autenticação, grupos, partidas, pagamentos, créditos, prazos, notificações e reposições. |
-| `master` | Baseline inicial com somente README. **Ainda não é um backup funcional da aplicação.** |
+| `master` | Branch de release estável; recebe somente versões validadas em `development` e autorizadas explicitamente. |
 
 A base funcional mais recente foi introduzida pelo commit `13cbc1a`; commits posteriores à base podem conter somente documentação. A `master` não deve receber promoção sem autorização explícita.
 
