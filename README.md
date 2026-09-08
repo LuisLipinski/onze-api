@@ -2,14 +2,13 @@
 
 Backend do **Onze — Organizador de Pelada**.
 
-> Estado revisado em 04/09/2026 contra o código, os testes e os workflows. Esta página separa o que está implementado do que continua planejado.
+> Estado revisado em 08/09/2026 contra o código, os testes e os workflows. Esta página separa o que está implementado do que continua planejado.
 
 ## Estado por branch
 
 | Branch | Estado |
 |---|---|
 | `development` | Integração atual do backend e fonte do deploy no Render. Contém autenticação, grupos, partidas, pagamentos, créditos, prazos, notificações e reposições. |
-| `docs/documentation-alignment-2026-09-04` | Correções documentais baseadas em `development`; não altera regras nem código funcional. |
 | `master` | Baseline inicial com somente README. **Ainda não é um backup funcional da aplicação.** |
 
 A base funcional mais recente foi introduzida pelo commit `13cbc1a`; commits posteriores à base podem conter somente documentação. A `master` não deve receber promoção sem autorização explícita.
