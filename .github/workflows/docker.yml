@@ -13,9 +13,64 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_DB: onze
+          POSTGRES_USER: onze
+          POSTGRES_PASSWORD: onze
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U onze -d onze"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Build production image
         run: docker build -t onze-api:ci .
+
+      - name: Start production image
+        run: >-
+          docker run --detach
+          --name onze-api-ci
+          --network host
+          --memory 512m
+          --env PORT=10000
+          --env DATABASE_URL=jdbc:postgresql://localhost:5432/onze
+          --env DATABASE_USERNAME=onze
+          --env DATABASE_PASSWORD=onze
+          --env JWT_SECRET=ci-only-secret-with-at-least-32-bytes
+          --env JWT_ISSUER=onze-api
+          --env EXPO_PUSH_ENABLED=false
+          onze-api:ci
+
+      - name: Wait for readiness on Render port
+        shell: bash
+        run: |
+          for attempt in {1..90}; do
+            if curl --fail --silent http://127.0.0.1:10000/actuator/health/readiness; then
+              exit 0
+            fi
+            if ! docker inspect --format '{{.State.Running}}' onze-api-ci | grep -qx true; then
+              docker logs onze-api-ci
+              exit 1
+            fi
+            sleep 2
+          done
+
+          docker logs onze-api-ci
+          exit 1
+
+      - name: Show container logs on failure
+        if: failure()
+        run: docker logs onze-api-ci || true
+
+      - name: Stop production image
+        if: always()
+        run: docker rm --force onze-api-ci || true

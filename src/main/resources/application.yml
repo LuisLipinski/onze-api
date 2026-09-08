@@ -1,9 +1,14 @@
 server:
+  address: 0.0.0.0
   port: ${PORT:8080}
 
 spring:
   application:
     name: onze-api
+  data:
+    jpa:
+      repositories:
+        bootstrap-mode: deferred
   datasource:
     url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/onze}
     username: ${DATABASE_USERNAME:onze}
