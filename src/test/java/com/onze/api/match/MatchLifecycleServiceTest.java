@@ -49,6 +49,8 @@ class MatchLifecycleServiceTest {
         when(match.getTimeZone()).thenReturn("America/Sao_Paulo");
         when(match.getStartsAt()).thenReturn(Instant.parse("2026-09-03T23:00:00Z"));
         when(match.getAttendanceOpenedAt()).thenReturn(Instant.parse("2026-08-30T12:00:00Z"));
+        when(match.isPaymentRequired()).thenReturn(true);
+        when(match.isGoalkeeperPays()).thenReturn(true);
         when(matchRepository.findAllByStatusAndStartsAtAfterOrderByStartsAtAsc(
                 MatchStatus.SCHEDULED,
                 now)).thenReturn(List.of(match));
@@ -112,6 +114,8 @@ class MatchLifecycleServiceTest {
         when(match.getTimeZone()).thenReturn("America/Sao_Paulo");
         when(match.getStartsAt()).thenReturn(Instant.parse("2026-09-02T23:00:00Z"));
         when(match.getAttendanceOpenedAt()).thenReturn(Instant.parse("2026-08-30T12:00:00Z"));
+        when(match.isPaymentRequired()).thenReturn(true);
+        when(match.isGoalkeeperPays()).thenReturn(true);
         when(matchRepository.findAllByStatusAndStartsAtAfterOrderByStartsAtAsc(
                 MatchStatus.SCHEDULED,
                 now)).thenReturn(List.of(match));
@@ -136,5 +140,56 @@ class MatchLifecycleServiceTest {
                 eq(MatchNotificationType.MATCH_TOMORROW),
                 any(),
                 eq(now));
+    }
+
+    @Test
+    void shouldNotSchedulePaymentReminderForExemptGoalkeeper() {
+        Instant now = Instant.parse("2026-09-01T12:00:00Z");
+        Clock clock = Clock.fixed(now, ZoneOffset.UTC);
+        FootballMatchRepository matchRepository = mock(FootballMatchRepository.class);
+        MatchSeriesRepository seriesRepository = mock(MatchSeriesRepository.class);
+        MatchAttendanceRepository attendanceRepository = mock(MatchAttendanceRepository.class);
+        GroupMemberRepository groupMemberRepository = mock(GroupMemberRepository.class);
+        MatchNotificationQueue notificationQueue = mock(MatchNotificationQueue.class);
+        PlayerCreditService playerCreditService = mock(PlayerCreditService.class);
+        MatchLifecycleService service = new MatchLifecycleService(
+                matchRepository,
+                seriesRepository,
+                attendanceRepository,
+                groupMemberRepository,
+                notificationQueue,
+                playerCreditService,
+                clock);
+
+        UUID matchId = UUID.randomUUID();
+        UUID groupId = UUID.randomUUID();
+        UUID goalkeeperUserId = UUID.randomUUID();
+        FootballMatch match = mock(FootballMatch.class);
+        when(match.getId()).thenReturn(matchId);
+        when(match.getGroupId()).thenReturn(groupId);
+        when(match.getTimeZone()).thenReturn("America/Sao_Paulo");
+        when(match.getStartsAt()).thenReturn(Instant.parse("2026-09-03T23:00:00Z"));
+        when(match.getAttendanceOpenedAt()).thenReturn(Instant.parse("2026-08-30T12:00:00Z"));
+        when(match.isPaymentRequired()).thenReturn(true);
+        when(match.isGoalkeeperPays()).thenReturn(false);
+        when(matchRepository.findAllByStatusAndStartsAtAfterOrderByStartsAtAsc(
+                MatchStatus.SCHEDULED,
+                now)).thenReturn(List.of(match));
+
+        GroupMember goalkeeper = mock(GroupMember.class);
+        when(goalkeeper.getUserId()).thenReturn(goalkeeperUserId);
+        when(groupMemberRepository.findAllByGroupIdOrderByCreatedAtAsc(groupId))
+                .thenReturn(List.of(goalkeeper));
+
+        MatchAttendance attendance = mock(MatchAttendance.class);
+        when(attendance.getUserId()).thenReturn(goalkeeperUserId);
+        when(attendance.getStatus()).thenReturn(AttendanceStatus.GOING);
+        when(attendance.getPaymentStatus()).thenReturn(PaymentStatus.PENDING);
+        when(attendance.isGoalkeeper()).thenReturn(true);
+        when(attendance.getUpdatedAt()).thenReturn(Instant.parse("2026-08-31T12:00:00Z"));
+        when(attendanceRepository.findAllByMatchIdOrderByCreatedAtAsc(matchId))
+                .thenReturn(List.of(attendance));
+
+        assertThat(service.scheduleDueAttendanceReminders()).isZero();
     }
 }

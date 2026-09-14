@@ -13,6 +13,7 @@ public class MatchNotificationProcessor {
     private final MatchNotificationJobRepository notificationJobRepository;
     private final FootballMatchRepository matchRepository;
     private final MatchAttendanceRepository attendanceRepository;
+    private final MatchCapacityService capacityService;
     private final ExpoPushNotificationSender pushNotificationSender;
     private final Clock clock;
 
@@ -20,11 +21,13 @@ public class MatchNotificationProcessor {
             MatchNotificationJobRepository notificationJobRepository,
             FootballMatchRepository matchRepository,
             MatchAttendanceRepository attendanceRepository,
+            MatchCapacityService capacityService,
             ExpoPushNotificationSender pushNotificationSender,
             Clock clock) {
         this.notificationJobRepository = notificationJobRepository;
         this.matchRepository = matchRepository;
         this.attendanceRepository = attendanceRepository;
+        this.capacityService = capacityService;
         this.pushNotificationSender = pushNotificationSender;
         this.clock = clock;
     }
@@ -80,9 +83,7 @@ public class MatchNotificationProcessor {
         }
 
         if (job.getNotificationType() == MatchNotificationType.TEAM_FULL) {
-            return attendanceRepository.countByMatchIdAndStatus(
-                    match.getId(),
-                    AttendanceStatus.GOING) < match.getMaxPlayers();
+            return !capacityService.isFull(match);
         }
 
         if (job.getNotificationType() == MatchNotificationType.CREDIT_APPLIED) {
@@ -112,7 +113,8 @@ public class MatchNotificationProcessor {
             return true;
         }
         return job.getNotificationType() == MatchNotificationType.PAYMENT_REMINDER
-                && (!match.isPaymentOpen(now)
+                && (!MatchPaymentPolicy.requiresPayment(match, attendance)
+                        || !match.isPaymentOpen(now)
                         || attendance.getPaymentStatus() != PaymentStatus.PENDING);
     }
 }

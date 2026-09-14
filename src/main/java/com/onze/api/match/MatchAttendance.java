@@ -34,6 +34,9 @@ public class MatchAttendance {
     @Column(name = "user_id", nullable = false)
     private UUID userId;
 
+    @Column(name = "is_goalkeeper", nullable = false)
+    private boolean goalkeeper;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 24)
     private AttendanceStatus status;
@@ -140,6 +143,10 @@ public class MatchAttendance {
         return status;
     }
 
+    public boolean isGoalkeeper() {
+        return goalkeeper;
+    }
+
     public Instant getCreatedAt() {
         return createdAt;
     }
@@ -232,6 +239,52 @@ public class MatchAttendance {
         return creditAppliedAmount.signum() > 0 && creditReturnedAt == null;
     }
 
+    public boolean hasRecordedCashPayment() {
+        return paymentStatus == PaymentStatus.REPORTED || cashPaidAmount.signum() > 0;
+    }
+
+    public void setGoalkeeper(boolean goalkeeper) {
+        this.goalkeeper = goalkeeper;
+    }
+
+    public void exemptFromPayment(Instant now) {
+        if (hasRecordedCashPayment()) {
+            throw new IllegalStateException("A cash payment has already been recorded");
+        }
+        if (creditAppliedAmount.signum() > 0 && creditReturnedAt == null) {
+            creditReturnedAt = now;
+        }
+        creditAppliedAmount = BigDecimal.ZERO;
+        cashAmountDue = BigDecimal.ZERO;
+        cashPaidAmount = BigDecimal.ZERO;
+        creditConsumedAt = null;
+        paymentStatus = null;
+        paymentReportedAt = null;
+        paymentConfirmedAt = null;
+        paymentSettlementStatus = null;
+        paymentSettlementRequestedAt = null;
+        paymentSettlementResolvedAt = null;
+        paymentDeadlineRemovedAt = null;
+    }
+
+    public void restorePaymentObligation(BigDecimal paymentAmount) {
+        if (paymentAmount == null || paymentAmount.signum() <= 0) {
+            throw new IllegalArgumentException("Payment amount must be positive");
+        }
+        creditAppliedAmount = BigDecimal.ZERO;
+        cashAmountDue = paymentAmount;
+        cashPaidAmount = BigDecimal.ZERO;
+        creditConsumedAt = null;
+        creditReturnedAt = null;
+        paymentStatus = PaymentStatus.PENDING;
+        paymentReportedAt = null;
+        paymentConfirmedAt = null;
+        paymentSettlementStatus = null;
+        paymentSettlementRequestedAt = null;
+        paymentSettlementResolvedAt = null;
+        paymentDeadlineRemovedAt = null;
+    }
+
     public boolean isCreditConsumed() {
         return hasActiveCredit() && creditConsumedAt != null;
     }
@@ -241,6 +294,8 @@ public class MatchAttendance {
         this.status = status;
         if (status == AttendanceStatus.GOING) {
             paymentDeadlineRemovedAt = null;
+        } else if (status == AttendanceStatus.NOT_GOING) {
+            goalkeeper = false;
         }
         if (paymentAmount == null || previousStatus == status) {
             return;

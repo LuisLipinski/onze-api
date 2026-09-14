@@ -42,6 +42,7 @@ final class MatchRecurrenceSupport {
                 series.getMaxPlayers(),
                 series.getPaymentAmount(),
                 series.getPixKey(),
+                series.isGoalkeeperPays(),
                 series.getNotes(),
                 nextAttendanceOpening,
                 null,

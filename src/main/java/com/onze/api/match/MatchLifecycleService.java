@@ -132,6 +132,7 @@ public class MatchLifecycleService {
 
                 if (!paymentExpired
                         || attendance.getStatus() != AttendanceStatus.GOING
+                        || !MatchPaymentPolicy.requiresPayment(match, attendance)
                         || attendance.getPaymentStatus() != PaymentStatus.PENDING
                         || wasAddedAfterPaymentDeadline(match, attendance)) {
                     continue;
@@ -231,7 +232,8 @@ public class MatchLifecycleService {
                             now)) {
                         scheduled++;
                     }
-                } else if (attendance.getPaymentStatus() == PaymentStatus.PENDING
+                } else if (MatchPaymentPolicy.requiresPayment(match, attendance)
+                        && attendance.getPaymentStatus() == PaymentStatus.PENDING
                         && (match.getPaymentDeadline() == null || match.isPaymentOpen(now))
                         && today.isAfter(attendance.getUpdatedAt().atZone(zoneId).toLocalDate())) {
                     if (notificationQueue.enqueue(

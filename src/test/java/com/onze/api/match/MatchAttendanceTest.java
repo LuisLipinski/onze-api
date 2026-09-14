@@ -177,6 +177,48 @@ class MatchAttendanceTest {
         assertThat(attendance.getPaymentSettlementStatus()).isNull();
     }
 
+    @Test
+    void shouldClearAndRestorePaymentObligationForExemptGoalkeeper() {
+        MatchAttendance attendance = paidAttendance();
+        attendance.setGoalkeeper(true);
+
+        attendance.exemptFromPayment(NOW);
+
+        assertThat(attendance.isGoalkeeper()).isTrue();
+        assertThat(attendance.getPaymentStatus()).isNull();
+        assertThat(attendance.getCashAmountDue()).isEqualByComparingTo(BigDecimal.ZERO);
+        assertThat(attendance.getCreditAppliedAmount()).isEqualByComparingTo(BigDecimal.ZERO);
+
+        attendance.setGoalkeeper(false);
+        attendance.restorePaymentObligation(PAYMENT_AMOUNT);
+
+        assertThat(attendance.getPaymentStatus()).isEqualTo(PaymentStatus.PENDING);
+        assertThat(attendance.getCashAmountDue()).isEqualByComparingTo(PAYMENT_AMOUNT);
+    }
+
+    @Test
+    void shouldRejectExemptionAfterCashPaymentWasReportedOrConfirmed() {
+        MatchAttendance reported = paidAttendance();
+        reported.reportPayment(NOW.minusSeconds(60));
+        assertThatThrownBy(() -> reported.exemptFromPayment(NOW))
+                .isInstanceOf(IllegalStateException.class);
+
+        MatchAttendance confirmed = paidAttendance();
+        confirmed.confirmPayment(NOW.minusSeconds(60));
+        assertThatThrownBy(() -> confirmed.exemptFromPayment(NOW))
+                .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void shouldClearGoalkeeperRoleWhenPlayerLeavesTheMatch() {
+        MatchAttendance attendance = paidAttendance();
+        attendance.setGoalkeeper(true);
+
+        attendance.changeStatus(AttendanceStatus.NOT_GOING, PAYMENT_AMOUNT, NOW);
+
+        assertThat(attendance.isGoalkeeper()).isFalse();
+    }
+
     private MatchAttendance paidAttendance() {
         return new MatchAttendance(
                 UUID.randomUUID(),
