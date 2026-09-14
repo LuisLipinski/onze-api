@@ -172,7 +172,7 @@ class GroupAdminIntegrationTest {
                         .header(HttpHeaders.AUTHORIZATION, bearer(creator)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].role").value("PRIMARY_ADMIN"))
-                .andExpect(jsonPath("$[0].permissions.length()").value(5))
+                .andExpect(jsonPath("$[0].permissions.length()").value(6))
                 .andExpect(jsonPath("$[0].currentUser").value(true))
                 .andExpect(jsonPath("$[1].role").value("MEMBER"))
                 .andExpect(jsonPath("$[1].permissions").isEmpty())

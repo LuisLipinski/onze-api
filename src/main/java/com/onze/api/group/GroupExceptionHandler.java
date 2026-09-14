@@ -7,6 +7,7 @@ import com.onze.api.group.GroupAdminService.PrimaryAdminRequiredException;
 import com.onze.api.group.GroupAdminService.PrimaryAdminTransferRequiredException;
 import com.onze.api.group.GroupAdminService.ReplacementMustBeAdminException;
 import com.onze.api.group.GroupInviteService.InvalidGroupInviteException;
+import com.onze.api.group.GroupSportsProfileService.InvalidSportsProfileException;
 import com.onze.api.group.GroupModels.ErrorResponse;
 import com.onze.api.group.GroupService.GroupAccessDeniedException;
 import com.onze.api.group.GroupService.GroupNotFoundException;
@@ -80,6 +81,14 @@ public class GroupExceptionHandler {
                 .body(new ErrorResponse(
                         "MEMBER_ROLE_REQUIRED",
                         "Rebaixe o administrador para membro antes de removê-lo do grupo."));
+    }
+
+    @ExceptionHandler(InvalidSportsProfileException.class)
+    ResponseEntity<ErrorResponse> invalidSportsProfile() {
+        return ResponseEntity.badRequest()
+                .body(new ErrorResponse(
+                        "INVALID_SPORTS_PROFILE",
+                        "Escolha ao menos uma posição de linha ou marque que joga no gol."));
     }
 
     @ExceptionHandler(GroupUserNotFoundException.class)

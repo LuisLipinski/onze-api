@@ -183,7 +183,12 @@ public class GroupAdminService {
                 user.getDisplayName(),
                 member.getRole(),
                 member.getPermissions(),
-                member.getUserId().equals(actorUserId));
+                member.getUserId().equals(actorUserId),
+                member.getPositions(),
+                member.canPlayGoalkeeper(),
+                member.getDominantFoot(),
+                member.getTechnicalLevel(),
+                member.isSportsProfileComplete());
     }
 
     private UUID parseUserId(String authenticatedUserId) {

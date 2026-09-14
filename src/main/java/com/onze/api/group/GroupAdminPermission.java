@@ -5,5 +5,6 @@ public enum GroupAdminPermission {
     REMOVE_MEMBERS,
     PROMOTE_MEMBERS,
     EDIT_GROUP,
-    SCHEDULE_GAMES
+    SCHEDULE_GAMES,
+    EDIT_PLAYER_PROFILES
 }

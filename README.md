@@ -54,11 +54,20 @@ A base funcional mais recente foi introduzida pelo commit `13cbc1a`; commits pos
 - Cada grupo possui exatamente um Administrador Principal.
 - Um `ADMIN` novo começa sem permissões automáticas.
 - O Principal seleciona individualmente as permissões do administrador.
-- Promoção exige `PROMOTE_MEMBERS`; convites exigem `ADD_MEMBERS`; remoção exige `REMOVE_MEMBERS`; edição exige `EDIT_GROUP`; partidas e financeiro administrativo exigem `SCHEDULE_GAMES`.
+- Promoção exige `PROMOTE_MEMBERS`; convites exigem `ADD_MEMBERS`; remoção exige `REMOVE_MEMBERS`; edição exige `EDIT_GROUP`; partidas e financeiro administrativo exigem `SCHEDULE_GAMES`; perfis esportivos de terceiros exigem `EDIT_PLAYER_PROFILES`.
 - Somente o Principal pode editar permissões, rebaixar administradores e transferir o cargo principal.
 - O substituto do Principal precisa já ser `ADMIN`.
 - Após a transferência, o antigo Principal permanece como `ADMIN` **sem permissões automáticas**.
 - Membros e administradores comuns podem sair; o Principal precisa transferir o cargo antes de sair.
+
+### Perfil esportivo por grupo
+
+- Cada participação no grupo mantém suas próprias posições, disponibilidade para atuar no gol, pé dominante e nível técnico.
+- Posições de linha aceitam múltipla seleção: `DEFENDER`, `MIDFIELDER`, `WINGER` e `STRIKER`.
+- Atuar como goleiro é uma opção independente e pode coexistir com posições de linha.
+- Pé dominante aceita `RIGHT`, `LEFT` ou `BOTH`.
+- O jogador edita as próprias posições, opção de goleiro e pé dominante; o nível técnico de 1 a 5 é definido pelo Principal ou por um administrador com `EDIT_PLAYER_PROFILES`.
+- Perfis antigos começam sem dados inferidos. Um perfil é considerado completo quando possui ao menos uma posição de linha ou goleiro e um pé dominante.
 
 ## Partidas e presença
 
@@ -132,6 +141,8 @@ A base funcional mais recente foi introduzida pelo commit `13cbc1a`; commits pos
 | `POST` | `/api/groups/join` | Entrar pelo código |
 | `GET` | `/join/{code}` | Abrir página pública do convite |
 | `GET` | `/api/groups/{groupId}/members` | Listar membros |
+| `GET` / `PUT` | `/api/groups/{groupId}/members/me/sports-profile` | Consultar ou editar o próprio perfil esportivo |
+| `GET` / `PUT` | `/api/groups/{groupId}/members/{memberId}/sports-profile` | Consultar ou editar perfil como administrador autorizado |
 | `PUT` | `/api/groups/{groupId}/members/{memberId}/promote` | Promover membro |
 | `PUT` | `/api/groups/{groupId}/members/{memberId}/demote` | Rebaixar administrador |
 | `PUT` | `/api/groups/{groupId}/members/{memberId}/permissions` | Editar permissões |
@@ -170,10 +181,11 @@ A base funcional mais recente foi introduzida pelo commit `13cbc1a`; commits pos
 | V10 | Carteira de créditos |
 | V11 | Prazos de inscrição e pagamento |
 | V12 | Reposições após saída paga |
+| V13 | Perfil esportivo por participação no grupo |
 
 ## Qualidade e execução
 
-- A suíte atual possui 50 testes JUnit.
+- A suíte atual possui 60 testes JUnit.
 - Integrações usam PostgreSQL 18 por Testcontainers e executam as migrações Flyway.
 - `API CI` executa `mvn verify`.
 - `Docker CI` constrói a imagem de produção.
