@@ -7,6 +7,10 @@ import com.onze.api.match.MatchModels.ErrorResponse;
 import com.onze.api.match.MatchService.AttendanceClosedException;
 import com.onze.api.match.MatchService.AdministratorReentryRequiredException;
 import com.onze.api.match.MatchService.InvalidTimeZoneException;
+import com.onze.api.match.MatchService.InvalidRentalGoalkeeperNameException;
+import com.onze.api.match.MatchService.GoalkeeperPaymentAlreadyRecordedException;
+import com.onze.api.match.MatchService.GoalkeeperPaymentExemptException;
+import com.onze.api.match.MatchService.GoalkeeperRequiresAttendanceException;
 import com.onze.api.match.MatchService.MatchAlreadyStartedException;
 import com.onze.api.match.MatchService.MatchCancelledException;
 import com.onze.api.match.MatchService.MatchFullException;
@@ -24,6 +28,7 @@ import com.onze.api.match.MatchService.SignupDeadlinePassedException;
 import com.onze.api.match.MatchService.ReplacementPlayerUnavailableException;
 import com.onze.api.match.MatchService.ReplacementRequiredForSettlementException;
 import com.onze.api.match.MatchService.ReplacementVacancyNotOpenException;
+import com.onze.api.match.MatchService.RentalGoalkeeperNotFoundException;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -81,6 +86,14 @@ public class MatchExceptionHandler {
                 .body(new ErrorResponse(
                         "INVALID_PAYMENT_CONFIGURATION",
                         "Informe um valor e uma chave PIX válidos para esta partida."));
+    }
+
+    @ExceptionHandler(InvalidRentalGoalkeeperNameException.class)
+    ResponseEntity<ErrorResponse> invalidRentalGoalkeeperName() {
+        return ResponseEntity.badRequest()
+                .body(new ErrorResponse(
+                        "INVALID_RENTAL_GOALKEEPER_NAME",
+                        "Informe o nome do goleiro de aluguel."));
     }
 
     @ExceptionHandler(InvalidMatchDeadlinesException.class)
@@ -163,6 +176,38 @@ public class MatchExceptionHandler {
     ResponseEntity<ErrorResponse> matchAlreadyStarted() {
         return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(new ErrorResponse("MATCH_ALREADY_STARTED", "Não é possível cancelar um jogo que já começou."));
+    }
+
+    @ExceptionHandler(GoalkeeperRequiresAttendanceException.class)
+    ResponseEntity<ErrorResponse> goalkeeperRequiresAttendance() {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(new ErrorResponse(
+                        "GOALKEEPER_REQUIRES_ATTENDANCE",
+                        "Somente um jogador confirmado pode ser definido como goleiro desta partida."));
+    }
+
+    @ExceptionHandler(GoalkeeperPaymentExemptException.class)
+    ResponseEntity<ErrorResponse> goalkeeperPaymentExempt() {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(new ErrorResponse(
+                        "GOALKEEPER_PAYMENT_EXEMPT",
+                        "Este goleiro está isento do pagamento nesta partida."));
+    }
+
+    @ExceptionHandler(GoalkeeperPaymentAlreadyRecordedException.class)
+    ResponseEntity<ErrorResponse> goalkeeperPaymentAlreadyRecorded() {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(new ErrorResponse(
+                        "GOALKEEPER_PAYMENT_ALREADY_RECORDED",
+                        "Não é possível isentar o goleiro porque já existe pagamento em dinheiro informado ou confirmado."));
+    }
+
+    @ExceptionHandler(RentalGoalkeeperNotFoundException.class)
+    ResponseEntity<ErrorResponse> rentalGoalkeeperNotFound() {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(new ErrorResponse(
+                        "RENTAL_GOALKEEPER_NOT_FOUND",
+                        "Goleiro de aluguel não encontrado nesta partida."));
     }
 
     @ExceptionHandler(PaymentNotRequiredException.class)

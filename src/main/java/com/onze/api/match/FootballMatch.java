@@ -55,6 +55,9 @@ public class FootballMatch {
     @Column(name = "pix_key", length = 255)
     private String pixKey;
 
+    @Column(name = "goalkeeper_pays", nullable = false)
+    private boolean goalkeeperPays;
+
     @Column(length = 1000)
     private String notes;
 
@@ -96,6 +99,7 @@ public class FootballMatch {
             int maxPlayers,
             BigDecimal paymentAmount,
             String pixKey,
+            boolean goalkeeperPays,
             String notes,
             Instant attendanceOpensAt,
             Instant attendanceOpenedAt,
@@ -111,6 +115,7 @@ public class FootballMatch {
         this.maxPlayers = maxPlayers;
         this.paymentAmount = paymentAmount;
         this.pixKey = pixKey;
+        this.goalkeeperPays = goalkeeperPays;
         this.notes = notes;
         this.status = MatchStatus.SCHEDULED;
         this.attendanceOpensAt = attendanceOpensAt;
@@ -174,6 +179,10 @@ public class FootballMatch {
 
     public boolean isPaymentRequired() {
         return paymentAmount != null && pixKey != null;
+    }
+
+    public boolean isGoalkeeperPays() {
+        return goalkeeperPays;
     }
 
     public String getNotes() {

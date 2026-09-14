@@ -33,6 +33,7 @@ public final class MatchModels {
             LocalDate paymentDeadlineDate,
             LocalTime paymentDeadlineTime,
             Boolean paymentRequired,
+            Boolean goalkeeperPays,
             @DecimalMin("0.01") @Digits(integer = 8, fraction = 2) BigDecimal paymentAmount,
             @Size(max = 255) String pixKey,
             @Size(max = 1000) String notes,
@@ -56,10 +57,26 @@ public final class MatchModels {
             @NotNull UUID replacementUserId) {
     }
 
+    public record UpdateMatchGoalkeeperRequest(
+            @NotNull Boolean isGoalkeeper) {
+    }
+
+    public record AddRentalGoalkeeperRequest(
+            @NotBlank @Size(max = 120) String displayName) {
+    }
+
+    public record RentalGoalkeeperResponse(
+            UUID id,
+            String displayName,
+            Instant createdAt) {
+    }
+
     public record AttendanceResponse(
             UUID userId,
             String displayName,
             AttendanceStatus status,
+            boolean isGoalkeeper,
+            boolean paymentExempt,
             PaymentStatus paymentStatus,
             PaymentSettlementStatus paymentSettlementStatus,
             BigDecimal creditAppliedAmount,
@@ -99,6 +116,7 @@ public final class MatchModels {
             String venue,
             int maxPlayers,
             boolean paymentRequired,
+            boolean goalkeeperPays,
             BigDecimal paymentAmount,
             String pixKey,
             String notes,
@@ -122,6 +140,7 @@ public final class MatchModels {
             int goingCount,
             int notGoingCount,
             List<AttendanceResponse> attendances,
+            List<RentalGoalkeeperResponse> rentalGoalkeepers,
             boolean canManage) {
     }
 

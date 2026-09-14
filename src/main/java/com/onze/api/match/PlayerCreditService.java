@@ -65,6 +65,9 @@ public class PlayerCreditService {
             MatchAttendance attendance = attendanceRepository
                     .findByMatchIdAndUserId(candidate.getId(), userId)
                     .orElse(null);
+            if (!MatchPaymentPolicy.requiresPayment(candidate, attendance)) {
+                continue;
+            }
             if (attendance != null
                     && attendance.hasActiveCredit()
                     && !attendance.isCreditConsumed()) {
@@ -79,6 +82,9 @@ public class PlayerCreditService {
             MatchAttendance attendance = attendanceRepository
                     .findByMatchIdAndUserId(candidate.getId(), userId)
                     .orElse(null);
+            if (!MatchPaymentPolicy.requiresPayment(candidate, attendance)) {
+                continue;
+            }
             if (attendance != null
                     && (attendance.getStatus() == AttendanceStatus.NOT_GOING
                             || attendance.hasActiveCredit()
@@ -91,11 +97,12 @@ public class PlayerCreditService {
                         candidate.getId(),
                         userId,
                         AttendanceStatus.PENDING,
-                        candidate.getPaymentAmount()));
+                        MatchPaymentPolicy.effectiveAmount(candidate, null)));
             }
 
-            BigDecimal amount = credit.getBalance().min(candidate.getPaymentAmount());
-            attendance.reserveCredit(amount, candidate.getPaymentAmount(), now);
+            BigDecimal paymentAmount = MatchPaymentPolicy.effectiveAmount(candidate, attendance);
+            BigDecimal amount = credit.getBalance().min(paymentAmount);
+            attendance.reserveCredit(amount, paymentAmount, now);
             if (attendance.getStatus() == AttendanceStatus.GOING) {
                 credit.consume(amount);
                 attendance.consumeCredit(now);

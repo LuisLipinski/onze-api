@@ -6,11 +6,13 @@ import java.util.UUID;
 
 import com.onze.api.match.MatchModels.CreateMatchRequest;
 import com.onze.api.match.MatchModels.AddMatchReplacementRequest;
+import com.onze.api.match.MatchModels.AddRentalGoalkeeperRequest;
 import com.onze.api.match.MatchModels.BulkResolvePaymentSettlementsRequest;
 import com.onze.api.match.MatchModels.MatchResponse;
 import com.onze.api.match.MatchModels.PlayerCreditResponse;
 import com.onze.api.match.MatchModels.ResolvePaymentSettlementRequest;
 import com.onze.api.match.MatchModels.UpdateAttendanceRequest;
+import com.onze.api.match.MatchModels.UpdateMatchGoalkeeperRequest;
 
 import jakarta.validation.Valid;
 
@@ -140,6 +142,43 @@ public class MatchController {
                 matchId,
                 departedUserId,
                 request.replacementUserId());
+    }
+
+    @PutMapping("/api/matches/{matchId}/goalkeepers/{playerUserId}")
+    public MatchResponse updateGoalkeeper(
+            Authentication authentication,
+            @PathVariable UUID matchId,
+            @PathVariable UUID playerUserId,
+            @Valid @RequestBody UpdateMatchGoalkeeperRequest request) {
+        lifecycleService.openDueAttendances();
+        return matchService.updateGoalkeeper(
+                authentication.getName(),
+                matchId,
+                playerUserId,
+                request.isGoalkeeper());
+    }
+
+    @PostMapping("/api/matches/{matchId}/rental-goalkeepers")
+    public MatchResponse addRentalGoalkeeper(
+            Authentication authentication,
+            @PathVariable UUID matchId,
+            @Valid @RequestBody AddRentalGoalkeeperRequest request) {
+        lifecycleService.openDueAttendances();
+        return matchService.addRentalGoalkeeper(
+                authentication.getName(),
+                matchId,
+                request.displayName());
+    }
+
+    @DeleteMapping("/api/matches/{matchId}/rental-goalkeepers/{rentalGoalkeeperId}")
+    public MatchResponse removeRentalGoalkeeper(
+            Authentication authentication,
+            @PathVariable UUID matchId,
+            @PathVariable UUID rentalGoalkeeperId) {
+        return matchService.removeRentalGoalkeeper(
+                authentication.getName(),
+                matchId,
+                rentalGoalkeeperId);
     }
 
     @DeleteMapping("/api/matches/{matchId}")

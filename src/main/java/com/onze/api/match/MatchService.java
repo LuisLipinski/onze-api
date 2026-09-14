@@ -22,6 +22,7 @@ import com.onze.api.match.MatchModels.AttendanceResponse;
 import com.onze.api.match.MatchModels.CreateMatchRequest;
 import com.onze.api.match.MatchModels.MatchResponse;
 import com.onze.api.match.MatchModels.PlayerCreditResponse;
+import com.onze.api.match.MatchModels.RentalGoalkeeperResponse;
 import com.onze.api.user.User;
 import com.onze.api.user.UserRepository;
 
@@ -34,6 +35,8 @@ public class MatchService {
     private final FootballMatchRepository matchRepository;
     private final MatchSeriesRepository seriesRepository;
     private final MatchAttendanceRepository attendanceRepository;
+    private final MatchRentalGoalkeeperRepository rentalGoalkeeperRepository;
+    private final MatchCapacityService capacityService;
     private final MatchNotificationQueue notificationQueue;
     private final PlayerCreditService playerCreditService;
     private final GroupRepository groupRepository;
@@ -45,6 +48,8 @@ public class MatchService {
             FootballMatchRepository matchRepository,
             MatchSeriesRepository seriesRepository,
             MatchAttendanceRepository attendanceRepository,
+            MatchRentalGoalkeeperRepository rentalGoalkeeperRepository,
+            MatchCapacityService capacityService,
             MatchNotificationQueue notificationQueue,
             PlayerCreditService playerCreditService,
             GroupRepository groupRepository,
@@ -54,6 +59,8 @@ public class MatchService {
         this.matchRepository = matchRepository;
         this.seriesRepository = seriesRepository;
         this.attendanceRepository = attendanceRepository;
+        this.rentalGoalkeeperRepository = rentalGoalkeeperRepository;
+        this.capacityService = capacityService;
         this.notificationQueue = notificationQueue;
         this.playerCreditService = playerCreditService;
         this.groupRepository = groupRepository;
@@ -79,6 +86,7 @@ public class MatchService {
         String venue = request.venue().trim();
         String notes = normalizeOptional(request.notes());
         PaymentConfiguration payment = resolvePaymentConfiguration(group, request);
+        boolean goalkeeperPays = request.goalkeeperPays() == null || request.goalkeeperPays();
         DeadlineConfiguration deadlines = resolveDeadlines(
                 request,
                 zoneId,
@@ -96,6 +104,7 @@ public class MatchService {
                     request.maxPlayers(),
                     payment.amount(),
                     payment.pixKey(),
+                    goalkeeperPays,
                     notes));
             match = matchRepository.save(new FootballMatch(
                     groupId,
@@ -107,6 +116,7 @@ public class MatchService {
                     request.maxPlayers(),
                     payment.amount(),
                     payment.pixKey(),
+                    goalkeeperPays,
                     notes,
                     now,
                     now,
@@ -125,6 +135,7 @@ public class MatchService {
                     request.maxPlayers(),
                     payment.amount(),
                     payment.pixKey(),
+                    goalkeeperPays,
                     notes,
                     now,
                     now,
@@ -274,8 +285,8 @@ public class MatchService {
         if (joining && !match.isSignupOpen(now)) {
             throw new SignupDeadlinePassedException();
         }
-        long goingBefore = attendanceRepository.countByMatchIdAndStatus(matchId, AttendanceStatus.GOING);
-        if (joining && goingBefore >= match.getMaxPlayers()) {
+        long occupiedBefore = capacityService.occupiedSpots(matchId);
+        if (joining && occupiedBefore >= match.getMaxPlayers()) {
             throw new MatchFullException();
         }
 
@@ -285,7 +296,7 @@ public class MatchService {
                     matchId,
                     userId,
                     requestedStatus,
-                    match.getPaymentAmount()));
+                    MatchPaymentPolicy.effectiveAmount(match, null)));
         } else {
             if (withdrawing && !protectedWithdrawal) {
                 creditReleased = playerCreditService.releaseReservation(
@@ -293,7 +304,10 @@ public class MatchService {
                         attendance,
                         now);
             }
-            attendance.changeStatus(requestedStatus, match.getPaymentAmount(), now);
+            attendance.changeStatus(
+                    requestedStatus,
+                    MatchPaymentPolicy.effectiveAmount(match, attendance),
+                    now);
             if (protectedWithdrawal && isSettlementOpen(attendance)) {
                 attendance.requireReplacement(now);
             }
@@ -319,7 +333,7 @@ public class MatchService {
                     now);
         }
 
-        if (joining && goingBefore + 1 == match.getMaxPlayers()) {
+        if (joining && occupiedBefore + 1 == match.getMaxPlayers()) {
             notificationQueue.enqueue(
                     match.getId(),
                     null,
@@ -356,10 +370,8 @@ public class MatchService {
         }
         requireMembership(match.getGroupId(), replacementUserId);
 
-        long goingBefore = attendanceRepository.countByMatchIdAndStatus(
-                matchId,
-                AttendanceStatus.GOING);
-        if (goingBefore >= match.getMaxPlayers()) {
+        long occupiedBefore = capacityService.occupiedSpots(matchId);
+        if (occupiedBefore >= match.getMaxPlayers()) {
             throw new MatchFullException();
         }
 
@@ -377,7 +389,9 @@ public class MatchService {
         }
 
         if (replacementUserId.equals(departedUserId)) {
-            departed.reinstateByAdministrator(match.getPaymentAmount(), now);
+            departed.reinstateByAdministrator(
+                    MatchPaymentPolicy.effectiveAmount(match, departed),
+                    now);
             replacement = departed;
         } else {
             if (replacement == null) {
@@ -385,9 +399,11 @@ public class MatchService {
                         matchId,
                         replacementUserId,
                         AttendanceStatus.GOING,
-                        match.getPaymentAmount()));
+                        MatchPaymentPolicy.effectiveAmount(match, null)));
             } else {
-                replacement.reinstateByAdministrator(match.getPaymentAmount(), now);
+                replacement.reinstateByAdministrator(
+                        MatchPaymentPolicy.effectiveAmount(match, replacement),
+                        now);
             }
             replacement.markAddedAsReplacement(departedUserId, now);
             playerCreditService.reserveForNextMatch(match.getGroupId(), replacementUserId, now);
@@ -403,7 +419,7 @@ public class MatchService {
                 "match:" + match.getId() + ":replacement-added:"
                         + departedUserId + ":" + replacementUserId + ":" + now.toEpochMilli(),
                 now);
-        if (goingBefore + 1 == match.getMaxPlayers()) {
+        if (occupiedBefore + 1 == match.getMaxPlayers()) {
             notificationQueue.enqueue(
                     match.getId(),
                     null,
@@ -412,6 +428,108 @@ public class MatchService {
                     now);
         }
 
+        return toResponse(match, group, membership, now);
+    }
+
+    @Transactional
+    public MatchResponse updateGoalkeeper(
+            String authenticatedUserId,
+            UUID matchId,
+            UUID playerUserId,
+            boolean goalkeeper) {
+        UUID adminUserId = parseUserId(authenticatedUserId);
+        FootballMatch match = matchRepository.findByIdForUpdate(matchId)
+                .orElseThrow(MatchNotFoundException::new);
+        Group group = requireGroup(match.getGroupId());
+        GroupMember membership = requireMembership(match.getGroupId(), adminUserId);
+        requireManagePermission(membership);
+        Instant now = clock.instant();
+        requireEditableMatch(match, now);
+
+        MatchAttendance attendance = attendanceRepository
+                .findByMatchIdAndUserId(matchId, playerUserId)
+                .orElseThrow(GoalkeeperRequiresAttendanceException::new);
+        if (attendance.getStatus() != AttendanceStatus.GOING) {
+            throw new GoalkeeperRequiresAttendanceException();
+        }
+        if (attendance.isGoalkeeper() == goalkeeper) {
+            return toResponse(match, group, membership, now);
+        }
+
+        if (goalkeeper) {
+            if (!match.isGoalkeeperPays() && attendance.hasRecordedCashPayment()) {
+                throw new GoalkeeperPaymentAlreadyRecordedException();
+            }
+            attendance.setGoalkeeper(true);
+            if (MatchPaymentPolicy.isExempt(match, attendance)) {
+                playerCreditService.releaseReservation(match.getGroupId(), attendance, now);
+                attendance.exemptFromPayment(now);
+            }
+        } else {
+            boolean wasExempt = MatchPaymentPolicy.isExempt(match, attendance);
+            attendance.setGoalkeeper(false);
+            if (wasExempt) {
+                attendance.restorePaymentObligation(match.getPaymentAmount());
+                playerCreditService.reserveForNextMatch(match.getGroupId(), playerUserId, now);
+            }
+        }
+
+        return toResponse(match, group, membership, now);
+    }
+
+    @Transactional
+    public MatchResponse addRentalGoalkeeper(
+            String authenticatedUserId,
+            UUID matchId,
+            String displayName) {
+        UUID adminUserId = parseUserId(authenticatedUserId);
+        FootballMatch match = matchRepository.findByIdForUpdate(matchId)
+                .orElseThrow(MatchNotFoundException::new);
+        Group group = requireGroup(match.getGroupId());
+        GroupMember membership = requireMembership(match.getGroupId(), adminUserId);
+        requireManagePermission(membership);
+        Instant now = clock.instant();
+        requireEditableMatch(match, now);
+
+        long occupiedBefore = capacityService.occupiedSpots(matchId);
+        if (occupiedBefore >= match.getMaxPlayers()) {
+            throw new MatchFullException();
+        }
+        String normalizedName = normalizeOptional(displayName);
+        if (normalizedName == null) {
+            throw new InvalidRentalGoalkeeperNameException();
+        }
+        rentalGoalkeeperRepository.save(new MatchRentalGoalkeeper(matchId, normalizedName));
+
+        if (occupiedBefore + 1 == match.getMaxPlayers()) {
+            notificationQueue.enqueue(
+                    match.getId(),
+                    null,
+                    MatchNotificationType.TEAM_FULL,
+                    "match:" + match.getId() + ":team-full:" + now.toEpochMilli(),
+                    now);
+        }
+        return toResponse(match, group, membership, now);
+    }
+
+    @Transactional
+    public MatchResponse removeRentalGoalkeeper(
+            String authenticatedUserId,
+            UUID matchId,
+            UUID rentalGoalkeeperId) {
+        UUID adminUserId = parseUserId(authenticatedUserId);
+        FootballMatch match = matchRepository.findByIdForUpdate(matchId)
+                .orElseThrow(MatchNotFoundException::new);
+        Group group = requireGroup(match.getGroupId());
+        GroupMember membership = requireMembership(match.getGroupId(), adminUserId);
+        requireManagePermission(membership);
+        Instant now = clock.instant();
+        requireEditableMatch(match, now);
+
+        MatchRentalGoalkeeper rentalGoalkeeper = rentalGoalkeeperRepository
+                .findByIdAndMatchId(rentalGoalkeeperId, matchId)
+                .orElseThrow(RentalGoalkeeperNotFoundException::new);
+        rentalGoalkeeperRepository.delete(rentalGoalkeeper);
         return toResponse(match, group, membership, now);
     }
 
@@ -431,6 +549,7 @@ public class MatchService {
         if (attendance.getStatus() != AttendanceStatus.GOING) {
             throw new PaymentRequiresAttendanceException();
         }
+        requireParticipantPayment(match, attendance);
         if (!match.isPaymentOpen(now)
                 && !wasAddedAfterPaymentDeadline(match, attendance)) {
             throw new PaymentDeadlinePassedException();
@@ -557,8 +676,11 @@ public class MatchService {
 
         MatchAttendance attendance = attendanceRepository.findByMatchIdAndUserId(matchId, playerUserId)
                 .orElseThrow(PaymentRequiresAttendanceException::new);
-        if (attendance.getStatus() != AttendanceStatus.GOING
-                || attendance.getPaymentStatus() == null) {
+        if (attendance.getStatus() != AttendanceStatus.GOING) {
+            throw new PaymentRequiresAttendanceException();
+        }
+        requireParticipantPayment(match, attendance);
+        if (attendance.getPaymentStatus() == null) {
             throw new PaymentRequiresAttendanceException();
         }
 
@@ -705,7 +827,7 @@ public class MatchService {
         CreditAllocationStatus myCreditAllocationStatus = null;
         Instant myPaymentDeadlineRemovedAt = null;
         MatchAttendance currentUserAttendance = null;
-        int goingCount = 0;
+        int goingCount = Math.toIntExact(capacityService.occupiedSpots(match.getId()));
         int notGoingCount = 0;
         boolean canManage = membership.hasPermission(GroupAdminPermission.SCHEDULE_GAMES);
 
@@ -714,9 +836,7 @@ public class MatchService {
             if (user == null) {
                 continue;
             }
-            if (attendance.getStatus() == AttendanceStatus.GOING) {
-                goingCount++;
-            } else if (attendance.getStatus() == AttendanceStatus.NOT_GOING) {
+            if (attendance.getStatus() == AttendanceStatus.NOT_GOING) {
                 notGoingCount++;
             }
             boolean currentUser = attendance.getUserId().equals(membership.getUserId());
@@ -742,6 +862,8 @@ public class MatchService {
                     attendance.getUserId(),
                     user.getDisplayName(),
                     attendance.getStatus(),
+                    attendance.isGoalkeeper(),
+                    MatchPaymentPolicy.isExempt(match, attendance),
                     financialDetailsVisible ? attendance.getPaymentStatus() : null,
                     financialDetailsVisible ? attendance.getPaymentSettlementStatus() : null,
                     financialDetailsVisible ? attendance.getCreditAppliedAmount() : null,
@@ -762,6 +884,14 @@ public class MatchService {
                 && seriesRepository.findById(match.getSeriesId())
                         .map(MatchSeries::isActive)
                         .orElse(false);
+        List<RentalGoalkeeperResponse> rentalGoalkeepers = rentalGoalkeeperRepository
+                .findAllByMatchIdOrderByCreatedAtAsc(match.getId())
+                .stream()
+                .map(goalkeeper -> new RentalGoalkeeperResponse(
+                        goalkeeper.getId(),
+                        goalkeeper.getDisplayName(),
+                        goalkeeper.getCreatedAt()))
+                .toList();
         return new MatchResponse(
                 match.getId(),
                 match.getGroupId(),
@@ -774,6 +904,7 @@ public class MatchService {
                 match.getVenue(),
                 match.getMaxPlayers(),
                 match.isPaymentRequired(),
+                match.isGoalkeeperPays(),
                 match.getPaymentAmount(),
                 match.getPixKey(),
                 match.getNotes(),
@@ -797,6 +928,7 @@ public class MatchService {
                 goingCount,
                 notGoingCount,
                 List.copyOf(attendances),
+                rentalGoalkeepers,
                 canManage);
     }
 
@@ -848,6 +980,7 @@ public class MatchService {
             Instant now) {
         return attendance != null
                 && attendance.getStatus() == AttendanceStatus.GOING
+                && MatchPaymentPolicy.requiresPayment(match, attendance)
                 && attendance.getPaymentStatus() == PaymentStatus.PENDING
                 && (match.isPaymentOpen(now)
                         || wasAddedAfterPaymentDeadline(match, attendance));
@@ -1016,9 +1149,24 @@ public class MatchService {
         }
     }
 
+    private void requireEditableMatch(FootballMatch match, Instant now) {
+        if (match.getStatus() == MatchStatus.CANCELLED) {
+            throw new MatchCancelledException();
+        }
+        if (!match.getStartsAt().isAfter(now)) {
+            throw new MatchAlreadyStartedException();
+        }
+    }
+
     private void requirePayment(FootballMatch match) {
         if (!match.isPaymentRequired()) {
             throw new PaymentNotRequiredException();
+        }
+    }
+
+    private void requireParticipantPayment(FootballMatch match, MatchAttendance attendance) {
+        if (MatchPaymentPolicy.isExempt(match, attendance)) {
+            throw new GoalkeeperPaymentExemptException();
         }
     }
 
@@ -1143,6 +1291,26 @@ public class MatchService {
     }
 
     public static final class PaymentRequiresAttendanceException extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+    }
+
+    public static final class GoalkeeperRequiresAttendanceException extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+    }
+
+    public static final class GoalkeeperPaymentExemptException extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+    }
+
+    public static final class GoalkeeperPaymentAlreadyRecordedException extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+    }
+
+    public static final class RentalGoalkeeperNotFoundException extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+    }
+
+    public static final class InvalidRentalGoalkeeperNameException extends RuntimeException {
         private static final long serialVersionUID = 1L;
     }
 
