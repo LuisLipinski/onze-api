@@ -185,7 +185,7 @@ A base funcional mais recente foi introduzida pelo commit `13cbc1a`; commits pos
 
 ## Qualidade e execução
 
-- A suíte atual possui 60 testes JUnit.
+- A suíte atual possui 53 testes JUnit.
 - Integrações usam PostgreSQL 18 por Testcontainers e executam as migrações Flyway.
 - `API CI` executa `mvn verify`.
 - `Docker CI` constrói a imagem de produção.

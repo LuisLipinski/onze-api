@@ -1,7 +1,7 @@
 ALTER TABLE group_members
     ADD COLUMN can_play_goalkeeper BOOLEAN NOT NULL DEFAULT FALSE,
     ADD COLUMN dominant_foot VARCHAR(16),
-    ADD COLUMN technical_level SMALLINT,
+    ADD COLUMN technical_level INTEGER,
     ADD CONSTRAINT ck_group_members_dominant_foot
         CHECK (dominant_foot IS NULL OR dominant_foot IN ('RIGHT', 'LEFT', 'BOTH')),
     ADD CONSTRAINT ck_group_members_technical_level
