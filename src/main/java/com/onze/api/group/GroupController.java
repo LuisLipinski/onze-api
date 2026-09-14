@@ -10,9 +10,12 @@ import com.onze.api.group.GroupInviteModels.JoinGroupResponse;
 import com.onze.api.group.GroupModels.CreateGroupRequest;
 import com.onze.api.group.GroupModels.GroupMemberResponse;
 import com.onze.api.group.GroupModels.GroupResponse;
+import com.onze.api.group.GroupModels.SportsProfileResponse;
 import com.onze.api.group.GroupModels.TransferPrimaryAdminRequest;
 import com.onze.api.group.GroupModels.UpdateAdminPermissionsRequest;
 import com.onze.api.group.GroupModels.UpdateGroupDetailsRequest;
+import com.onze.api.group.GroupModels.UpdateMemberSportsProfileRequest;
+import com.onze.api.group.GroupModels.UpdateOwnSportsProfileRequest;
 
 import jakarta.validation.Valid;
 
@@ -37,14 +40,17 @@ public class GroupController {
     private final GroupService groupService;
     private final GroupInviteService groupInviteService;
     private final GroupAdminService groupAdminService;
+    private final GroupSportsProfileService groupSportsProfileService;
 
     public GroupController(
             GroupService groupService,
             GroupInviteService groupInviteService,
-            GroupAdminService groupAdminService) {
+            GroupAdminService groupAdminService,
+            GroupSportsProfileService groupSportsProfileService) {
         this.groupService = groupService;
         this.groupInviteService = groupInviteService;
         this.groupAdminService = groupAdminService;
+        this.groupSportsProfileService = groupSportsProfileService;
     }
 
     @PostMapping
@@ -97,6 +103,50 @@ public class GroupController {
             Authentication authentication,
             @PathVariable UUID groupId) {
         return groupAdminService.listMembers(authentication.getName(), groupId);
+    }
+
+    @GetMapping("/{groupId}/members/me/sports-profile")
+    public SportsProfileResponse getOwnSportsProfile(
+            Authentication authentication,
+            @PathVariable UUID groupId) {
+        return groupSportsProfileService.getOwn(authentication.getName(), groupId);
+    }
+
+    @PutMapping("/{groupId}/members/me/sports-profile")
+    public SportsProfileResponse updateOwnSportsProfile(
+            Authentication authentication,
+            @PathVariable UUID groupId,
+            @Valid @RequestBody UpdateOwnSportsProfileRequest request) {
+        return groupSportsProfileService.updateOwn(
+                authentication.getName(),
+                groupId,
+                request.positions(),
+                request.canPlayGoalkeeper(),
+                request.dominantFoot());
+    }
+
+    @GetMapping("/{groupId}/members/{memberId}/sports-profile")
+    public SportsProfileResponse getMemberSportsProfile(
+            Authentication authentication,
+            @PathVariable UUID groupId,
+            @PathVariable UUID memberId) {
+        return groupSportsProfileService.getMember(authentication.getName(), groupId, memberId);
+    }
+
+    @PutMapping("/{groupId}/members/{memberId}/sports-profile")
+    public SportsProfileResponse updateMemberSportsProfile(
+            Authentication authentication,
+            @PathVariable UUID groupId,
+            @PathVariable UUID memberId,
+            @Valid @RequestBody UpdateMemberSportsProfileRequest request) {
+        return groupSportsProfileService.updateMember(
+                authentication.getName(),
+                groupId,
+                memberId,
+                request.positions(),
+                request.canPlayGoalkeeper(),
+                request.dominantFoot(),
+                request.technicalLevel());
     }
 
     @PutMapping("/{groupId}/members/{memberId}/promote")

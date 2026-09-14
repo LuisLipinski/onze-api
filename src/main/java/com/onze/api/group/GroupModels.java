@@ -11,6 +11,8 @@ import java.util.UUID;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Digits;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
@@ -67,7 +69,36 @@ public final class GroupModels {
             String displayName,
             GroupRole role,
             Set<GroupAdminPermission> permissions,
-            boolean currentUser) {
+            boolean currentUser,
+            Set<PlayerPosition> positions,
+            boolean canPlayGoalkeeper,
+            DominantFoot dominantFoot,
+            Integer technicalLevel,
+            boolean sportsProfileComplete) {
+    }
+
+    public record SportsProfileResponse(
+            UUID membershipId,
+            UUID userId,
+            String displayName,
+            Set<PlayerPosition> positions,
+            boolean canPlayGoalkeeper,
+            DominantFoot dominantFoot,
+            Integer technicalLevel,
+            boolean complete) {
+    }
+
+    public record UpdateOwnSportsProfileRequest(
+            @NotNull Set<@NotNull PlayerPosition> positions,
+            @NotNull Boolean canPlayGoalkeeper,
+            @NotNull DominantFoot dominantFoot) {
+    }
+
+    public record UpdateMemberSportsProfileRequest(
+            @NotNull Set<@NotNull PlayerPosition> positions,
+            @NotNull Boolean canPlayGoalkeeper,
+            @NotNull DominantFoot dominantFoot,
+            @NotNull @Min(1) @Max(5) Integer technicalLevel) {
     }
 
     public record UpdateAdminPermissionsRequest(

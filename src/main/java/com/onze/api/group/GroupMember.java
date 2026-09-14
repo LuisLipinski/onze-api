@@ -52,6 +52,24 @@ public class GroupMember {
     @Column(name = "permission", nullable = false, length = 48)
     private Set<GroupAdminPermission> permissions = new HashSet<>();
 
+    @ElementCollection(fetch = FetchType.EAGER)
+    @CollectionTable(
+            name = "group_member_positions",
+            joinColumns = @JoinColumn(name = "group_member_id"))
+    @Enumerated(EnumType.STRING)
+    @Column(name = "position", nullable = false, length = 32)
+    private Set<PlayerPosition> positions = new HashSet<>();
+
+    @Column(name = "can_play_goalkeeper", nullable = false)
+    private boolean canPlayGoalkeeper;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "dominant_foot", length = 16)
+    private DominantFoot dominantFoot;
+
+    @Column(name = "technical_level")
+    private Integer technicalLevel;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -89,6 +107,26 @@ public class GroupMember {
         return createdAt;
     }
 
+    public Set<PlayerPosition> getPositions() {
+        return Collections.unmodifiableSet(positions);
+    }
+
+    public boolean canPlayGoalkeeper() {
+        return canPlayGoalkeeper;
+    }
+
+    public DominantFoot getDominantFoot() {
+        return dominantFoot;
+    }
+
+    public Integer getTechnicalLevel() {
+        return technicalLevel;
+    }
+
+    public boolean isSportsProfileComplete() {
+        return (!positions.isEmpty() || canPlayGoalkeeper) && dominantFoot != null;
+    }
+
     public Set<GroupAdminPermission> getPermissions() {
         if (role == GroupRole.PRIMARY_ADMIN) {
             return Set.of(GroupAdminPermission.values());
@@ -114,5 +152,24 @@ public class GroupMember {
         if (role != GroupRole.ADMIN) {
             permissions.clear();
         }
+    }
+
+    public void updateOwnSportsProfile(
+            Collection<PlayerPosition> newPositions,
+            boolean newCanPlayGoalkeeper,
+            DominantFoot newDominantFoot) {
+        positions.clear();
+        positions.addAll(newPositions);
+        canPlayGoalkeeper = newCanPlayGoalkeeper;
+        dominantFoot = newDominantFoot;
+    }
+
+    public void updateSportsProfile(
+            Collection<PlayerPosition> newPositions,
+            boolean newCanPlayGoalkeeper,
+            DominantFoot newDominantFoot,
+            Integer newTechnicalLevel) {
+        updateOwnSportsProfile(newPositions, newCanPlayGoalkeeper, newDominantFoot);
+        technicalLevel = newTechnicalLevel;
     }
 }
