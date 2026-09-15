@@ -9,17 +9,21 @@ public class MatchCapacityService {
 
     private final MatchAttendanceRepository attendanceRepository;
     private final MatchRentalGoalkeeperRepository rentalGoalkeeperRepository;
+    private final MatchGuestRepository guestRepository;
 
     public MatchCapacityService(
             MatchAttendanceRepository attendanceRepository,
-            MatchRentalGoalkeeperRepository rentalGoalkeeperRepository) {
+            MatchRentalGoalkeeperRepository rentalGoalkeeperRepository,
+            MatchGuestRepository guestRepository) {
         this.attendanceRepository = attendanceRepository;
         this.rentalGoalkeeperRepository = rentalGoalkeeperRepository;
+        this.guestRepository = guestRepository;
     }
 
     public long occupiedSpots(UUID matchId) {
         return attendanceRepository.countByMatchIdAndStatus(matchId, AttendanceStatus.GOING)
-                + rentalGoalkeeperRepository.countByMatchId(matchId);
+                + rentalGoalkeeperRepository.countByMatchId(matchId)
+                + guestRepository.countByMatchId(matchId);
     }
 
     public boolean isFull(FootballMatch match) {

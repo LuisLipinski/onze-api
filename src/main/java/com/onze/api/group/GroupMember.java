@@ -71,6 +71,9 @@ public class GroupMember {
     @Column(name = "technical_level")
     private Integer technicalLevel;
 
+    @Column(name = "technical_profile_updated_at")
+    private Instant technicalProfileUpdatedAt;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -132,6 +135,14 @@ public class GroupMember {
 
     public Integer getTechnicalLevel() {
         return technicalLevel;
+    }
+
+    public Instant getTechnicalProfileUpdatedAt() {
+        return technicalProfileUpdatedAt;
+    }
+
+    public void markTechnicalProfileUpdated(Instant updatedAt) {
+        technicalProfileUpdatedAt = updatedAt;
     }
 
     public boolean isSportsProfileComplete() {

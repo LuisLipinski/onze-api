@@ -28,7 +28,17 @@ import com.onze.api.match.MatchService.ReplacementPlayerUnavailableException;
 import com.onze.api.match.MatchService.ReplacementRequiredForSettlementException;
 import com.onze.api.match.MatchService.ReplacementVacancyNotOpenException;
 import com.onze.api.match.MatchService.RentalGoalkeeperNotFoundException;
+import com.onze.api.match.MatchService.InvalidGuestException;
+import com.onze.api.match.MatchService.GuestNotFoundException;
 import com.onze.api.match.MatchFormatPolicy.InvalidMatchFormatException;
+import com.onze.api.match.MatchPlayerPolicy.InvalidMinimumPlayersException;
+import com.onze.api.technical.TechnicalRatings.InvalidTechnicalRatingException;
+import com.onze.api.match.MatchTeamService.InternalMatchRequiredException;
+import com.onze.api.match.MatchTeamService.MinimumPlayersNotReachedException;
+import com.onze.api.match.MatchTeamService.GoalkeepersNotReadyException;
+import com.onze.api.match.MatchTeamService.InvalidTeamAssignmentException;
+import com.onze.api.match.MatchTeamService.TeamAssignmentNotFoundException;
+import com.onze.api.match.MatchTeamService.IneligibleGoalkeeperException;
 import com.onze.api.match.MatchGoalkeeperService.GoalkeeperCandidateRequiredException;
 import com.onze.api.match.MatchGoalkeeperService.GoalkeeperPaymentAlreadyRecordedException;
 import com.onze.api.match.MatchGoalkeeperService.PrimaryGoalkeeperCannotBeUnassignedException;
@@ -113,6 +123,86 @@ public class MatchExceptionHandler {
                 .body(new ErrorResponse(
                         "INVALID_MATCH_FORMAT",
                         "Entre membros exige ao menos 2 times e goleiros em quantidade igual ou maior; contra outro time exige ao menos 1 goleiro e não usa quantidade de times."));
+    }
+
+    @ExceptionHandler(InvalidMinimumPlayersException.class)
+    ResponseEntity<ErrorResponse> invalidMinimumPlayers() {
+        return ResponseEntity.badRequest()
+                .body(new ErrorResponse(
+                        "INVALID_MINIMUM_PLAYERS",
+                        "A quantidade mínima deve ser maior que zero e não pode ultrapassar o limite de jogadores."));
+    }
+
+    @ExceptionHandler(InvalidTechnicalRatingException.class)
+    ResponseEntity<ErrorResponse> invalidTechnicalRating() {
+        return ResponseEntity.badRequest()
+                .body(new ErrorResponse(
+                        "INVALID_TECHNICAL_RATING",
+                        "Cada habilidade avaliada deve ter um valor inteiro de 1 a 10."));
+    }
+
+    @ExceptionHandler(InvalidGuestException.class)
+    ResponseEntity<ErrorResponse> invalidGuest() {
+        return ResponseEntity.badRequest()
+                .body(new ErrorResponse(
+                        "INVALID_GUEST",
+                        "Informe nome, posição principal e uma posição secundária diferente."));
+    }
+
+    @ExceptionHandler(GuestNotFoundException.class)
+    ResponseEntity<ErrorResponse> guestNotFound() {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(new ErrorResponse("GUEST_NOT_FOUND", "Convidado não encontrado nesta partida."));
+    }
+
+    @ExceptionHandler(InternalMatchRequiredException.class)
+    ResponseEntity<ErrorResponse> internalMatchRequired() {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(new ErrorResponse(
+                        "INTERNAL_MATCH_REQUIRED",
+                        "A formação automática de times está disponível para partidas entre membros."));
+    }
+
+    @ExceptionHandler(MinimumPlayersNotReachedException.class)
+    ResponseEntity<ErrorResponse> minimumPlayersNotReached(MinimumPlayersNotReachedException exception) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(new ErrorResponse(
+                        "MINIMUM_PLAYERS_NOT_REACHED",
+                        "Ainda faltam " + exception.getMissingPlayers()
+                                + " jogador(es) para formar os times."));
+    }
+
+    @ExceptionHandler(GoalkeepersNotReadyException.class)
+    ResponseEntity<ErrorResponse> goalkeepersNotReady(GoalkeepersNotReadyException exception) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(new ErrorResponse(
+                        "GOALKEEPERS_NOT_READY",
+                        "Ainda faltam " + exception.getMissingGoalkeepers()
+                                + " goleiro(s) para formar os times."));
+    }
+
+    @ExceptionHandler(InvalidTeamAssignmentException.class)
+    ResponseEntity<ErrorResponse> invalidTeamAssignment() {
+        return ResponseEntity.badRequest()
+                .body(new ErrorResponse(
+                        "INVALID_TEAM_ASSIGNMENT",
+                        "Informe um time e uma função válidos para a modalidade da partida."));
+    }
+
+    @ExceptionHandler(TeamAssignmentNotFoundException.class)
+    ResponseEntity<ErrorResponse> teamAssignmentNotFound() {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(new ErrorResponse(
+                        "TEAM_ASSIGNMENT_NOT_FOUND",
+                        "Escalação não encontrada nesta partida."));
+    }
+
+    @ExceptionHandler(IneligibleGoalkeeperException.class)
+    ResponseEntity<ErrorResponse> ineligibleGoalkeeper() {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(new ErrorResponse(
+                        "INELIGIBLE_GOALKEEPER",
+                        "Este participante não pode ser escalado automaticamente como goleiro."));
     }
 
     @ExceptionHandler(AttendanceClosedException.class)

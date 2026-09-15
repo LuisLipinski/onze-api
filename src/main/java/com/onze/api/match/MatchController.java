@@ -13,6 +13,12 @@ import com.onze.api.match.MatchModels.PlayerCreditResponse;
 import com.onze.api.match.MatchModels.ResolvePaymentSettlementRequest;
 import com.onze.api.match.MatchModels.UpdateAttendanceRequest;
 import com.onze.api.match.MatchModels.UpdateMatchGoalkeeperRequest;
+import com.onze.api.match.MatchModels.UpdateMatchPlayerConfigurationRequest;
+import com.onze.api.match.MatchModels.AddGuestRequest;
+import com.onze.api.match.MatchModels.UpdateGuestTechnicalProfileRequest;
+import com.onze.api.match.MatchModels.GuestTechnicalProfileResponse;
+import com.onze.api.match.TeamModels.MatchTeamsResponse;
+import com.onze.api.match.TeamModels.UpdateTeamAssignmentRequest;
 
 import jakarta.validation.Valid;
 
@@ -31,10 +37,15 @@ public class MatchController {
 
     private final MatchService matchService;
     private final MatchLifecycleService lifecycleService;
+    private final MatchTeamService teamService;
 
-    public MatchController(MatchService matchService, MatchLifecycleService lifecycleService) {
+    public MatchController(
+            MatchService matchService,
+            MatchLifecycleService lifecycleService,
+            MatchTeamService teamService) {
         this.matchService = matchService;
         this.lifecycleService = lifecycleService;
+        this.teamService = teamService;
     }
 
     @PostMapping("/api/groups/{groupId}/matches")
@@ -179,6 +190,80 @@ public class MatchController {
                 authentication.getName(),
                 matchId,
                 rentalGoalkeeperId);
+    }
+
+    @PutMapping("/api/matches/{matchId}/player-configuration")
+    public MatchResponse updatePlayerConfiguration(
+            Authentication authentication,
+            @PathVariable UUID matchId,
+            @Valid @RequestBody UpdateMatchPlayerConfigurationRequest request) {
+        return matchService.updatePlayerConfiguration(
+                authentication.getName(), matchId, request.modality(), request.minimumPlayers());
+    }
+
+    @PostMapping("/api/matches/{matchId}/guests")
+    public MatchResponse addGuest(
+            Authentication authentication,
+            @PathVariable UUID matchId,
+            @Valid @RequestBody AddGuestRequest request) {
+        return matchService.addGuest(
+                authentication.getName(),
+                matchId,
+                request.displayName(),
+                request.primaryPosition(),
+                request.secondaryPosition(),
+                request.ratings());
+    }
+
+    @DeleteMapping("/api/matches/{matchId}/guests/{guestId}")
+    public MatchResponse removeGuest(
+            Authentication authentication,
+            @PathVariable UUID matchId,
+            @PathVariable UUID guestId) {
+        return matchService.removeGuest(authentication.getName(), matchId, guestId);
+    }
+
+    @GetMapping("/api/matches/{matchId}/guests/{guestId}/technical-profile")
+    public GuestTechnicalProfileResponse getGuestTechnicalProfile(
+            Authentication authentication,
+            @PathVariable UUID matchId,
+            @PathVariable UUID guestId) {
+        return matchService.getGuestTechnicalProfile(authentication.getName(), matchId, guestId);
+    }
+
+    @PutMapping("/api/matches/{matchId}/guests/{guestId}/technical-profile")
+    public GuestTechnicalProfileResponse updateGuestTechnicalProfile(
+            Authentication authentication,
+            @PathVariable UUID matchId,
+            @PathVariable UUID guestId,
+            @Valid @RequestBody UpdateGuestTechnicalProfileRequest request) {
+        return matchService.updateGuestTechnicalProfile(
+                authentication.getName(), matchId, guestId, request.ratings());
+    }
+
+    @PostMapping("/api/matches/{matchId}/teams/generate")
+    public MatchTeamsResponse generateTeams(
+            Authentication authentication,
+            @PathVariable UUID matchId) {
+        return teamService.generate(authentication.getName(), matchId);
+    }
+
+    @GetMapping("/api/matches/{matchId}/teams")
+    public MatchTeamsResponse getTeams(
+            Authentication authentication,
+            @PathVariable UUID matchId) {
+        return teamService.get(authentication.getName(), matchId);
+    }
+
+    @PutMapping("/api/matches/{matchId}/teams/assignments/{assignmentId}")
+    public MatchTeamsResponse updateTeamAssignment(
+            Authentication authentication,
+            @PathVariable UUID matchId,
+            @PathVariable UUID assignmentId,
+            @Valid @RequestBody UpdateTeamAssignmentRequest request) {
+        return teamService.updateAssignment(
+                authentication.getName(), matchId, assignmentId,
+                request.teamNumber(), request.assignedRole());
     }
 
     @DeleteMapping("/api/matches/{matchId}")

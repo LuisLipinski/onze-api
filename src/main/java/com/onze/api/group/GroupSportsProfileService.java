@@ -28,7 +28,7 @@ public class GroupSportsProfileService {
 
     @Transactional(readOnly = true)
     public SportsProfileResponse getOwn(String authenticatedUserId, UUID groupId) {
-        return toResponse(requireOwnMembership(authenticatedUserId, groupId));
+        return toResponse(requireOwnMembership(authenticatedUserId, groupId), false);
     }
 
     @Transactional
@@ -50,13 +50,13 @@ public class GroupSportsProfileService {
                 selection.secondaryPosition(),
                 canPlayGoalkeeper,
                 dominantFoot);
-        return toResponse(membership);
+        return toResponse(membership, false);
     }
 
     @Transactional(readOnly = true)
     public SportsProfileResponse getMember(String authenticatedUserId, UUID groupId, UUID memberId) {
         requireProfilePermission(authenticatedUserId, groupId);
-        return toResponse(requireMember(groupId, memberId));
+        return toResponse(requireMember(groupId, memberId), true);
     }
 
     @Transactional
@@ -82,7 +82,7 @@ public class GroupSportsProfileService {
                 canPlayGoalkeeper,
                 dominantFoot,
                 technicalLevel);
-        return toResponse(member);
+        return toResponse(member, true);
     }
 
     private GroupMember requireOwnMembership(String authenticatedUserId, UUID groupId) {
@@ -114,7 +114,7 @@ public class GroupSportsProfileService {
         }
     }
 
-    private SportsProfileResponse toResponse(GroupMember member) {
+    private SportsProfileResponse toResponse(GroupMember member, boolean technicalDetailsVisible) {
         User user = userRepository.findById(member.getUserId())
                 .orElseThrow(GroupAdminService.GroupMemberNotFoundException::new);
         return new SportsProfileResponse(
@@ -126,7 +126,7 @@ public class GroupSportsProfileService {
                 member.getPositions(),
                 member.canPlayGoalkeeper(),
                 member.getDominantFoot(),
-                member.getTechnicalLevel(),
+                technicalDetailsVisible ? member.getTechnicalLevel() : null,
                 member.isSportsProfileComplete());
     }
 

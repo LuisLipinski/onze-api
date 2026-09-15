@@ -16,6 +16,9 @@ import com.onze.api.group.GroupModels.UpdateAdminPermissionsRequest;
 import com.onze.api.group.GroupModels.UpdateGroupDetailsRequest;
 import com.onze.api.group.GroupModels.UpdateMemberSportsProfileRequest;
 import com.onze.api.group.GroupModels.UpdateOwnSportsProfileRequest;
+import com.onze.api.technical.TechnicalProfileModels.TechnicalProfileResponse;
+import com.onze.api.technical.TechnicalProfileModels.UpdateTechnicalProfileRequest;
+import com.onze.api.technical.TechnicalProfileService;
 
 import jakarta.validation.Valid;
 
@@ -41,16 +44,19 @@ public class GroupController {
     private final GroupInviteService groupInviteService;
     private final GroupAdminService groupAdminService;
     private final GroupSportsProfileService groupSportsProfileService;
+    private final TechnicalProfileService technicalProfileService;
 
     public GroupController(
             GroupService groupService,
             GroupInviteService groupInviteService,
             GroupAdminService groupAdminService,
-            GroupSportsProfileService groupSportsProfileService) {
+            GroupSportsProfileService groupSportsProfileService,
+            TechnicalProfileService technicalProfileService) {
         this.groupService = groupService;
         this.groupInviteService = groupInviteService;
         this.groupAdminService = groupAdminService;
         this.groupSportsProfileService = groupSportsProfileService;
+        this.technicalProfileService = technicalProfileService;
     }
 
     @PostMapping
@@ -151,6 +157,24 @@ public class GroupController {
                 request.canPlayGoalkeeper(),
                 request.dominantFoot(),
                 request.technicalLevel());
+    }
+
+    @GetMapping("/{groupId}/members/{memberId}/technical-profile")
+    public TechnicalProfileResponse getMemberTechnicalProfile(
+            Authentication authentication,
+            @PathVariable UUID groupId,
+            @PathVariable UUID memberId) {
+        return technicalProfileService.get(authentication.getName(), groupId, memberId);
+    }
+
+    @PutMapping("/{groupId}/members/{memberId}/technical-profile")
+    public TechnicalProfileResponse updateMemberTechnicalProfile(
+            Authentication authentication,
+            @PathVariable UUID groupId,
+            @PathVariable UUID memberId,
+            @Valid @RequestBody UpdateTechnicalProfileRequest request) {
+        return technicalProfileService.replace(
+                authentication.getName(), groupId, memberId, request.ratings());
     }
 
     @PutMapping("/{groupId}/members/{memberId}/promote")
