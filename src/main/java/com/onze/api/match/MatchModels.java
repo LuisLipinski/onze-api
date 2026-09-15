@@ -13,7 +13,6 @@ import com.onze.api.technical.PlayerSkill;
 import com.onze.api.technical.TechnicalProfileModels.OverallResponse;
 import com.onze.api.technical.TechnicalProfileModels.PositionOverallResponse;
 
-import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.NotEmpty;
@@ -33,7 +32,7 @@ public final class MatchModels {
             @NotNull LocalTime startTime,
             @NotBlank @Size(max = 64) String timeZone,
             @NotBlank @Size(max = 255) String venue,
-            @Min(2) @Max(100) int maxPlayers,
+            @Min(2) int maxPlayers,
             MatchType matchType,
             Integer teamCount,
             Integer requiredGoalkeepers,
@@ -174,7 +173,8 @@ public final class MatchModels {
 
     public record UpdateMatchPlayerConfigurationRequest(
             @NotNull MatchModality modality,
-            @NotNull @Min(1) Integer minimumPlayers) {
+            @NotNull @Min(1) Integer minimumPlayers,
+            @NotNull @Min(2) Integer maxPlayers) {
     }
 
     public record AddGuestRequest(
