@@ -653,6 +653,156 @@ class MatchGoalkeeperIntegrationTest {
                 .andExpect(jsonPath("$.goingCount").value(3));
     }
 
+    @Test
+    void shouldGeneratePrivateBalancedFutsalTeamsWithGuestsFallbackAndManualChange() throws Exception {
+        AuthResponse creator = register("teams-admin@example.com", "Principal Times");
+        AuthResponse secondGoalkeeper = register("teams-gk@example.com", "Segundo Goleiro");
+        AuthResponse defender = register("teams-defender@example.com", "Defensor");
+        AuthResponse attacker = register("teams-attacker@example.com", "Atacante");
+        GroupResponse group = createGroup(creator, "Pelada balanceada");
+        InviteResponse invite = createInvite(creator, group.id());
+        for (AuthResponse player : List.of(secondGoalkeeper, defender, attacker)) {
+            join(player, invite.code());
+        }
+        completeProfile(creator, group.id(), "GOALKEEPER", null, false);
+        completeProfile(secondGoalkeeper, group.id(), "GOALKEEPER", null, false);
+        completeProfile(defender, group.id(), "DEFENDER", null, false);
+        completeProfile(attacker, group.id(), "ATTACKER", null, false);
+
+        GroupMember defenderMembership = groupMemberRepository
+                .findByGroupIdAndUserId(group.id(), defender.user().id()).orElseThrow();
+        mockMvc.perform(put("/api/groups/{groupId}/members/{memberId}/technical-profile",
+                        group.id(), defenderMembership.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(creator))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "ratings": {
+                                    "DEFENSIVE_POSITIONING": 10,
+                                    "TACKLING": 10,
+                                    "PASSING": 8,
+                                    "BALL_CONTROL": 8,
+                                    "VISION": 8,
+                                    "STRENGTH": 8,
+                                    "AGILITY": 8
+                                  }
+                                }
+                                """))
+                .andExpect(status().isOk());
+
+        LocalDate date = LocalDate.now(SAO_PAULO).plusDays(3);
+        MatchResponse match = readMatch(createMatch(
+                creator,
+                group.id(),
+                teamMatchBody(date, "FUTSAL", 5, 10, 2))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.modality").value("FUTSAL"))
+                .andExpect(jsonPath("$.minimumPlayers").value(5))
+                .andExpect(jsonPath("$.idealPlayers").value(10))
+                .andReturn());
+        for (AuthResponse player : List.of(creator, secondGoalkeeper, defender, attacker)) {
+            confirmAttendance(match.id(), player, "GOING").andExpect(status().isOk());
+        }
+
+        mockMvc.perform(post("/api/matches/{matchId}/teams/generate", match.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(creator)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("MINIMUM_PLAYERS_NOT_REACHED"));
+
+        mockMvc.perform(post("/api/matches/{matchId}/guests", match.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(creator))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "displayName": "Convidado desconhecido",
+                                  "primaryPosition": "MIDFIELDER"
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.goingCount").value(5))
+                .andExpect(jsonPath("$.guests[0].evaluated").value(false));
+
+        var generatedResult = mockMvc.perform(post(
+                        "/api/matches/{matchId}/teams/generate", match.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(creator)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.teams.length()").value(2))
+                .andExpect(jsonPath("$.confirmedPlayers").value(5))
+                .andExpect(jsonPath("$.reducedTeams").value(true))
+                .andExpect(jsonPath("$.technicalDetailsVisible").value(true))
+                .andExpect(jsonPath("$.teams[0].estimatedStrength").isNumber())
+                .andReturn();
+        var generated = jsonMapper.readValue(
+                generatedResult.getResponse().getContentAsString(),
+                TeamModels.MatchTeamsResponse.class);
+        assertThat(generated.teams())
+                .flatExtracting(TeamModels.TeamResponse::assignments)
+                .filteredOn(item -> item.assignedRole().equals("GOALKEEPER"))
+                .hasSize(2);
+        assertThat(generated.teams())
+                .extracting(TeamModels.TeamResponse::estimatedEvaluations)
+                .allMatch(count -> count >= 1);
+
+        mockMvc.perform(get("/api/matches/{matchId}/teams", match.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(attacker)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.technicalDetailsVisible").value(false))
+                .andExpect(jsonPath("$.teams[0].estimatedStrength").value(nullValue()))
+                .andExpect(jsonPath("$.teams[0].assignments[0].overallUsed").value(nullValue()))
+                .andExpect(jsonPath("$.teams[0].assignments[0].reason").value(nullValue()));
+
+        var movable = generated.teams().stream()
+                .flatMap(team -> team.assignments().stream())
+                .filter(item -> !item.assignedRole().equals("GOALKEEPER"))
+                .findFirst()
+                .orElseThrow();
+        var movedResult = mockMvc.perform(put(
+                        "/api/matches/{matchId}/teams/assignments/{assignmentId}",
+                        match.id(), movable.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(creator))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"teamNumber": 2, "assignedRole": "PIVOT"}
+                                """))
+                .andExpect(status().isOk())
+                .andReturn();
+        var moved = jsonMapper.readValue(
+                movedResult.getResponse().getContentAsString(),
+                TeamModels.MatchTeamsResponse.class);
+        assertThat(moved.teams())
+                .flatExtracting(TeamModels.TeamResponse::assignments)
+                .filteredOn(item -> item.id().equals(movable.id()))
+                .singleElement()
+                .satisfies(item -> {
+                    assertThat(item.reason()).isEqualTo(TeamAssignmentReason.MANUAL_ADMIN_CHANGE);
+                    assertThat(item.assignedRole()).isEqualTo("PIVOT");
+                });
+    }
+
+    @Test
+    void shouldDistributeGoalkeepersAcrossThreeTeams() throws Exception {
+        AuthResponse creator = register("teams-three@example.com", "Principal Três");
+        GroupResponse group = createGroup(creator, "Três times automáticos");
+        MatchResponse match = readMatch(createMatch(
+                creator,
+                group.id(),
+                teamMatchBody(LocalDate.now(SAO_PAULO).plusDays(4), "FUT7", 3, 21, 3))
+                .andExpect(status().isCreated())
+                .andReturn());
+        for (int index = 1; index <= 3; index++) {
+            addRentalGoalkeeper(match.id(), creator, "Goleiro " + index)
+                    .andExpect(status().isOk());
+        }
+
+        mockMvc.perform(post("/api/matches/{matchId}/teams/generate", match.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(creator)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.teams.length()").value(3))
+                .andExpect(jsonPath("$.teams[0].assignments.length()").value(1))
+                .andExpect(jsonPath("$.teams[1].assignments.length()").value(1))
+                .andExpect(jsonPath("$.teams[2].assignments.length()").value(1));
+    }
+
     private org.springframework.test.web.servlet.ResultActions createMatch(
             AuthResponse user,
             UUID groupId,
@@ -753,6 +903,31 @@ class MatchGoalkeeperIntegrationTest {
                 requiredGoalkeepers,
                 recurrence,
                 true);
+    }
+
+    private String teamMatchBody(
+            LocalDate date,
+            String modality,
+            int minimumPlayers,
+            int maxPlayers,
+            int teamCount) {
+        return """
+                {
+                  "date": "%s",
+                  "startTime": "20:30:00",
+                  "timeZone": "America/Sao_Paulo",
+                  "venue": "Arena Onze",
+                  "maxPlayers": %d,
+                  "matchType": "INTERNAL",
+                  "teamCount": %d,
+                  "requiredGoalkeepers": %d,
+                  "modality": "%s",
+                  "minimumPlayers": %d,
+                  "paymentRequired": false,
+                  "recurrence": "NONE"
+                }
+                """.formatted(
+                        date, maxPlayers, teamCount, teamCount, modality, minimumPlayers);
     }
 
     private String formatMatchBody(

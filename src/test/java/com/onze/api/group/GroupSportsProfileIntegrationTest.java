@@ -278,6 +278,90 @@ class GroupSportsProfileIntegrationTest {
                 .andExpect(jsonPath("$.code").value("GROUP_MEMBER_NOT_FOUND"));
     }
 
+    @Test
+    void shouldKeepTechnicalRatingsPrivateAndPreserveNullSkills() throws Exception {
+        AuthResponse primary = register("ratings-primary@example.com", "Principal Avaliação");
+        AuthResponse admin = register("ratings-admin@example.com", "Admin Avaliação");
+        AuthResponse player = register("ratings-player@example.com", "Jogador Avaliado");
+        GroupResponse group = createGroup(primary, "Pelada avaliações");
+        InviteResponse invite = createInvite(primary, group.id());
+        join(admin, invite.code());
+        join(player, invite.code());
+        GroupMember adminMembership = membership(group.id(), admin);
+        GroupMember playerMembership = membership(group.id(), player);
+        promote(primary, group.id(), adminMembership.getId());
+
+        mockMvc.perform(get("/api/groups/{groupId}/members/{memberId}/technical-profile",
+                        group.id(), playerMembership.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(player)))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(put("/api/groups/{groupId}/members/{memberId}/technical-profile",
+                        group.id(), playerMembership.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(admin))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"ratings": {"PASSING": 10}}
+                                """))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(put("/api/groups/{groupId}/members/{memberId}/permissions",
+                        group.id(), adminMembership.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(primary))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"permissions": ["EDIT_PLAYER_PROFILES"]}
+                                """))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(put("/api/groups/{groupId}/members/{memberId}/technical-profile",
+                        group.id(), playerMembership.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(admin))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "ratings": {
+                                    "PASSING": 10,
+                                    "FINISHING": 2,
+                                    "GOALKEEPER_REFLEXES": 1,
+                                    "CROSSING": null
+                                  }
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.ratings.PASSING").value(10))
+                .andExpect(jsonPath("$.ratings.FINISHING").value(2))
+                .andExpect(jsonPath("$.ratings.GOALKEEPER_REFLEXES").value(1))
+                .andExpect(jsonPath("$.ratings.CROSSING").doesNotExist())
+                .andExpect(jsonPath("$.generalOverall.overall").value(30))
+                .andExpect(jsonPath("$.generalOverall.coverage").value(14))
+                .andExpect(jsonPath("$.technicalProfileUpdatedAt").exists());
+
+        mockMvc.perform(get("/api/groups/{groupId}/members/{memberId}/technical-profile",
+                        group.id(), playerMembership.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(primary)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.ratings.PASSING").value(10));
+    }
+
+    @Test
+    void shouldRejectTechnicalRatingsOutsideHalfStarScale() throws Exception {
+        AuthResponse primary = register("ratings-invalid@example.com", "Principal Inválido");
+        GroupResponse group = createGroup(primary, "Pelada nota inválida");
+        GroupMember membership = membership(group.id(), primary);
+
+        for (int invalid : new int[]{0, 11}) {
+            mockMvc.perform(put("/api/groups/{groupId}/members/{memberId}/technical-profile",
+                            group.id(), membership.getId())
+                            .header(HttpHeaders.AUTHORIZATION, bearer(primary))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                    {"ratings": {"PASSING": %d}}
+                                    """.formatted(invalid)))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value("INVALID_TECHNICAL_RATING"));
+        }
+    }
+
     private String fullProfile(
             String primaryPosition,
             String secondaryPosition,
