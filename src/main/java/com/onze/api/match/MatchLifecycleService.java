@@ -118,9 +118,13 @@ public class MatchLifecycleService {
             }
 
             List<UUID> releasedCreditUsers = new java.util.ArrayList<>();
-            for (MatchAttendance attendance : attendanceRepository
-                    .findAllByMatchIdOrderByCreatedAtAsc(match.getId())) {
-                if (signupExpired && attendance.getStatus() == AttendanceStatus.PENDING) {
+            List<MatchAttendance> attendances = attendanceRepository
+                    .findAllByMatchIdOrderByCreatedAtAsc(match.getId());
+            if (signupExpired) {
+                for (MatchAttendance attendance : attendances) {
+                    if (attendance.getStatus() != AttendanceStatus.PENDING) {
+                        continue;
+                    }
                     boolean creditReleased = playerCreditService.releaseReservation(
                             match.getGroupId(),
                             attendance,
@@ -130,40 +134,40 @@ public class MatchLifecycleService {
                         attendance.markAutomaticCreditReturn(now);
                         releasedCreditUsers.add(attendance.getUserId());
                     }
-                    continue;
                 }
+                goalkeeperService.processSignupDeadline(match, now);
+            }
 
-                if (!paymentExpired
-                        || attendance.getStatus() != AttendanceStatus.GOING
-                        || !MatchPaymentPolicy.requiresPayment(match, attendance)
-                        || attendance.getPaymentStatus() != PaymentStatus.PENDING
-                        || wasAddedAfterPaymentDeadline(match, attendance)) {
-                    continue;
-                }
+            if (paymentExpired) {
+                for (MatchAttendance attendance : attendances) {
+                    if (attendance.getStatus() != AttendanceStatus.GOING
+                            || !MatchPaymentPolicy.requiresPayment(match, attendance)
+                            || attendance.getPaymentStatus() != PaymentStatus.PENDING
+                            || wasAddedAfterPaymentDeadline(match, attendance)) {
+                        continue;
+                    }
 
-                boolean creditReleased = playerCreditService.releaseReservation(
-                        match.getGroupId(),
-                        attendance,
-                        now);
-                attendance.removeForMissedPayment(match.getPaymentAmount(), now);
-                if (creditReleased) {
-                    attendance.markAutomaticCreditReturn(now);
-                    releasedCreditUsers.add(attendance.getUserId());
+                    boolean creditReleased = playerCreditService.releaseReservation(
+                            match.getGroupId(),
+                            attendance,
+                            now);
+                    attendance.removeForMissedPayment(match.getPaymentAmount(), now);
+                    if (creditReleased) {
+                        attendance.markAutomaticCreditReturn(now);
+                        releasedCreditUsers.add(attendance.getUserId());
+                    }
+                    notificationQueue.enqueue(
+                            match.getId(),
+                            attendance.getUserId(),
+                            MatchNotificationType.PAYMENT_DEADLINE_REMOVAL,
+                            "match:" + match.getId() + ":payment-deadline-removal:"
+                                    + attendance.getUserId(),
+                            now);
                 }
-                notificationQueue.enqueue(
-                        match.getId(),
-                        attendance.getUserId(),
-                        MatchNotificationType.PAYMENT_DEADLINE_REMOVAL,
-                        "match:" + match.getId() + ":payment-deadline-removal:"
-                                + attendance.getUserId(),
-                        now);
             }
 
             for (UUID userId : releasedCreditUsers.stream().distinct().toList()) {
                 playerCreditService.reserveForNextMatch(match.getGroupId(), userId, now);
-            }
-            if (signupExpired) {
-                goalkeeperService.processSignupDeadline(match, now);
             }
         }
     }

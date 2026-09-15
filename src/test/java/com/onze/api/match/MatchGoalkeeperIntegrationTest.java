@@ -533,17 +533,21 @@ class MatchGoalkeeperIntegrationTest {
                         "VERSUS_EXTERNAL",
                         null,
                         2,
-                        "NONE"))
+                        "NONE",
+                        false))
                 .andExpect(status().isCreated())
                 .andReturn());
         confirmAttendance(match.id(), secondary, "GOING").andExpect(status().isOk());
         confirmAttendance(match.id(), volunteer, "GOING").andExpect(status().isOk());
 
-        expireSignupDeadline(match.id());
+        expireSignupAndPaymentDeadlines(match.id());
         lifecycleService.openDueAttendances();
 
         MatchResponse processed = getMatch(creator, match.id());
         assertThat(attendance(processed, secondary).isGoalkeeper()).isTrue();
+        assertThat(attendance(processed, secondary).paymentExempt()).isTrue();
+        assertThat(attendance(processed, secondary).status()).isEqualTo(AttendanceStatus.GOING);
+        assertThat(attendance(processed, secondary).paymentDeadlineRemovedAt()).isNull();
         assertThat(attendance(processed, volunteer).isGoalkeeper()).isFalse();
         assertThat(processed.currentGoalkeepers()).isEqualTo(1);
         assertThat(processed.missingGoalkeepers()).isEqualTo(1);
@@ -724,6 +728,17 @@ class MatchGoalkeeperIntegrationTest {
     private void expireSignupDeadline(UUID matchId) {
         jdbcTemplate.update(
                 "UPDATE football_matches SET signup_deadline = NOW() - INTERVAL '1 minute' WHERE id = ?",
+                matchId);
+    }
+
+    private void expireSignupAndPaymentDeadlines(UUID matchId) {
+        jdbcTemplate.update(
+                """
+                        UPDATE football_matches
+                        SET signup_deadline = NOW() - INTERVAL '2 minutes',
+                            payment_deadline = NOW() - INTERVAL '1 minute'
+                        WHERE id = ?
+                        """,
                 matchId);
     }
 
