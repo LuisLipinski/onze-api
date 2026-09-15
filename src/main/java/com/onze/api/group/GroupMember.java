@@ -4,23 +4,24 @@ import java.time.Instant;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
-import jakarta.persistence.CollectionTable;
 import jakarta.persistence.Column;
-import jakarta.persistence.ElementCollection;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
-import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
-import jakarta.persistence.JoinColumn;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
+import jakarta.persistence.CollectionTable;
+import jakarta.persistence.ElementCollection;
+import jakarta.persistence.FetchType;
+import jakarta.persistence.JoinColumn;
 
 @Entity
 @Table(
@@ -52,13 +53,13 @@ public class GroupMember {
     @Column(name = "permission", nullable = false, length = 48)
     private Set<GroupAdminPermission> permissions = new HashSet<>();
 
-    @ElementCollection(fetch = FetchType.EAGER)
-    @CollectionTable(
-            name = "group_member_positions",
-            joinColumns = @JoinColumn(name = "group_member_id"))
     @Enumerated(EnumType.STRING)
-    @Column(name = "position", nullable = false, length = 32)
-    private Set<PlayerPosition> positions = new HashSet<>();
+    @Column(name = "primary_position", length = 32)
+    private PlayerPosition primaryPosition;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "secondary_position", length = 32)
+    private PlayerPosition secondaryPosition;
 
     @Column(name = "can_play_goalkeeper", nullable = false)
     private boolean canPlayGoalkeeper;
@@ -107,8 +108,18 @@ public class GroupMember {
         return createdAt;
     }
 
-    public Set<PlayerPosition> getPositions() {
-        return Collections.unmodifiableSet(positions);
+    public PlayerPosition getPrimaryPosition() {
+        return primaryPosition;
+    }
+
+    public PlayerPosition getSecondaryPosition() {
+        return secondaryPosition;
+    }
+
+    public List<PlayerPosition> getPositions() {
+        return secondaryPosition == null
+                ? primaryPosition == null ? List.of() : List.of(primaryPosition)
+                : List.of(primaryPosition, secondaryPosition);
     }
 
     public boolean canPlayGoalkeeper() {
@@ -124,7 +135,12 @@ public class GroupMember {
     }
 
     public boolean isSportsProfileComplete() {
-        return (!positions.isEmpty() || canPlayGoalkeeper) && dominantFoot != null;
+        return primaryPosition != null && dominantFoot != null;
+    }
+
+    public boolean canPlayPosition(PlayerPosition targetPosition) {
+        return PlayerPosition.canPlayPosition(primaryPosition, targetPosition)
+                || PlayerPosition.canPlayPosition(secondaryPosition, targetPosition);
     }
 
     public Set<GroupAdminPermission> getPermissions() {
@@ -155,21 +171,29 @@ public class GroupMember {
     }
 
     public void updateOwnSportsProfile(
-            Collection<PlayerPosition> newPositions,
+            PlayerPosition newPrimaryPosition,
+            PlayerPosition newSecondaryPosition,
             boolean newCanPlayGoalkeeper,
             DominantFoot newDominantFoot) {
-        positions.clear();
-        positions.addAll(newPositions);
-        canPlayGoalkeeper = newCanPlayGoalkeeper;
+        primaryPosition = newPrimaryPosition;
+        secondaryPosition = newSecondaryPosition;
+        canPlayGoalkeeper = newPrimaryPosition != PlayerPosition.GOALKEEPER
+                && newSecondaryPosition != PlayerPosition.GOALKEEPER
+                && newCanPlayGoalkeeper;
         dominantFoot = newDominantFoot;
     }
 
     public void updateSportsProfile(
-            Collection<PlayerPosition> newPositions,
+            PlayerPosition newPrimaryPosition,
+            PlayerPosition newSecondaryPosition,
             boolean newCanPlayGoalkeeper,
             DominantFoot newDominantFoot,
             Integer newTechnicalLevel) {
-        updateOwnSportsProfile(newPositions, newCanPlayGoalkeeper, newDominantFoot);
+        updateOwnSportsProfile(
+                newPrimaryPosition,
+                newSecondaryPosition,
+                newCanPlayGoalkeeper,
+                newDominantFoot);
         technicalLevel = newTechnicalLevel;
     }
 }

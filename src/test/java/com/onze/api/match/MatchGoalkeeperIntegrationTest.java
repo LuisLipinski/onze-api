@@ -137,6 +137,7 @@ class MatchGoalkeeperIntegrationTest {
         InviteResponse invite = createInvite(creator, group.id());
         join(goalkeeper, invite.code());
         join(otherMember, invite.code());
+        completeProfile(goalkeeper, group.id(), "DEFENDER", null, true);
 
         MatchResponse freeGoalkeeperMatch = readMatch(createMatch(
                 creator,
@@ -202,6 +203,8 @@ class MatchGoalkeeperIntegrationTest {
         InviteResponse invite = createInvite(creator, group.id());
         join(reported, invite.code());
         join(paid, invite.code());
+        completeProfile(reported, group.id(), "MIDFIELDER", null, true);
+        completeProfile(paid, group.id(), "ATTACKER", null, true);
         MatchResponse match = readMatch(createMatch(
                 creator,
                 group.id(),
@@ -236,6 +239,7 @@ class MatchGoalkeeperIntegrationTest {
         GroupResponse group = createGroup(creator, "Pelada crédito goleiro");
         InviteResponse invite = createInvite(creator, group.id());
         join(goalkeeper, invite.code());
+        completeProfile(goalkeeper, group.id(), "DEFENDER", null, true);
 
         jdbcTemplate.update(
                 """
@@ -364,6 +368,226 @@ class MatchGoalkeeperIntegrationTest {
                 .andExpect(jsonPath("$.code").value("RENTAL_GOALKEEPER_NOT_FOUND"));
     }
 
+    @Test
+    void shouldValidateMatchFormatAndPreserveItInWeeklyOccurrences() throws Exception {
+        AuthResponse creator = register("format-admin@example.com", "Principal Formato");
+        GroupResponse group = createGroup(creator, "Pelada formatos");
+        LocalDate firstDate = LocalDate.now(SAO_PAULO).plusDays(4);
+
+        createMatch(creator, group.id(), paidMatchBody(firstDate, 20, "NONE", true))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.matchType").value("INTERNAL"))
+                .andExpect(jsonPath("$.teamCount").value(2))
+                .andExpect(jsonPath("$.requiredGoalkeepers").value(2));
+
+        createMatch(creator, group.id(), formatMatchBody(
+                firstDate.plusDays(1), "INTERNAL", null, 2, "NONE"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_MATCH_FORMAT"));
+        createMatch(creator, group.id(), formatMatchBody(
+                firstDate.plusDays(2), "INTERNAL", 1, 1, "NONE"))
+                .andExpect(status().isBadRequest());
+        createMatch(creator, group.id(), formatMatchBody(
+                firstDate.plusDays(3), "INTERNAL", 2, 1, "NONE"))
+                .andExpect(status().isBadRequest());
+        createMatch(creator, group.id(), formatMatchBody(
+                firstDate.plusDays(4), "INTERNAL", 3, 2, "NONE"))
+                .andExpect(status().isBadRequest());
+
+        for (int[] valid : List.of(
+                new int[]{2, 2},
+                new int[]{3, 3},
+                new int[]{3, 4},
+                new int[]{4, 4})) {
+            createMatch(creator, group.id(), formatMatchBody(
+                    firstDate.plusDays(5 + valid[0] + valid[1]),
+                    "INTERNAL",
+                    valid[0],
+                    valid[1],
+                    "NONE"))
+                    .andExpect(status().isCreated())
+                    .andExpect(jsonPath("$.teamCount").value(valid[0]))
+                    .andExpect(jsonPath("$.requiredGoalkeepers").value(valid[1]));
+        }
+
+        createMatch(creator, group.id(), formatMatchBody(
+                firstDate.plusDays(14), "VERSUS_EXTERNAL", null, 0, "NONE"))
+                .andExpect(status().isBadRequest());
+        createMatch(creator, group.id(), formatMatchBody(
+                firstDate.plusDays(15), "VERSUS_EXTERNAL", 2, 2, "NONE"))
+                .andExpect(status().isBadRequest());
+        createMatch(creator, group.id(), formatMatchBody(
+                firstDate.plusDays(16), "VERSUS_EXTERNAL", null, 1, "NONE"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.teamCount").value(nullValue()))
+                .andExpect(jsonPath("$.requiredGoalkeepers").value(1));
+
+        MatchResponse weekly = readMatch(createMatch(
+                creator,
+                group.id(),
+                formatMatchBody(firstDate.plusDays(17), "INTERNAL", 3, 4, "WEEKLY"))
+                .andExpect(status().isCreated())
+                .andReturn());
+        List<MatchResponse> weeklyMatches = Arrays.stream(listGroupMatches(creator, group.id()))
+                .filter(match -> weekly.seriesId().equals(match.seriesId()))
+                .toList();
+        assertThat(weeklyMatches)
+                .hasSize(2)
+                .allMatch(match -> match.matchType() == MatchType.INTERNAL)
+                .allMatch(match -> Integer.valueOf(3).equals(match.teamCount()))
+                .allMatch(match -> match.requiredGoalkeepers() == 4);
+    }
+
+    @Test
+    void shouldApplyGoalkeeperPriorityAtConfirmationAndSignupDeadline() throws Exception {
+        AuthResponse creator = register("priority-admin@example.com", "Principal Prioridade");
+        AuthResponse primaryGoalkeeper = register("priority-primary@example.com", "Goleiro Principal");
+        AuthResponse firstSecondary = register("priority-secondary-one@example.com", "Goleiro Secundário A");
+        AuthResponse secondSecondary = register("priority-secondary-two@example.com", "Goleiro Secundário B");
+        AuthResponse volunteer = register("priority-volunteer@example.com", "Voluntário");
+        GroupResponse group = createGroup(creator, "Pelada prioridade");
+        InviteResponse invite = createInvite(creator, group.id());
+        for (AuthResponse player : List.of(primaryGoalkeeper, firstSecondary, secondSecondary, volunteer)) {
+            join(player, invite.code());
+        }
+        completeProfile(primaryGoalkeeper, group.id(), "GOALKEEPER", null, true);
+        completeProfile(firstSecondary, group.id(), "DEFENDER", "GOALKEEPER", true);
+        completeProfile(secondSecondary, group.id(), "MIDFIELDER", "GOALKEEPER", false);
+        completeProfile(volunteer, group.id(), "ATTACKER", null, true);
+
+        MatchResponse match = readMatch(createMatch(
+                creator,
+                group.id(),
+                formatMatchBody(
+                        LocalDate.now(SAO_PAULO).plusDays(3),
+                        "INTERNAL",
+                        2,
+                        2,
+                        "NONE",
+                        false))
+                .andExpect(status().isCreated())
+                .andReturn());
+
+        confirmAttendance(match.id(), primaryGoalkeeper, "GOING")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.currentGoalkeepers").value(1))
+                .andExpect(jsonPath("$.attendances[0].isGoalkeeper").value(true))
+                .andExpect(jsonPath("$.attendances[0].paymentExempt").value(true));
+        confirmAttendance(match.id(), firstSecondary, "GOING").andExpect(status().isOk());
+        confirmAttendance(match.id(), secondSecondary, "GOING").andExpect(status().isOk());
+        confirmAttendance(match.id(), volunteer, "GOING").andExpect(status().isOk());
+
+        MatchResponse beforeDeadline = getMatch(firstSecondary, match.id());
+        assertThat(attendance(beforeDeadline, firstSecondary).isGoalkeeper()).isFalse();
+        assertThat(attendance(beforeDeadline, firstSecondary).paymentExempt()).isFalse();
+        assertThat(attendance(beforeDeadline, volunteer).isGoalkeeper()).isFalse();
+
+        expireSignupDeadline(match.id());
+        lifecycleService.openDueAttendances();
+        MatchResponse awaitingChoice = getMatch(creator, match.id());
+        assertThat(awaitingChoice.currentGoalkeepers()).isEqualTo(1);
+        assertThat(awaitingChoice.missingGoalkeepers()).isEqualTo(1);
+        assertThat(awaitingChoice.goalkeeperDecisionRequired()).isTrue();
+        assertThat(awaitingChoice.secondaryGoalkeeperDecisionRequired()).isTrue();
+        assertThat(attendance(awaitingChoice, firstSecondary).isGoalkeeper()).isFalse();
+        assertThat(attendance(awaitingChoice, secondSecondary).isGoalkeeper()).isFalse();
+        assertThat(attendance(awaitingChoice, volunteer).isGoalkeeper()).isFalse();
+
+        updateGoalkeeper(match.id(), firstSecondary.user().id(), creator, true)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.currentGoalkeepers").value(2))
+                .andExpect(jsonPath("$.missingGoalkeepers").value(0));
+        updateGoalkeeper(match.id(), primaryGoalkeeper.user().id(), creator, false)
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("PRIMARY_GOALKEEPER_CANNOT_BE_UNASSIGNED"));
+
+        updateGoalkeeper(match.id(), firstSecondary.user().id(), creator, false)
+                .andExpect(status().isOk());
+        updateGoalkeeper(match.id(), volunteer.user().id(), creator, true)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.currentGoalkeepers").value(2));
+
+        confirmAttendance(match.id(), primaryGoalkeeper, "NOT_GOING")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.currentGoalkeepers").value(1))
+                .andExpect(jsonPath("$.missingGoalkeepers").value(1));
+    }
+
+    @Test
+    void shouldAssignTheOnlySecondaryCandidateButNeverVolunteerAutomatically() throws Exception {
+        AuthResponse creator = register("unique-admin@example.com", "Principal Único");
+        AuthResponse secondary = register("unique-secondary@example.com", "Secundário Único");
+        AuthResponse volunteer = register("unique-volunteer@example.com", "Voluntário Manual");
+        GroupResponse group = createGroup(creator, "Pelada secundário único");
+        InviteResponse invite = createInvite(creator, group.id());
+        join(secondary, invite.code());
+        join(volunteer, invite.code());
+        completeProfile(secondary, group.id(), "DEFENDER", "GOALKEEPER", false);
+        completeProfile(volunteer, group.id(), "MIDFIELDER", null, true);
+
+        MatchResponse match = readMatch(createMatch(
+                creator,
+                group.id(),
+                formatMatchBody(
+                        LocalDate.now(SAO_PAULO).plusDays(3),
+                        "VERSUS_EXTERNAL",
+                        null,
+                        2,
+                        "NONE",
+                        false))
+                .andExpect(status().isCreated())
+                .andReturn());
+        confirmAttendance(match.id(), secondary, "GOING").andExpect(status().isOk());
+        confirmAttendance(match.id(), volunteer, "GOING").andExpect(status().isOk());
+
+        expireSignupAndPaymentDeadlines(match.id());
+        lifecycleService.openDueAttendances();
+
+        MatchResponse processed = getMatch(creator, match.id());
+        assertThat(attendance(processed, secondary).isGoalkeeper()).isTrue();
+        assertThat(attendance(processed, secondary).paymentExempt()).isTrue();
+        assertThat(attendance(processed, secondary).status()).isEqualTo(AttendanceStatus.GOING);
+        assertThat(attendance(processed, secondary).paymentDeadlineRemovedAt()).isNull();
+        assertThat(attendance(processed, volunteer).isGoalkeeper()).isFalse();
+        assertThat(processed.currentGoalkeepers()).isEqualTo(1);
+        assertThat(processed.missingGoalkeepers()).isEqualTo(1);
+        assertThat(processed.goalkeeperDecisionRequired()).isTrue();
+    }
+
+    @Test
+    void shouldCountAnyCombinationOfMembersAndRentalsForThreeTeams() throws Exception {
+        AuthResponse creator = register("three-team-admin@example.com", "Principal Três Times");
+        AuthResponse primaryGoalkeeper = register("three-team-goalkeeper@example.com", "Goleiro do Grupo");
+        GroupResponse group = createGroup(creator, "Pelada três times");
+        InviteResponse invite = createInvite(creator, group.id());
+        join(primaryGoalkeeper, invite.code());
+        completeProfile(primaryGoalkeeper, group.id(), "GOALKEEPER", null, false);
+
+        MatchResponse match = readMatch(createMatch(
+                creator,
+                group.id(),
+                formatMatchBody(
+                        LocalDate.now(SAO_PAULO).plusDays(3),
+                        "INTERNAL",
+                        3,
+                        3,
+                        "NONE"))
+                .andExpect(status().isCreated())
+                .andReturn());
+        confirmAttendance(match.id(), primaryGoalkeeper, "GOING")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.currentGoalkeepers").value(1))
+                .andExpect(jsonPath("$.missingGoalkeepers").value(2));
+        addRentalGoalkeeper(match.id(), creator, "Aluguel Um")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.currentGoalkeepers").value(2));
+        addRentalGoalkeeper(match.id(), creator, "Aluguel Dois")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.currentGoalkeepers").value(3))
+                .andExpect(jsonPath("$.missingGoalkeepers").value(0))
+                .andExpect(jsonPath("$.goingCount").value(3));
+    }
+
     private org.springframework.test.web.servlet.ResultActions createMatch(
             AuthResponse user,
             UUID groupId,
@@ -449,6 +673,114 @@ class MatchGoalkeeperIntegrationTest {
                   "recurrence": "%s"
                 }
                 """.formatted(date, maxPlayers, goalkeeperPaysProperty, recurrence);
+    }
+
+    private String formatMatchBody(
+            LocalDate date,
+            String matchType,
+            Integer teamCount,
+            int requiredGoalkeepers,
+            String recurrence) {
+        return formatMatchBody(
+                date,
+                matchType,
+                teamCount,
+                requiredGoalkeepers,
+                recurrence,
+                true);
+    }
+
+    private String formatMatchBody(
+            LocalDate date,
+            String matchType,
+            Integer teamCount,
+            int requiredGoalkeepers,
+            String recurrence,
+            boolean goalkeeperPays) {
+        String teamCountProperty = teamCount == null
+                ? ""
+                : "\"teamCount\": " + teamCount + ",";
+        return """
+                {
+                  "date": "%s",
+                  "startTime": "20:30:00",
+                  "timeZone": "America/Sao_Paulo",
+                  "venue": "Arena Onze",
+                  "maxPlayers": 20,
+                  "matchType": "%s",
+                  %s
+                  "requiredGoalkeepers": %d,
+                  "paymentRequired": true,
+                  "goalkeeperPays": %s,
+                  "paymentAmount": 20.00,
+                  "pixKey": "formatos@onze.app",
+                  "recurrence": "%s"
+                }
+                """.formatted(
+                        date,
+                        matchType,
+                        teamCountProperty,
+                        requiredGoalkeepers,
+                        goalkeeperPays,
+                        recurrence);
+    }
+
+    private void expireSignupDeadline(UUID matchId) {
+        jdbcTemplate.update(
+                "UPDATE football_matches SET signup_deadline = NOW() - INTERVAL '1 minute' WHERE id = ?",
+                matchId);
+    }
+
+    private void expireSignupAndPaymentDeadlines(UUID matchId) {
+        jdbcTemplate.update(
+                """
+                        UPDATE football_matches
+                        SET signup_deadline = NOW() - INTERVAL '2 minutes',
+                            payment_deadline = NOW() - INTERVAL '1 minute'
+                        WHERE id = ?
+                        """,
+                matchId);
+    }
+
+    private MatchResponse getMatch(AuthResponse user, UUID matchId) throws Exception {
+        var result = mockMvc.perform(get("/api/matches/{matchId}", matchId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(user)))
+                .andExpect(status().isOk())
+                .andReturn();
+        return readMatch(result);
+    }
+
+    private AttendanceResponse attendance(MatchResponse match, AuthResponse user) {
+        return match.attendances().stream()
+                .filter(attendance -> attendance.userId().equals(user.user().id()))
+                .findFirst()
+                .orElseThrow();
+    }
+
+    private void completeProfile(
+            AuthResponse user,
+            UUID groupId,
+            String primaryPosition,
+            String secondaryPosition,
+            boolean canPlayGoalkeeper) throws Exception {
+        String secondaryProperty = secondaryPosition == null
+                ? ""
+                : "\"secondaryPosition\": \"" + secondaryPosition + "\",";
+        mockMvc.perform(put("/api/groups/{groupId}/members/me/sports-profile", groupId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(user))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "primaryPosition": "%s",
+                                  %s
+                                  "canPlayGoalkeeper": %s,
+                                  "dominantFoot": "RIGHT"
+                                }
+                                """.formatted(
+                                        primaryPosition,
+                                        secondaryProperty,
+                                        canPlayGoalkeeper)))
+                .andExpect(status().isOk());
     }
 
     private void join(AuthResponse user, String code) throws Exception {

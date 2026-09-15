@@ -49,6 +49,16 @@ public class FootballMatch {
     @Column(name = "max_players", nullable = false)
     private int maxPlayers;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "match_type", nullable = false, length = 32)
+    private MatchType matchType;
+
+    @Column(name = "team_count")
+    private Integer teamCount;
+
+    @Column(name = "required_goalkeepers", nullable = false)
+    private int requiredGoalkeepers;
+
     @Column(name = "payment_amount", precision = 10, scale = 2)
     private BigDecimal paymentAmount;
 
@@ -97,6 +107,9 @@ public class FootballMatch {
             String timeZone,
             String venue,
             int maxPlayers,
+            MatchType matchType,
+            Integer teamCount,
+            int requiredGoalkeepers,
             BigDecimal paymentAmount,
             String pixKey,
             boolean goalkeeperPays,
@@ -113,6 +126,9 @@ public class FootballMatch {
         this.timeZone = timeZone;
         this.venue = venue;
         this.maxPlayers = maxPlayers;
+        this.matchType = matchType;
+        this.teamCount = teamCount;
+        this.requiredGoalkeepers = requiredGoalkeepers;
         this.paymentAmount = paymentAmount;
         this.pixKey = pixKey;
         this.goalkeeperPays = goalkeeperPays;
@@ -167,6 +183,18 @@ public class FootballMatch {
 
     public int getMaxPlayers() {
         return maxPlayers;
+    }
+
+    public MatchType getMatchType() {
+        return matchType;
+    }
+
+    public Integer getTeamCount() {
+        return teamCount;
+    }
+
+    public int getRequiredGoalkeepers() {
+        return requiredGoalkeepers;
     }
 
     public BigDecimal getPaymentAmount() {

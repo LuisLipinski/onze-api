@@ -7,6 +7,8 @@ import java.time.LocalTime;
 import java.util.List;
 import java.util.UUID;
 
+import com.onze.api.group.PlayerPosition;
+
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Digits;
@@ -28,6 +30,9 @@ public final class MatchModels {
             @NotBlank @Size(max = 64) String timeZone,
             @NotBlank @Size(max = 255) String venue,
             @Min(2) @Max(100) int maxPlayers,
+            MatchType matchType,
+            Integer teamCount,
+            Integer requiredGoalkeepers,
             LocalDate signupDeadlineDate,
             LocalTime signupDeadlineTime,
             LocalDate paymentDeadlineDate,
@@ -74,6 +79,9 @@ public final class MatchModels {
     public record AttendanceResponse(
             UUID userId,
             String displayName,
+            PlayerPosition primaryPosition,
+            PlayerPosition secondaryPosition,
+            boolean canPlayGoalkeeper,
             AttendanceStatus status,
             boolean isGoalkeeper,
             boolean paymentExempt,
@@ -115,6 +123,13 @@ public final class MatchModels {
             String timeZone,
             String venue,
             int maxPlayers,
+            MatchType matchType,
+            Integer teamCount,
+            int requiredGoalkeepers,
+            int currentGoalkeepers,
+            int missingGoalkeepers,
+            boolean goalkeeperDecisionRequired,
+            boolean secondaryGoalkeeperDecisionRequired,
             boolean paymentRequired,
             boolean goalkeeperPays,
             BigDecimal paymentAmount,

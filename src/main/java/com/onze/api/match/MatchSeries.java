@@ -6,6 +6,8 @@ import java.util.UUID;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -35,6 +37,16 @@ public class MatchSeries {
 
     @Column(name = "max_players", nullable = false)
     private int maxPlayers;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "match_type", nullable = false, length = 32)
+    private MatchType matchType;
+
+    @Column(name = "team_count")
+    private Integer teamCount;
+
+    @Column(name = "required_goalkeepers", nullable = false)
+    private int requiredGoalkeepers;
 
     @Column(name = "payment_amount", precision = 10, scale = 2)
     private BigDecimal paymentAmount;
@@ -66,6 +78,9 @@ public class MatchSeries {
             String timeZone,
             String venue,
             int maxPlayers,
+            MatchType matchType,
+            Integer teamCount,
+            int requiredGoalkeepers,
             BigDecimal paymentAmount,
             String pixKey,
             boolean goalkeeperPays,
@@ -75,6 +90,9 @@ public class MatchSeries {
         this.timeZone = timeZone;
         this.venue = venue;
         this.maxPlayers = maxPlayers;
+        this.matchType = matchType;
+        this.teamCount = teamCount;
+        this.requiredGoalkeepers = requiredGoalkeepers;
         this.paymentAmount = paymentAmount;
         this.pixKey = pixKey;
         this.goalkeeperPays = goalkeeperPays;
@@ -116,6 +134,18 @@ public class MatchSeries {
 
     public int getMaxPlayers() {
         return maxPlayers;
+    }
+
+    public MatchType getMatchType() {
+        return matchType;
+    }
+
+    public Integer getTeamCount() {
+        return teamCount;
+    }
+
+    public int getRequiredGoalkeepers() {
+        return requiredGoalkeepers;
     }
 
     public BigDecimal getPaymentAmount() {

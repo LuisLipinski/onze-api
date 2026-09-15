@@ -184,6 +184,8 @@ public class GroupAdminService {
                 member.getRole(),
                 member.getPermissions(),
                 member.getUserId().equals(actorUserId),
+                member.getPrimaryPosition(),
+                member.getSecondaryPosition(),
                 member.getPositions(),
                 member.canPlayGoalkeeper(),
                 member.getDominantFoot(),

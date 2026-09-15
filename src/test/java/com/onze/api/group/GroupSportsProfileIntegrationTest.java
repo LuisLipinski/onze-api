@@ -87,6 +87,8 @@ class GroupSportsProfileIntegrationTest {
                         .header(HttpHeaders.AUTHORIZATION, bearer(player)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.displayName").value("Jogador"))
+                .andExpect(jsonPath("$.primaryPosition").doesNotExist())
+                .andExpect(jsonPath("$.secondaryPosition").doesNotExist())
                 .andExpect(jsonPath("$.positions").isEmpty())
                 .andExpect(jsonPath("$.canPlayGoalkeeper").value(false))
                 .andExpect(jsonPath("$.dominantFoot").doesNotExist())
@@ -98,7 +100,7 @@ class GroupSportsProfileIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
-                                  "positions": [],
+                                  "primaryPosition": null,
                                   "canPlayGoalkeeper": false,
                                   "dominantFoot": "RIGHT"
                                 }
@@ -111,12 +113,15 @@ class GroupSportsProfileIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
-                                  "positions": ["DEFENDER", "WINGER"],
+                                  "primaryPosition": "DEFENDER",
+                                  "secondaryPosition": "RIGHT_WINGER",
                                   "canPlayGoalkeeper": true,
                                   "dominantFoot": "LEFT"
                                 }
                                 """))
                 .andExpect(status().isOk())
+                .andExpect(jsonPath("$.primaryPosition").value("DEFENDER"))
+                .andExpect(jsonPath("$.secondaryPosition").value("RIGHT_WINGER"))
                 .andExpect(jsonPath("$.positions.length()").value(2))
                 .andExpect(jsonPath("$.canPlayGoalkeeper").value(true))
                 .andExpect(jsonPath("$.dominantFoot").value("LEFT"))
@@ -124,10 +129,66 @@ class GroupSportsProfileIntegrationTest {
                 .andExpect(jsonPath("$.complete").value(true));
 
         GroupMember persisted = membership(group.id(), player);
-        assertThat(persisted.getPositions()).containsExactlyInAnyOrder(PlayerPosition.DEFENDER, PlayerPosition.WINGER);
+        assertThat(persisted.getPositions()).containsExactly(
+                PlayerPosition.DEFENDER,
+                PlayerPosition.RIGHT_WINGER);
         assertThat(persisted.canPlayGoalkeeper()).isTrue();
         assertThat(persisted.getDominantFoot()).isEqualTo(DominantFoot.LEFT);
         assertThat(persisted.getTechnicalLevel()).isNull();
+
+        mockMvc.perform(put("/api/groups/{groupId}/members/me/sports-profile", group.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(player))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "primaryPosition": "GOALKEEPER",
+                                  "secondaryPosition": "MIDFIELDER",
+                                  "canPlayGoalkeeper": true,
+                                  "dominantFoot": "BOTH"
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.primaryPosition").value("GOALKEEPER"))
+                .andExpect(jsonPath("$.canPlayGoalkeeper").value(false));
+
+        mockMvc.perform(put("/api/groups/{groupId}/members/me/sports-profile", group.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(player))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "primaryPosition": "MIDFIELDER",
+                                  "secondaryPosition": "MIDFIELDER",
+                                  "canPlayGoalkeeper": false,
+                                  "dominantFoot": "RIGHT"
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_SPORTS_PROFILE"));
+
+        mockMvc.perform(put("/api/groups/{groupId}/members/me/sports-profile", group.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(player))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "positions": ["STRIKER"],
+                                  "canPlayGoalkeeper": false,
+                                  "dominantFoot": "RIGHT"
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.primaryPosition").value("ATTACKER"));
+
+        mockMvc.perform(put("/api/groups/{groupId}/members/me/sports-profile", group.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(player))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "positions": ["DEFENDER", "MIDFIELDER", "ATTACKER"],
+                                  "canPlayGoalkeeper": false,
+                                  "dominantFoot": "RIGHT"
+                                }
+                                """))
+                .andExpect(status().isBadRequest());
     }
 
     @Test
@@ -153,17 +214,17 @@ class GroupSportsProfileIntegrationTest {
                         group.id(), playerMembership.getId())
                         .header(HttpHeaders.AUTHORIZATION, bearer(admin))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(fullProfile("MIDFIELDER", false, "BOTH", 3)))
+                        .content(fullProfile("MIDFIELDER", null, false, "BOTH", 3)))
                 .andExpect(status().isForbidden());
 
         mockMvc.perform(put("/api/groups/{groupId}/members/{memberId}/sports-profile",
                         group.id(), playerMembership.getId())
                         .header(HttpHeaders.AUTHORIZATION, bearer(primary))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(fullProfile("STRIKER", true, "RIGHT", 4)))
+                        .content(fullProfile("CENTER_FORWARD", null, true, "RIGHT", 4)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.technicalLevel").value(4))
-                .andExpect(jsonPath("$.positions[0]").value("STRIKER"));
+                .andExpect(jsonPath("$.primaryPosition").value("CENTER_FORWARD"));
 
         mockMvc.perform(put("/api/groups/{groupId}/members/{memberId}/permissions",
                         group.id(), adminMembership.getId())
@@ -178,9 +239,11 @@ class GroupSportsProfileIntegrationTest {
                         group.id(), playerMembership.getId())
                         .header(HttpHeaders.AUTHORIZATION, bearer(admin))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(fullProfile("MIDFIELDER", false, "BOTH", 3)))
+                        .content(fullProfile("MIDFIELDER", "GOALKEEPER", true, "BOTH", 3)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.dominantFoot").value("BOTH"))
+                .andExpect(jsonPath("$.secondaryPosition").value("GOALKEEPER"))
+                .andExpect(jsonPath("$.canPlayGoalkeeper").value(false))
                 .andExpect(jsonPath("$.technicalLevel").value(3));
 
         mockMvc.perform(get("/api/groups/{groupId}/members", group.id())
@@ -205,7 +268,7 @@ class GroupSportsProfileIntegrationTest {
                         firstGroup.id(), playerMembership.getId())
                         .header(HttpHeaders.AUTHORIZATION, bearer(primary))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(fullProfile("DEFENDER", false, "RIGHT", 6)))
+                        .content(fullProfile("DEFENDER", null, false, "RIGHT", 6)))
                 .andExpect(status().isBadRequest());
 
         mockMvc.perform(get("/api/groups/{groupId}/members/{memberId}/sports-profile",
@@ -215,15 +278,24 @@ class GroupSportsProfileIntegrationTest {
                 .andExpect(jsonPath("$.code").value("GROUP_MEMBER_NOT_FOUND"));
     }
 
-    private String fullProfile(String position, boolean goalkeeper, String foot, int level) {
+    private String fullProfile(
+            String primaryPosition,
+            String secondaryPosition,
+            boolean goalkeeper,
+            String foot,
+            int level) {
+        String secondaryProperty = secondaryPosition == null
+                ? ""
+                : "\"secondaryPosition\": \"" + secondaryPosition + "\",";
         return """
                 {
-                  "positions": ["%s"],
+                  "primaryPosition": "%s",
+                  %s
                   "canPlayGoalkeeper": %s,
                   "dominantFoot": "%s",
                   "technicalLevel": %d
                 }
-                """.formatted(position, goalkeeper, foot, level);
+                """.formatted(primaryPosition, secondaryProperty, goalkeeper, foot, level);
     }
 
     private GroupMember membership(java.util.UUID groupId, AuthResponse user) {

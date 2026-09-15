@@ -8,7 +8,6 @@ import com.onze.api.match.MatchService.AttendanceClosedException;
 import com.onze.api.match.MatchService.AdministratorReentryRequiredException;
 import com.onze.api.match.MatchService.InvalidTimeZoneException;
 import com.onze.api.match.MatchService.InvalidRentalGoalkeeperNameException;
-import com.onze.api.match.MatchService.GoalkeeperPaymentAlreadyRecordedException;
 import com.onze.api.match.MatchService.GoalkeeperPaymentExemptException;
 import com.onze.api.match.MatchService.GoalkeeperRequiresAttendanceException;
 import com.onze.api.match.MatchService.MatchAlreadyStartedException;
@@ -29,6 +28,10 @@ import com.onze.api.match.MatchService.ReplacementPlayerUnavailableException;
 import com.onze.api.match.MatchService.ReplacementRequiredForSettlementException;
 import com.onze.api.match.MatchService.ReplacementVacancyNotOpenException;
 import com.onze.api.match.MatchService.RentalGoalkeeperNotFoundException;
+import com.onze.api.match.MatchFormatPolicy.InvalidMatchFormatException;
+import com.onze.api.match.MatchGoalkeeperService.GoalkeeperCandidateRequiredException;
+import com.onze.api.match.MatchGoalkeeperService.GoalkeeperPaymentAlreadyRecordedException;
+import com.onze.api.match.MatchGoalkeeperService.PrimaryGoalkeeperCannotBeUnassignedException;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -102,6 +105,14 @@ public class MatchExceptionHandler {
                 .body(new ErrorResponse(
                         "INVALID_MATCH_DEADLINES",
                         "Defina prazos futuros, na ordem correta e antes do início do jogo."));
+    }
+
+    @ExceptionHandler(InvalidMatchFormatException.class)
+    ResponseEntity<ErrorResponse> invalidMatchFormat() {
+        return ResponseEntity.badRequest()
+                .body(new ErrorResponse(
+                        "INVALID_MATCH_FORMAT",
+                        "Entre membros exige ao menos 2 times e goleiros em quantidade igual ou maior; contra outro time exige ao menos 1 goleiro e não usa quantidade de times."));
     }
 
     @ExceptionHandler(AttendanceClosedException.class)
@@ -184,6 +195,22 @@ public class MatchExceptionHandler {
                 .body(new ErrorResponse(
                         "GOALKEEPER_REQUIRES_ATTENDANCE",
                         "Somente um jogador confirmado pode ser definido como goleiro desta partida."));
+    }
+
+    @ExceptionHandler(GoalkeeperCandidateRequiredException.class)
+    ResponseEntity<ErrorResponse> goalkeeperCandidateRequired() {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(new ErrorResponse(
+                        "GOALKEEPER_CANDIDATE_REQUIRED",
+                        "Escolha um jogador confirmado que tenha goleiro como posição ou que aceite jogar no gol."));
+    }
+
+    @ExceptionHandler(PrimaryGoalkeeperCannotBeUnassignedException.class)
+    ResponseEntity<ErrorResponse> primaryGoalkeeperCannotBeUnassigned() {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(new ErrorResponse(
+                        "PRIMARY_GOALKEEPER_CANNOT_BE_UNASSIGNED",
+                        "Um jogador confirmado com goleiro como posição principal permanece goleiro nesta partida."));
     }
 
     @ExceptionHandler(GoalkeeperPaymentExemptException.class)

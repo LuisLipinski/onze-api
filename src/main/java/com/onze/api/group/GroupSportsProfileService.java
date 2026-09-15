@@ -1,6 +1,6 @@
 package com.onze.api.group;
 
-import java.util.Set;
+import java.util.List;
 import java.util.UUID;
 
 import com.onze.api.group.GroupModels.SportsProfileResponse;
@@ -35,12 +35,21 @@ public class GroupSportsProfileService {
     public SportsProfileResponse updateOwn(
             String authenticatedUserId,
             UUID groupId,
-            Set<PlayerPosition> positions,
+            PlayerPosition primaryPosition,
+            PlayerPosition secondaryPosition,
+            List<PlayerPosition> legacyPositions,
             boolean canPlayGoalkeeper,
             DominantFoot dominantFoot) {
-        validatePlayingRole(positions, canPlayGoalkeeper);
+        PositionSelection selection = resolvePositions(
+                primaryPosition,
+                secondaryPosition,
+                legacyPositions);
         GroupMember membership = requireOwnMembership(authenticatedUserId, groupId);
-        membership.updateOwnSportsProfile(positions, canPlayGoalkeeper, dominantFoot);
+        membership.updateOwnSportsProfile(
+                selection.primaryPosition(),
+                selection.secondaryPosition(),
+                canPlayGoalkeeper,
+                dominantFoot);
         return toResponse(membership);
     }
 
@@ -55,14 +64,24 @@ public class GroupSportsProfileService {
             String authenticatedUserId,
             UUID groupId,
             UUID memberId,
-            Set<PlayerPosition> positions,
+            PlayerPosition primaryPosition,
+            PlayerPosition secondaryPosition,
+            List<PlayerPosition> legacyPositions,
             boolean canPlayGoalkeeper,
             DominantFoot dominantFoot,
             Integer technicalLevel) {
         requireProfilePermission(authenticatedUserId, groupId);
-        validatePlayingRole(positions, canPlayGoalkeeper);
+        PositionSelection selection = resolvePositions(
+                primaryPosition,
+                secondaryPosition,
+                legacyPositions);
         GroupMember member = requireMember(groupId, memberId);
-        member.updateSportsProfile(positions, canPlayGoalkeeper, dominantFoot, technicalLevel);
+        member.updateSportsProfile(
+                selection.primaryPosition(),
+                selection.secondaryPosition(),
+                canPlayGoalkeeper,
+                dominantFoot,
+                technicalLevel);
         return toResponse(member);
     }
 
@@ -102,6 +121,8 @@ public class GroupSportsProfileService {
                 member.getId(),
                 member.getUserId(),
                 user.getDisplayName(),
+                member.getPrimaryPosition(),
+                member.getSecondaryPosition(),
                 member.getPositions(),
                 member.canPlayGoalkeeper(),
                 member.getDominantFoot(),
@@ -109,10 +130,22 @@ public class GroupSportsProfileService {
                 member.isSportsProfileComplete());
     }
 
-    private void validatePlayingRole(Set<PlayerPosition> positions, boolean canPlayGoalkeeper) {
-        if (positions.isEmpty() && !canPlayGoalkeeper) {
+    private PositionSelection resolvePositions(
+            PlayerPosition primaryPosition,
+            PlayerPosition secondaryPosition,
+            List<PlayerPosition> legacyPositions) {
+        PlayerPosition resolvedPrimary = primaryPosition;
+        PlayerPosition resolvedSecondary = secondaryPosition;
+
+        if (resolvedPrimary == null && legacyPositions != null && !legacyPositions.isEmpty()) {
+            resolvedPrimary = legacyPositions.get(0);
+            resolvedSecondary = legacyPositions.size() > 1 ? legacyPositions.get(1) : null;
+        }
+        if (resolvedPrimary == null
+                || (resolvedSecondary != null && resolvedSecondary == resolvedPrimary)) {
             throw new InvalidSportsProfileException();
         }
+        return new PositionSelection(resolvedPrimary, resolvedSecondary);
     }
 
     private UUID parseUserId(String authenticatedUserId) {
@@ -125,5 +158,10 @@ public class GroupSportsProfileService {
 
     public static final class InvalidSportsProfileException extends RuntimeException {
         private static final long serialVersionUID = 1L;
+    }
+
+    private record PositionSelection(
+            PlayerPosition primaryPosition,
+            PlayerPosition secondaryPosition) {
     }
 }

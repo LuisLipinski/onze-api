@@ -70,7 +70,9 @@ public final class GroupModels {
             GroupRole role,
             Set<GroupAdminPermission> permissions,
             boolean currentUser,
-            Set<PlayerPosition> positions,
+            PlayerPosition primaryPosition,
+            PlayerPosition secondaryPosition,
+            List<PlayerPosition> positions,
             boolean canPlayGoalkeeper,
             DominantFoot dominantFoot,
             Integer technicalLevel,
@@ -81,7 +83,9 @@ public final class GroupModels {
             UUID membershipId,
             UUID userId,
             String displayName,
-            Set<PlayerPosition> positions,
+            PlayerPosition primaryPosition,
+            PlayerPosition secondaryPosition,
+            List<PlayerPosition> positions,
             boolean canPlayGoalkeeper,
             DominantFoot dominantFoot,
             Integer technicalLevel,
@@ -89,13 +93,17 @@ public final class GroupModels {
     }
 
     public record UpdateOwnSportsProfileRequest(
-            @NotNull Set<@NotNull PlayerPosition> positions,
+            PlayerPosition primaryPosition,
+            PlayerPosition secondaryPosition,
+            @Size(max = 2) List<@NotNull PlayerPosition> positions,
             @NotNull Boolean canPlayGoalkeeper,
             @NotNull DominantFoot dominantFoot) {
     }
 
     public record UpdateMemberSportsProfileRequest(
-            @NotNull Set<@NotNull PlayerPosition> positions,
+            PlayerPosition primaryPosition,
+            PlayerPosition secondaryPosition,
+            @Size(max = 2) List<@NotNull PlayerPosition> positions,
             @NotNull Boolean canPlayGoalkeeper,
             @NotNull DominantFoot dominantFoot,
             @NotNull @Min(1) @Max(5) Integer technicalLevel) {
