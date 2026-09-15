@@ -20,16 +20,22 @@ public class MatchGoalkeeperService {
     private final MatchRentalGoalkeeperRepository rentalGoalkeeperRepository;
     private final GroupMemberRepository groupMemberRepository;
     private final PlayerCreditService playerCreditService;
+    private final MatchGuestRepository guestRepository;
+    private final MatchTeamAssignmentRepository teamAssignmentRepository;
 
     public MatchGoalkeeperService(
             MatchAttendanceRepository attendanceRepository,
             MatchRentalGoalkeeperRepository rentalGoalkeeperRepository,
             GroupMemberRepository groupMemberRepository,
-            PlayerCreditService playerCreditService) {
+            PlayerCreditService playerCreditService,
+            MatchGuestRepository guestRepository,
+            MatchTeamAssignmentRepository teamAssignmentRepository) {
         this.attendanceRepository = attendanceRepository;
         this.rentalGoalkeeperRepository = rentalGoalkeeperRepository;
         this.groupMemberRepository = groupMemberRepository;
         this.playerCreditService = playerCreditService;
+        this.guestRepository = guestRepository;
+        this.teamAssignmentRepository = teamAssignmentRepository;
     }
 
     public void assignPrimaryGoalkeeper(
@@ -73,7 +79,9 @@ public class MatchGoalkeeperService {
                 match,
                 attendances,
                 members,
-                rentalGoalkeeperRepository.countByMatchId(match.getId()),
+                rentalGoalkeeperRepository.countByMatchId(match.getId())
+                        + guestRepository.countByMatchIdAndPrimaryPosition(
+                                match.getId(), PlayerPosition.GOALKEEPER),
                 now).missingGoalkeepers();
         if (missingGoalkeepers == 0) {
             return 0;
@@ -157,6 +165,8 @@ public class MatchGoalkeeperService {
         if (attendance.isGoalkeeper() == goalkeeper) {
             return;
         }
+
+        teamAssignmentRepository.deleteAllByMatchId(match.getId());
 
         if (goalkeeper) {
             if (!match.isGoalkeeperPays() && attendance.hasRecordedCashPayment()) {

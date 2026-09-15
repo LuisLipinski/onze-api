@@ -5,9 +5,13 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import com.onze.api.group.PlayerPosition;
+import com.onze.api.technical.PlayerSkill;
+import com.onze.api.technical.TechnicalProfileModels.OverallResponse;
+import com.onze.api.technical.TechnicalProfileModels.PositionOverallResponse;
 
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.DecimalMin;
@@ -33,6 +37,8 @@ public final class MatchModels {
             MatchType matchType,
             Integer teamCount,
             Integer requiredGoalkeepers,
+            MatchModality modality,
+            Integer minimumPlayers,
             LocalDate signupDeadlineDate,
             LocalTime signupDeadlineTime,
             LocalDate paymentDeadlineDate,
@@ -126,6 +132,10 @@ public final class MatchModels {
             MatchType matchType,
             Integer teamCount,
             int requiredGoalkeepers,
+            MatchModality modality,
+            int minimumPlayers,
+            int idealPlayers,
+            int missingMinimumPlayers,
             int currentGoalkeepers,
             int missingGoalkeepers,
             boolean goalkeeperDecisionRequired,
@@ -156,7 +166,47 @@ public final class MatchModels {
             int notGoingCount,
             List<AttendanceResponse> attendances,
             List<RentalGoalkeeperResponse> rentalGoalkeepers,
+            List<GuestResponse> guests,
+            boolean teamsGenerated,
+            boolean canViewTechnical,
             boolean canManage) {
+    }
+
+    public record UpdateMatchPlayerConfigurationRequest(
+            @NotNull MatchModality modality,
+            @NotNull @Min(1) Integer minimumPlayers) {
+    }
+
+    public record AddGuestRequest(
+            @NotBlank @Size(max = 120) String displayName,
+            @NotNull PlayerPosition primaryPosition,
+            PlayerPosition secondaryPosition,
+            Map<PlayerSkill, Integer> ratings) {
+    }
+
+    public record GuestResponse(
+            UUID id,
+            String displayName,
+            PlayerPosition primaryPosition,
+            PlayerPosition secondaryPosition,
+            Boolean evaluated,
+            Instant createdAt) {
+    }
+
+    public record UpdateGuestTechnicalProfileRequest(
+            @NotNull @Size(max = 17) Map<@NotNull PlayerSkill, Integer> ratings) {
+    }
+
+    public record GuestTechnicalProfileResponse(
+            UUID guestId,
+            String displayName,
+            PlayerPosition primaryPosition,
+            PlayerPosition secondaryPosition,
+            Map<PlayerSkill, Integer> ratings,
+            OverallResponse generalOverall,
+            List<PositionOverallResponse> positionOveralls,
+            Map<PlayerPosition, List<PlayerSkill>> importantSkills,
+            Instant technicalProfileUpdatedAt) {
     }
 
     public record PushTokenRequest(

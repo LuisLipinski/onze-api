@@ -48,6 +48,13 @@ public class MatchSeries {
     @Column(name = "required_goalkeepers", nullable = false)
     private int requiredGoalkeepers;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 16)
+    private MatchModality modality;
+
+    @Column(name = "minimum_players", nullable = false)
+    private int minimumPlayers;
+
     @Column(name = "payment_amount", precision = 10, scale = 2)
     private BigDecimal paymentAmount;
 
@@ -81,6 +88,8 @@ public class MatchSeries {
             MatchType matchType,
             Integer teamCount,
             int requiredGoalkeepers,
+            MatchModality modality,
+            int minimumPlayers,
             BigDecimal paymentAmount,
             String pixKey,
             boolean goalkeeperPays,
@@ -93,6 +102,8 @@ public class MatchSeries {
         this.matchType = matchType;
         this.teamCount = teamCount;
         this.requiredGoalkeepers = requiredGoalkeepers;
+        this.modality = modality;
+        this.minimumPlayers = minimumPlayers;
         this.paymentAmount = paymentAmount;
         this.pixKey = pixKey;
         this.goalkeeperPays = goalkeeperPays;
@@ -146,6 +157,19 @@ public class MatchSeries {
 
     public int getRequiredGoalkeepers() {
         return requiredGoalkeepers;
+    }
+
+    public MatchModality getModality() {
+        return modality;
+    }
+
+    public int getMinimumPlayers() {
+        return minimumPlayers;
+    }
+
+    public void updatePlayerConfiguration(MatchModality newModality, int newMinimumPlayers) {
+        modality = newModality;
+        minimumPlayers = newMinimumPlayers;
     }
 
     public BigDecimal getPaymentAmount() {

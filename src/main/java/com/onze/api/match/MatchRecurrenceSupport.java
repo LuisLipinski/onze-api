@@ -43,6 +43,8 @@ final class MatchRecurrenceSupport {
                 series.getMatchType(),
                 series.getTeamCount(),
                 series.getRequiredGoalkeepers(),
+                series.getModality(),
+                series.getMinimumPlayers(),
                 series.getPaymentAmount(),
                 series.getPixKey(),
                 series.isGoalkeeperPays(),

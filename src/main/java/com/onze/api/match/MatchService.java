@@ -11,6 +11,8 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import java.util.EnumMap;
+import java.util.Map;
 
 import com.onze.api.group.Group;
 import com.onze.api.group.GroupAdminPermission;
@@ -23,10 +25,18 @@ import com.onze.api.match.MatchModels.CreateMatchRequest;
 import com.onze.api.match.MatchModels.MatchResponse;
 import com.onze.api.match.MatchModels.PlayerCreditResponse;
 import com.onze.api.match.MatchModels.RentalGoalkeeperResponse;
+import com.onze.api.match.MatchModels.GuestResponse;
+import com.onze.api.match.MatchModels.GuestTechnicalProfileResponse;
 import com.onze.api.match.MatchFormatPolicy.MatchFormat;
+import com.onze.api.match.MatchPlayerPolicy.PlayerConfiguration;
 import com.onze.api.match.MatchGoalkeeperService.GoalkeeperSummary;
 import com.onze.api.user.User;
 import com.onze.api.user.UserRepository;
+import com.onze.api.technical.PlayerSkill;
+import com.onze.api.technical.TechnicalRatings;
+import com.onze.api.technical.TechnicalRatingPolicy;
+import com.onze.api.technical.TechnicalProfileModels.OverallResponse;
+import com.onze.api.technical.TechnicalProfileModels.PositionOverallResponse;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -38,6 +48,9 @@ public class MatchService {
     private final MatchSeriesRepository seriesRepository;
     private final MatchAttendanceRepository attendanceRepository;
     private final MatchRentalGoalkeeperRepository rentalGoalkeeperRepository;
+    private final MatchGuestRepository guestRepository;
+    private final MatchGuestSkillRatingRepository guestRatingRepository;
+    private final MatchTeamAssignmentRepository teamAssignmentRepository;
     private final MatchCapacityService capacityService;
     private final MatchGoalkeeperService goalkeeperService;
     private final MatchNotificationQueue notificationQueue;
@@ -52,6 +65,9 @@ public class MatchService {
             MatchSeriesRepository seriesRepository,
             MatchAttendanceRepository attendanceRepository,
             MatchRentalGoalkeeperRepository rentalGoalkeeperRepository,
+            MatchGuestRepository guestRepository,
+            MatchGuestSkillRatingRepository guestRatingRepository,
+            MatchTeamAssignmentRepository teamAssignmentRepository,
             MatchCapacityService capacityService,
             MatchGoalkeeperService goalkeeperService,
             MatchNotificationQueue notificationQueue,
@@ -64,6 +80,9 @@ public class MatchService {
         this.seriesRepository = seriesRepository;
         this.attendanceRepository = attendanceRepository;
         this.rentalGoalkeeperRepository = rentalGoalkeeperRepository;
+        this.guestRepository = guestRepository;
+        this.guestRatingRepository = guestRatingRepository;
+        this.teamAssignmentRepository = teamAssignmentRepository;
         this.capacityService = capacityService;
         this.goalkeeperService = goalkeeperService;
         this.notificationQueue = notificationQueue;
@@ -96,6 +115,12 @@ public class MatchService {
                 request.matchType(),
                 request.teamCount(),
                 request.requiredGoalkeepers());
+        PlayerConfiguration players = MatchPlayerPolicy.resolve(
+                request.modality(),
+                request.minimumPlayers(),
+                request.maxPlayers(),
+                format.matchType(),
+                format.teamCount());
         DeadlineConfiguration deadlines = resolveDeadlines(
                 request,
                 zoneId,
@@ -114,6 +139,8 @@ public class MatchService {
                     format.matchType(),
                     format.teamCount(),
                     format.requiredGoalkeepers(),
+                    players.modality(),
+                    players.minimumPlayers(),
                     payment.amount(),
                     payment.pixKey(),
                     goalkeeperPays,
@@ -129,6 +156,8 @@ public class MatchService {
                     format.matchType(),
                     format.teamCount(),
                     format.requiredGoalkeepers(),
+                    players.modality(),
+                    players.minimumPlayers(),
                     payment.amount(),
                     payment.pixKey(),
                     goalkeeperPays,
@@ -151,6 +180,8 @@ public class MatchService {
                     format.matchType(),
                     format.teamCount(),
                     format.requiredGoalkeepers(),
+                    players.modality(),
+                    players.minimumPlayers(),
                     payment.amount(),
                     payment.pixKey(),
                     goalkeeperPays,
@@ -366,6 +397,10 @@ public class MatchService {
                     now);
         }
 
+        if (joining || withdrawing) {
+            invalidateTeams(matchId);
+        }
+
         return toResponse(match, group, membership, now);
     }
 
@@ -462,6 +497,8 @@ public class MatchService {
                     now);
         }
 
+        invalidateTeams(matchId);
+
         return toResponse(match, group, membership, now);
     }
 
@@ -499,6 +536,8 @@ public class MatchService {
                 goalkeeper,
                 now);
 
+        invalidateTeams(matchId);
+
         return toResponse(match, group, membership, now);
     }
 
@@ -525,6 +564,7 @@ public class MatchService {
             throw new InvalidRentalGoalkeeperNameException();
         }
         rentalGoalkeeperRepository.save(new MatchRentalGoalkeeper(matchId, normalizedName));
+        invalidateTeams(matchId);
 
         if (occupiedBefore + 1 == match.getMaxPlayers()) {
             notificationQueue.enqueue(
@@ -555,7 +595,141 @@ public class MatchService {
                 .findByIdAndMatchId(rentalGoalkeeperId, matchId)
                 .orElseThrow(RentalGoalkeeperNotFoundException::new);
         rentalGoalkeeperRepository.delete(rentalGoalkeeper);
+        invalidateTeams(matchId);
         return toResponse(match, group, membership, now);
+    }
+
+    @Transactional
+    public MatchResponse updatePlayerConfiguration(
+            String authenticatedUserId,
+            UUID matchId,
+            MatchModality modality,
+            int minimumPlayers) {
+        UUID adminUserId = parseUserId(authenticatedUserId);
+        FootballMatch match = matchRepository.findByIdForUpdate(matchId)
+                .orElseThrow(MatchNotFoundException::new);
+        Group group = requireGroup(match.getGroupId());
+        GroupMember membership = requireMembership(match.getGroupId(), adminUserId);
+        requireManagePermission(membership);
+        Instant now = clock.instant();
+        requireEditableMatch(match, now);
+        PlayerConfiguration configuration = MatchPlayerPolicy.resolve(
+                modality,
+                minimumPlayers,
+                match.getMaxPlayers(),
+                match.getMatchType(),
+                match.getTeamCount());
+        match.updatePlayerConfiguration(configuration.modality(), configuration.minimumPlayers());
+        invalidateTeams(matchId);
+        if (match.getSeriesId() != null) {
+            MatchSeries series = seriesRepository.findById(match.getSeriesId())
+                    .orElseThrow(MatchSeriesNotFoundException::new);
+            series.updatePlayerConfiguration(configuration.modality(), configuration.minimumPlayers());
+            matchRepository.findAllBySeriesIdAndStatusAndStartsAtAfter(
+                            series.getId(), MatchStatus.SCHEDULED, now)
+                    .forEach(item -> item.updatePlayerConfiguration(
+                            configuration.modality(), configuration.minimumPlayers()));
+        }
+        return toResponse(match, group, membership, now);
+    }
+
+    @Transactional
+    public MatchResponse addGuest(
+            String authenticatedUserId,
+            UUID matchId,
+            String displayName,
+            com.onze.api.group.PlayerPosition primaryPosition,
+            com.onze.api.group.PlayerPosition secondaryPosition,
+            Map<PlayerSkill, Integer> requestedRatings) {
+        UUID adminUserId = parseUserId(authenticatedUserId);
+        FootballMatch match = matchRepository.findByIdForUpdate(matchId)
+                .orElseThrow(MatchNotFoundException::new);
+        Group group = requireGroup(match.getGroupId());
+        GroupMember membership = requireMembership(match.getGroupId(), adminUserId);
+        requireManagePermission(membership);
+        Instant now = clock.instant();
+        requireEditableMatch(match, now);
+        if (capacityService.isFull(match)) {
+            throw new MatchFullException();
+        }
+        String normalizedName = normalizeOptional(displayName);
+        if (normalizedName == null || primaryPosition == null
+                || (secondaryPosition != null && secondaryPosition == primaryPosition)) {
+            throw new InvalidGuestException();
+        }
+        Map<PlayerSkill, Integer> ratings = requestedRatings == null
+                ? Map.of()
+                : TechnicalRatings.normalize(requestedRatings);
+        if (!ratings.isEmpty()) {
+            requireTechnicalPermission(membership);
+        }
+        MatchGuest guest = guestRepository.save(new MatchGuest(
+                matchId, normalizedName, primaryPosition, secondaryPosition));
+        if (!ratings.isEmpty()) {
+            guestRatingRepository.saveAll(ratings.entrySet().stream()
+                    .map(entry -> new MatchGuestSkillRating(
+                            guest.getId(), entry.getKey(), entry.getValue()))
+                    .toList());
+            guest.markTechnicalProfileUpdated(now);
+        }
+        invalidateTeams(matchId);
+        return toResponse(match, group, membership, now);
+    }
+
+    @Transactional
+    public MatchResponse removeGuest(
+            String authenticatedUserId,
+            UUID matchId,
+            UUID guestId) {
+        UUID adminUserId = parseUserId(authenticatedUserId);
+        FootballMatch match = matchRepository.findByIdForUpdate(matchId)
+                .orElseThrow(MatchNotFoundException::new);
+        Group group = requireGroup(match.getGroupId());
+        GroupMember membership = requireMembership(match.getGroupId(), adminUserId);
+        requireManagePermission(membership);
+        Instant now = clock.instant();
+        requireEditableMatch(match, now);
+        MatchGuest guest = guestRepository.findByIdAndMatchId(guestId, matchId)
+                .orElseThrow(GuestNotFoundException::new);
+        guestRepository.delete(guest);
+        invalidateTeams(matchId);
+        return toResponse(match, group, membership, now);
+    }
+
+    @Transactional(readOnly = true)
+    public GuestTechnicalProfileResponse getGuestTechnicalProfile(
+            String authenticatedUserId,
+            UUID matchId,
+            UUID guestId) {
+        UUID adminUserId = parseUserId(authenticatedUserId);
+        FootballMatch match = requireMatch(matchId);
+        GroupMember membership = requireMembership(match.getGroupId(), adminUserId);
+        requireTechnicalPermission(membership);
+        MatchGuest guest = guestRepository.findByIdAndMatchId(guestId, matchId)
+                .orElseThrow(GuestNotFoundException::new);
+        return guestTechnicalResponse(guest, guestRatings(guest.getId()));
+    }
+
+    @Transactional
+    public GuestTechnicalProfileResponse updateGuestTechnicalProfile(
+            String authenticatedUserId,
+            UUID matchId,
+            UUID guestId,
+            Map<PlayerSkill, Integer> requestedRatings) {
+        UUID adminUserId = parseUserId(authenticatedUserId);
+        FootballMatch match = requireMatch(matchId);
+        GroupMember membership = requireMembership(match.getGroupId(), adminUserId);
+        requireTechnicalPermission(membership);
+        requireEditableMatch(match, clock.instant());
+        MatchGuest guest = guestRepository.findByIdAndMatchId(guestId, matchId)
+                .orElseThrow(GuestNotFoundException::new);
+        Map<PlayerSkill, Integer> ratings = TechnicalRatings.normalize(requestedRatings);
+        guestRatingRepository.deleteAll(guestRatingRepository.findAllByGuestId(guestId));
+        guestRatingRepository.saveAll(ratings.entrySet().stream()
+                .map(entry -> new MatchGuestSkillRating(guestId, entry.getKey(), entry.getValue()))
+                .toList());
+        guest.markTechnicalProfileUpdated(clock.instant());
+        return guestTechnicalResponse(guest, ratings);
     }
 
     @Transactional
@@ -927,11 +1101,30 @@ public class MatchService {
                         goalkeeper.getDisplayName(),
                         goalkeeper.getCreatedAt()))
                 .toList();
+        List<MatchGuest> storedGuests = guestRepository
+                .findAllByMatchIdOrderByCreatedAtAsc(match.getId());
+        boolean technicalDetailsVisible = membership.hasPermission(
+                GroupAdminPermission.EDIT_PLAYER_PROFILES);
+        List<GuestResponse> guests = storedGuests.stream()
+                .map(guest -> new GuestResponse(
+                        guest.getId(),
+                        guest.getDisplayName(),
+                        guest.getPrimaryPosition(),
+                        guest.getSecondaryPosition(),
+                        technicalDetailsVisible
+                                ? !guestRatingRepository.findAllByGuestId(guest.getId()).isEmpty()
+                                : null,
+                        guest.getCreatedAt()))
+                .toList();
+        int guestGoalkeepers = (int) storedGuests.stream()
+                .filter(guest -> guest.getPrimaryPosition()
+                        == com.onze.api.group.PlayerPosition.GOALKEEPER)
+                .count();
         GoalkeeperSummary goalkeeperSummary = goalkeeperService.summary(
                 match,
                 storedAttendances,
                 groupMembers,
-                rentalGoalkeepers.size(),
+                rentalGoalkeepers.size() + guestGoalkeepers,
                 now);
         return new MatchResponse(
                 match.getId(),
@@ -947,6 +1140,10 @@ public class MatchService {
                 match.getMatchType(),
                 match.getTeamCount(),
                 match.getRequiredGoalkeepers(),
+                match.getModality(),
+                match.getMinimumPlayers(),
+                match.getIdealPlayers(),
+                Math.max(0, match.getMinimumPlayers() - goingCount),
                 goalkeeperSummary.currentGoalkeepers(),
                 goalkeeperSummary.missingGoalkeepers(),
                 goalkeeperSummary.goalkeeperDecisionRequired(),
@@ -977,7 +1174,52 @@ public class MatchService {
                 notGoingCount,
                 List.copyOf(attendances),
                 rentalGoalkeepers,
+                guests,
+                teamAssignmentRepository.countByMatchId(match.getId()) > 0,
+                technicalDetailsVisible,
                 canManage);
+    }
+
+    private GuestTechnicalProfileResponse guestTechnicalResponse(
+            MatchGuest guest,
+            Map<PlayerSkill, Integer> ratings) {
+        var general = TechnicalRatingPolicy.general(ratings);
+        OverallResponse generalResponse = new OverallResponse(
+                general.overall(), general.coverage(), general.reliable(), general.estimated(),
+                general.resolvedPosition(), general.missingEssentialSkills());
+        List<PositionOverallResponse> positionOveralls = List.of(
+                        com.onze.api.group.PlayerPosition.values()).stream()
+                .map(position -> {
+                    var result = TechnicalRatingPolicy.position(ratings, position);
+                    return new PositionOverallResponse(
+                            position, result.overall(), result.coverage(), result.reliable(),
+                            result.estimated(), result.resolvedPosition(),
+                            result.missingEssentialSkills());
+                })
+                .toList();
+        Map<com.onze.api.group.PlayerPosition, List<PlayerSkill>> important =
+                new java.util.LinkedHashMap<>();
+        important.put(
+                guest.getPrimaryPosition(),
+                TechnicalRatingPolicy.essentialSkills(guest.getPrimaryPosition())
+                        .stream().sorted().toList());
+        if (guest.getSecondaryPosition() != null) {
+            important.put(
+                    guest.getSecondaryPosition(),
+                    TechnicalRatingPolicy.essentialSkills(guest.getSecondaryPosition())
+                            .stream().sorted().toList());
+        }
+        return new GuestTechnicalProfileResponse(
+                guest.getId(), guest.getDisplayName(), guest.getPrimaryPosition(),
+                guest.getSecondaryPosition(), Map.copyOf(ratings), generalResponse,
+                positionOveralls, Map.copyOf(important), guest.getTechnicalProfileUpdatedAt());
+    }
+
+    private Map<PlayerSkill, Integer> guestRatings(UUID guestId) {
+        Map<PlayerSkill, Integer> ratings = new EnumMap<>(PlayerSkill.class);
+        guestRatingRepository.findAllByGuestId(guestId)
+                .forEach(rating -> ratings.put(rating.getSkill(), rating.getRating()));
+        return ratings;
     }
 
     private BigDecimal remainingPaymentAmount(MatchAttendance attendance) {
@@ -1237,6 +1479,16 @@ public class MatchService {
         }
     }
 
+    private void requireTechnicalPermission(GroupMember membership) {
+        if (!membership.hasPermission(GroupAdminPermission.EDIT_PLAYER_PROFILES)) {
+            throw new GroupService.GroupAccessDeniedException();
+        }
+    }
+
+    private void invalidateTeams(UUID matchId) {
+        teamAssignmentRepository.deleteAllByMatchId(matchId);
+    }
+
     private ZoneId parseZoneId(String value) {
         try {
             return ZoneId.of(value.trim());
@@ -1355,6 +1607,14 @@ public class MatchService {
     }
 
     public static final class InvalidRentalGoalkeeperNameException extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+    }
+
+    public static final class InvalidGuestException extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+    }
+
+    public static final class GuestNotFoundException extends RuntimeException {
         private static final long serialVersionUID = 1L;
     }
 

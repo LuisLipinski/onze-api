@@ -16,6 +16,7 @@ import com.onze.api.group.GroupService.InvalidGroupPhotoException;
 import com.onze.api.group.GroupService.InvalidPaymentConfigurationException;
 import com.onze.api.group.GroupService.PhotoStorageNotConfiguredException;
 import com.onze.api.group.GroupService.PhotoUploadFailedException;
+import com.onze.api.technical.TechnicalRatings.InvalidTechnicalRatingException;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -89,6 +90,14 @@ public class GroupExceptionHandler {
                 .body(new ErrorResponse(
                         "INVALID_SPORTS_PROFILE",
                         "Escolha uma posição principal e, se informar a secundária, use uma posição diferente."));
+    }
+
+    @ExceptionHandler(InvalidTechnicalRatingException.class)
+    ResponseEntity<ErrorResponse> invalidTechnicalRating() {
+        return ResponseEntity.badRequest()
+                .body(new ErrorResponse(
+                        "INVALID_TECHNICAL_RATING",
+                        "Cada habilidade avaliada deve ter um valor inteiro de 1 a 10."));
     }
 
     @ExceptionHandler(GroupUserNotFoundException.class)
