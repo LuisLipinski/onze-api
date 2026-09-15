@@ -226,6 +226,10 @@ public class FootballMatch {
         minimumPlayers = newMinimumPlayers;
     }
 
+    public void updateMaximumPlayers(int newMaxPlayers) {
+        maxPlayers = newMaxPlayers;
+    }
+
     public BigDecimal getPaymentAmount() {
         return paymentAmount;
     }
