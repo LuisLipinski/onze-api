@@ -58,6 +58,7 @@ public class PlayerCreditService {
                         groupId,
                         MatchStatus.SCHEDULED,
                         now);
+        boolean earlierEligibleMatchFound = false;
         for (FootballMatch candidate : upcoming) {
             if (!candidate.isSignupOpen(now)) {
                 continue;
@@ -71,7 +72,19 @@ public class PlayerCreditService {
             if (attendance != null
                     && attendance.hasActiveCredit()
                     && !attendance.isCreditConsumed()) {
-                return;
+                if (!earlierEligibleMatchFound) {
+                    return;
+                }
+                attendance.releaseCredit(now);
+                attendance.restorePaymentObligation(candidate.getPaymentAmount());
+                break;
+            }
+            if (attendance == null
+                    || (attendance.getStatus() != AttendanceStatus.NOT_GOING
+                            && !attendance.hasActiveCredit()
+                            && attendance.getPaymentStatus() != PaymentStatus.PAID
+                            && attendance.getPaymentStatus() != PaymentStatus.REPORTED)) {
+                earlierEligibleMatchFound = true;
             }
         }
 

@@ -301,6 +301,71 @@ class MatchGoalkeeperIntegrationTest {
     }
 
     @Test
+    void shouldMoveCreditBackToTheEarliestMatchWhenGoalkeeperStopsBeingExempt() throws Exception {
+        AuthResponse creator = register("goalkeeper-credit-order-admin@example.com", "Principal Crédito Ordenado");
+        AuthResponse goalkeeper = register("goalkeeper-credit-order-player@example.com", "Goleiro Crédito Ordenado");
+        GroupResponse group = createGroup(creator, "Pelada crédito ordenado");
+        InviteResponse invite = createInvite(creator, group.id());
+        join(goalkeeper, invite.code());
+        completeProfile(goalkeeper, group.id(), "DEFENDER", null, true);
+
+        jdbcTemplate.update(
+                """
+                        INSERT INTO group_player_credits
+                            (id, group_id, user_id, balance, created_at, updated_at)
+                        VALUES (?, ?, ?, 20.00, NOW(), NOW())
+                        """,
+                UUID.randomUUID(),
+                group.id(),
+                goalkeeper.user().id());
+
+        MatchResponse firstMatch = readMatch(createMatch(
+                creator,
+                group.id(),
+                paidMatchBody(LocalDate.now(SAO_PAULO).plusDays(3), 10, "NONE", false))
+                .andExpect(status().isCreated())
+                .andReturn());
+        MatchResponse secondMatch = readMatch(createMatch(
+                creator,
+                group.id(),
+                paidMatchBody(LocalDate.now(SAO_PAULO).plusDays(4), 10, "NONE", true))
+                .andExpect(status().isCreated())
+                .andReturn());
+
+        confirmAttendance(firstMatch.id(), goalkeeper, "GOING")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.myCreditAllocationStatus").value("APPLIED"));
+        updateGoalkeeper(firstMatch.id(), goalkeeper.user().id(), creator, true)
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/groups/{groupId}/credits", group.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(creator)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].allocationStatus").value("RESERVED"))
+                .andExpect(jsonPath("$[0].allocatedMatchId").value(secondMatch.id().toString()));
+
+        updateGoalkeeper(firstMatch.id(), goalkeeper.user().id(), creator, false)
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/matches/{matchId}", firstMatch.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(goalkeeper)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.myPaymentStatus").value("PAID"))
+                .andExpect(jsonPath("$.myCreditAllocationStatus").value("APPLIED"));
+        mockMvc.perform(get("/api/matches/{matchId}", secondMatch.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(goalkeeper)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.myPaymentStatus").value("PENDING"))
+                .andExpect(jsonPath("$.myCreditAllocationStatus").value(nullValue()))
+                .andExpect(jsonPath("$.myRemainingPaymentAmount").value(20));
+        mockMvc.perform(get("/api/groups/{groupId}/credits", group.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(creator)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].allocationStatus").value("APPLIED"))
+                .andExpect(jsonPath("$[0].allocatedMatchId").value(firstMatch.id().toString()));
+    }
+
+    @Test
     void shouldManageRentalGoalkeeperAsAnExternalOccupiedSpotOnlyInTheCurrentOccurrence() throws Exception {
         AuthResponse creator = register("rental-admin@example.com", "Principal Aluguel");
         AuthResponse member = register("rental-member@example.com", "Jogador do Grupo");
