@@ -205,6 +205,8 @@ public class GroupMember {
                 newSecondaryPosition,
                 newCanPlayGoalkeeper,
                 newDominantFoot);
-        technicalLevel = newTechnicalLevel;
+        if (newTechnicalLevel != null) {
+            technicalLevel = newTechnicalLevel;
+        }
     }
 }

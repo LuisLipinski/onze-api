@@ -1176,6 +1176,7 @@ public class MatchService {
                 rentalGoalkeepers,
                 guests,
                 teamAssignmentRepository.countByMatchId(match.getId()) > 0,
+                technicalDetailsVisible,
                 canManage);
     }
 

@@ -106,7 +106,7 @@ public final class GroupModels {
             @Size(max = 2) List<@NotNull PlayerPosition> positions,
             @NotNull Boolean canPlayGoalkeeper,
             @NotNull DominantFoot dominantFoot,
-            @NotNull @Min(1) @Max(5) Integer technicalLevel) {
+            @Min(1) @Max(5) Integer technicalLevel) {
     }
 
     public record UpdateAdminPermissionsRequest(

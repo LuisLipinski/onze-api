@@ -168,6 +168,7 @@ public final class MatchModels {
             List<RentalGoalkeeperResponse> rentalGoalkeepers,
             List<GuestResponse> guests,
             boolean teamsGenerated,
+            boolean canViewTechnical,
             boolean canManage) {
     }
 

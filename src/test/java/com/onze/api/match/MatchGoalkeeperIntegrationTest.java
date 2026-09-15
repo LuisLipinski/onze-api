@@ -10,6 +10,7 @@ import com.onze.api.auth.AuthModels.AuthResponse;
 import com.onze.api.auth.PasswordResetCodeRepository;
 import com.onze.api.group.GroupInviteModels.InviteResponse;
 import com.onze.api.group.GroupInviteRepository;
+import com.onze.api.group.GroupMember;
 import com.onze.api.group.GroupMemberRepository;
 import com.onze.api.group.GroupModels.GroupResponse;
 import com.onze.api.group.GroupRepository;
