@@ -9,6 +9,9 @@ import java.util.Map;
 import java.util.UUID;
 
 import com.onze.api.group.PlayerPosition;
+import com.onze.api.technical.PlayerSkill;
+import com.onze.api.technical.TechnicalProfileModels.OverallResponse;
+import com.onze.api.technical.TechnicalProfileModels.PositionOverallResponse;
 
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.DecimalMin;
@@ -177,7 +180,7 @@ public final class MatchModels {
             @NotBlank @Size(max = 120) String displayName,
             @NotNull PlayerPosition primaryPosition,
             PlayerPosition secondaryPosition,
-            java.util.Map<com.onze.api.technical.PlayerSkill, Integer> ratings) {
+            Map<PlayerSkill, Integer> ratings) {
     }
 
     public record GuestResponse(
@@ -190,7 +193,7 @@ public final class MatchModels {
     }
 
     public record UpdateGuestTechnicalProfileRequest(
-            @NotNull @Size(max = 17) Map<@NotNull com.onze.api.technical.PlayerSkill, Integer> ratings) {
+            @NotNull @Size(max = 17) Map<@NotNull PlayerSkill, Integer> ratings) {
     }
 
     public record GuestTechnicalProfileResponse(
@@ -198,10 +201,10 @@ public final class MatchModels {
             String displayName,
             PlayerPosition primaryPosition,
             PlayerPosition secondaryPosition,
-            Map<com.onze.api.technical.PlayerSkill, Integer> ratings,
-            com.onze.api.technical.TechnicalProfileModels.OverallResponse generalOverall,
-            List<com.onze.api.technical.TechnicalProfileModels.PositionOverallResponse> positionOveralls,
-            Map<PlayerPosition, List<com.onze.api.technical.PlayerSkill>> importantSkills,
+            Map<PlayerSkill, Integer> ratings,
+            OverallResponse generalOverall,
+            List<PositionOverallResponse> positionOveralls,
+            Map<PlayerPosition, List<PlayerSkill>> importantSkills,
             Instant technicalProfileUpdatedAt) {
     }
 
