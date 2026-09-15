@@ -38,14 +38,17 @@ public class MatchController {
     private final MatchService matchService;
     private final MatchLifecycleService lifecycleService;
     private final MatchTeamService teamService;
+    private final MatchPlayerConfigurationService playerConfigurationService;
 
     public MatchController(
             MatchService matchService,
             MatchLifecycleService lifecycleService,
-            MatchTeamService teamService) {
+            MatchTeamService teamService,
+            MatchPlayerConfigurationService playerConfigurationService) {
         this.matchService = matchService;
         this.lifecycleService = lifecycleService;
         this.teamService = teamService;
+        this.playerConfigurationService = playerConfigurationService;
     }
 
     @PostMapping("/api/groups/{groupId}/matches")
@@ -197,8 +200,12 @@ public class MatchController {
             Authentication authentication,
             @PathVariable UUID matchId,
             @Valid @RequestBody UpdateMatchPlayerConfigurationRequest request) {
-        return matchService.updatePlayerConfiguration(
-                authentication.getName(), matchId, request.modality(), request.minimumPlayers());
+        return playerConfigurationService.update(
+                authentication.getName(),
+                matchId,
+                request.modality(),
+                request.minimumPlayers(),
+                request.maxPlayers());
     }
 
     @PostMapping("/api/matches/{matchId}/guests")
