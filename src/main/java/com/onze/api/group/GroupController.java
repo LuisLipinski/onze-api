@@ -120,6 +120,8 @@ public class GroupController {
         return groupSportsProfileService.updateOwn(
                 authentication.getName(),
                 groupId,
+                request.primaryPosition(),
+                request.secondaryPosition(),
                 request.positions(),
                 request.canPlayGoalkeeper(),
                 request.dominantFoot());
@@ -143,6 +145,8 @@ public class GroupController {
                 authentication.getName(),
                 groupId,
                 memberId,
+                request.primaryPosition(),
+                request.secondaryPosition(),
                 request.positions(),
                 request.canPlayGoalkeeper(),
                 request.dominantFoot(),

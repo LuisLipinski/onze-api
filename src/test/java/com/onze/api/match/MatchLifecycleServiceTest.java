@@ -30,6 +30,7 @@ class MatchLifecycleServiceTest {
         GroupMemberRepository groupMemberRepository = mock(GroupMemberRepository.class);
         MatchNotificationQueue notificationQueue = mock(MatchNotificationQueue.class);
         PlayerCreditService playerCreditService = mock(PlayerCreditService.class);
+        MatchGoalkeeperService goalkeeperService = mock(MatchGoalkeeperService.class);
         MatchLifecycleService service = new MatchLifecycleService(
                 matchRepository,
                 seriesRepository,
@@ -37,6 +38,7 @@ class MatchLifecycleServiceTest {
                 groupMemberRepository,
                 notificationQueue,
                 playerCreditService,
+                goalkeeperService,
                 clock);
 
         UUID matchId = UUID.randomUUID();
@@ -96,6 +98,7 @@ class MatchLifecycleServiceTest {
         GroupMemberRepository groupMemberRepository = mock(GroupMemberRepository.class);
         MatchNotificationQueue notificationQueue = mock(MatchNotificationQueue.class);
         PlayerCreditService playerCreditService = mock(PlayerCreditService.class);
+        MatchGoalkeeperService goalkeeperService = mock(MatchGoalkeeperService.class);
         MatchLifecycleService service = new MatchLifecycleService(
                 matchRepository,
                 seriesRepository,
@@ -103,6 +106,7 @@ class MatchLifecycleServiceTest {
                 groupMemberRepository,
                 notificationQueue,
                 playerCreditService,
+                goalkeeperService,
                 clock);
 
         UUID matchId = UUID.randomUUID();
@@ -152,6 +156,7 @@ class MatchLifecycleServiceTest {
         GroupMemberRepository groupMemberRepository = mock(GroupMemberRepository.class);
         MatchNotificationQueue notificationQueue = mock(MatchNotificationQueue.class);
         PlayerCreditService playerCreditService = mock(PlayerCreditService.class);
+        MatchGoalkeeperService goalkeeperService = mock(MatchGoalkeeperService.class);
         MatchLifecycleService service = new MatchLifecycleService(
                 matchRepository,
                 seriesRepository,
@@ -159,6 +164,7 @@ class MatchLifecycleServiceTest {
                 groupMemberRepository,
                 notificationQueue,
                 playerCreditService,
+                goalkeeperService,
                 clock);
 
         UUID matchId = UUID.randomUUID();

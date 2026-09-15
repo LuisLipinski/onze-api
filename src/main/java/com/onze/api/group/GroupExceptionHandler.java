@@ -88,7 +88,7 @@ public class GroupExceptionHandler {
         return ResponseEntity.badRequest()
                 .body(new ErrorResponse(
                         "INVALID_SPORTS_PROFILE",
-                        "Escolha ao menos uma posição de linha ou marque que joga no gol."));
+                        "Escolha uma posição principal e, se informar a secundária, use uma posição diferente."));
     }
 
     @ExceptionHandler(GroupUserNotFoundException.class)

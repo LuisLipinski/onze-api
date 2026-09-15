@@ -29,6 +29,7 @@ public class ExpoPushNotificationSender {
     private final GroupRepository groupRepository;
     private final GroupMemberRepository groupMemberRepository;
     private final MatchAttendanceRepository attendanceRepository;
+    private final MatchCapacityService capacityService;
     private final PushDeviceRepository pushDeviceRepository;
     private final RestClient restClient;
     private final boolean enabled;
@@ -37,12 +38,14 @@ public class ExpoPushNotificationSender {
             GroupRepository groupRepository,
             GroupMemberRepository groupMemberRepository,
             MatchAttendanceRepository attendanceRepository,
+            MatchCapacityService capacityService,
             PushDeviceRepository pushDeviceRepository,
             @Value("${notifications.expo.endpoint}") String endpoint,
             @Value("${notifications.expo.enabled:true}") boolean enabled) {
         this.groupRepository = groupRepository;
         this.groupMemberRepository = groupMemberRepository;
         this.attendanceRepository = attendanceRepository;
+        this.capacityService = capacityService;
         this.pushDeviceRepository = pushDeviceRepository;
         this.restClient = RestClient.builder().baseUrl(endpoint).build();
         this.enabled = enabled;
@@ -137,9 +140,7 @@ public class ExpoPushNotificationSender {
             case TEAM_FULL -> new NotificationCopy(
                     "Time fechado ✅",
                     group.getName() + " chegou a "
-                            + attendanceRepository.countByMatchIdAndStatus(
-                                    match.getId(),
-                                    AttendanceStatus.GOING)
+                            + capacityService.occupiedSpots(match.getId())
                             + "/"
                             + match.getMaxPlayers()
                             + " jogadores confirmados.");

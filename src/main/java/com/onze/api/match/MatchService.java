@@ -23,6 +23,8 @@ import com.onze.api.match.MatchModels.CreateMatchRequest;
 import com.onze.api.match.MatchModels.MatchResponse;
 import com.onze.api.match.MatchModels.PlayerCreditResponse;
 import com.onze.api.match.MatchModels.RentalGoalkeeperResponse;
+import com.onze.api.match.MatchFormatPolicy.MatchFormat;
+import com.onze.api.match.MatchGoalkeeperService.GoalkeeperSummary;
 import com.onze.api.user.User;
 import com.onze.api.user.UserRepository;
 
@@ -37,6 +39,7 @@ public class MatchService {
     private final MatchAttendanceRepository attendanceRepository;
     private final MatchRentalGoalkeeperRepository rentalGoalkeeperRepository;
     private final MatchCapacityService capacityService;
+    private final MatchGoalkeeperService goalkeeperService;
     private final MatchNotificationQueue notificationQueue;
     private final PlayerCreditService playerCreditService;
     private final GroupRepository groupRepository;
@@ -50,6 +53,7 @@ public class MatchService {
             MatchAttendanceRepository attendanceRepository,
             MatchRentalGoalkeeperRepository rentalGoalkeeperRepository,
             MatchCapacityService capacityService,
+            MatchGoalkeeperService goalkeeperService,
             MatchNotificationQueue notificationQueue,
             PlayerCreditService playerCreditService,
             GroupRepository groupRepository,
@@ -61,6 +65,7 @@ public class MatchService {
         this.attendanceRepository = attendanceRepository;
         this.rentalGoalkeeperRepository = rentalGoalkeeperRepository;
         this.capacityService = capacityService;
+        this.goalkeeperService = goalkeeperService;
         this.notificationQueue = notificationQueue;
         this.playerCreditService = playerCreditService;
         this.groupRepository = groupRepository;
@@ -87,6 +92,10 @@ public class MatchService {
         String notes = normalizeOptional(request.notes());
         PaymentConfiguration payment = resolvePaymentConfiguration(group, request);
         boolean goalkeeperPays = request.goalkeeperPays() == null || request.goalkeeperPays();
+        MatchFormat format = MatchFormatPolicy.resolve(
+                request.matchType(),
+                request.teamCount(),
+                request.requiredGoalkeepers());
         DeadlineConfiguration deadlines = resolveDeadlines(
                 request,
                 zoneId,
@@ -102,6 +111,9 @@ public class MatchService {
                     zoneId.getId(),
                     venue,
                     request.maxPlayers(),
+                    format.matchType(),
+                    format.teamCount(),
+                    format.requiredGoalkeepers(),
                     payment.amount(),
                     payment.pixKey(),
                     goalkeeperPays,
@@ -114,6 +126,9 @@ public class MatchService {
                     zoneId.getId(),
                     venue,
                     request.maxPlayers(),
+                    format.matchType(),
+                    format.teamCount(),
+                    format.requiredGoalkeepers(),
                     payment.amount(),
                     payment.pixKey(),
                     goalkeeperPays,
@@ -133,6 +148,9 @@ public class MatchService {
                     zoneId.getId(),
                     venue,
                     request.maxPlayers(),
+                    format.matchType(),
+                    format.teamCount(),
+                    format.requiredGoalkeepers(),
                     payment.amount(),
                     payment.pixKey(),
                     goalkeeperPays,
@@ -297,12 +315,18 @@ public class MatchService {
                     userId,
                     requestedStatus,
                     MatchPaymentPolicy.effectiveAmount(match, null)));
+            if (joining) {
+                goalkeeperService.assignPrimaryGoalkeeper(match, attendance, membership, now);
+            }
         } else {
             if (withdrawing && !protectedWithdrawal) {
                 creditReleased = playerCreditService.releaseReservation(
                         match.getGroupId(),
                         attendance,
                         now);
+            }
+            if (joining) {
+                goalkeeperService.assignPrimaryGoalkeeper(match, attendance, membership, now);
             }
             attendance.changeStatus(
                     requestedStatus,
@@ -368,7 +392,7 @@ public class MatchService {
                 || !departed.isAwaitingReplacement()) {
             throw new ReplacementVacancyNotOpenException();
         }
-        requireMembership(match.getGroupId(), replacementUserId);
+        GroupMember replacementMember = requireMembership(match.getGroupId(), replacementUserId);
 
         long occupiedBefore = capacityService.occupiedSpots(matchId);
         if (occupiedBefore >= match.getMaxPlayers()) {
@@ -393,6 +417,11 @@ public class MatchService {
                     MatchPaymentPolicy.effectiveAmount(match, departed),
                     now);
             replacement = departed;
+            goalkeeperService.assignPrimaryGoalkeeper(
+                    match,
+                    replacement,
+                    replacementMember,
+                    now);
         } else {
             if (replacement == null) {
                 replacement = attendanceRepository.save(new MatchAttendance(
@@ -405,6 +434,11 @@ public class MatchService {
                         MatchPaymentPolicy.effectiveAmount(match, replacement),
                         now);
             }
+            goalkeeperService.assignPrimaryGoalkeeper(
+                    match,
+                    replacement,
+                    replacementMember,
+                    now);
             replacement.markAddedAsReplacement(departedUserId, now);
             playerCreditService.reserveForNextMatch(match.getGroupId(), replacementUserId, now);
             playerCreditService.consumeReservation(match.getGroupId(), replacement, now);
@@ -455,24 +489,15 @@ public class MatchService {
         if (attendance.isGoalkeeper() == goalkeeper) {
             return toResponse(match, group, membership, now);
         }
-
-        if (goalkeeper) {
-            if (!match.isGoalkeeperPays() && attendance.hasRecordedCashPayment()) {
-                throw new GoalkeeperPaymentAlreadyRecordedException();
-            }
-            attendance.setGoalkeeper(true);
-            if (MatchPaymentPolicy.isExempt(match, attendance)) {
-                playerCreditService.releaseReservation(match.getGroupId(), attendance, now);
-                attendance.exemptFromPayment(now);
-            }
-        } else {
-            boolean wasExempt = MatchPaymentPolicy.isExempt(match, attendance);
-            attendance.setGoalkeeper(false);
-            if (wasExempt) {
-                attendance.restorePaymentObligation(match.getPaymentAmount());
-                playerCreditService.reserveForNextMatch(match.getGroupId(), playerUserId, now);
-            }
-        }
+        GroupMember player = groupMemberRepository
+                .findByGroupIdAndUserId(match.getGroupId(), playerUserId)
+                .orElseThrow(GoalkeeperRequiresAttendanceException::new);
+        goalkeeperService.updateByAdministrator(
+                match,
+                attendance,
+                player,
+                goalkeeper,
+                now);
 
         return toResponse(match, group, membership, now);
     }
@@ -818,6 +843,12 @@ public class MatchService {
             Instant now) {
         List<MatchAttendance> storedAttendances = attendanceRepository
                 .findAllByMatchIdOrderByCreatedAtAsc(match.getId());
+        List<GroupMember> groupMembers = groupMemberRepository
+                .findAllByGroupIdOrderByCreatedAtAsc(match.getGroupId());
+        java.util.Map<UUID, GroupMember> groupMembersByUser = groupMembers.stream()
+                .collect(java.util.stream.Collectors.toMap(
+                        GroupMember::getUserId,
+                        java.util.function.Function.identity()));
         List<AttendanceResponse> attendances = new ArrayList<>(storedAttendances.size());
         AttendanceStatus myAttendance = null;
         PaymentStatus myPaymentStatus = null;
@@ -839,6 +870,7 @@ public class MatchService {
             if (attendance.getStatus() == AttendanceStatus.NOT_GOING) {
                 notGoingCount++;
             }
+            GroupMember attendanceMember = groupMembersByUser.get(attendance.getUserId());
             boolean currentUser = attendance.getUserId().equals(membership.getUserId());
             BigDecimal remainingPaymentAmount = remainingPaymentAmount(attendance);
             CreditAllocationStatus creditAllocationStatus = creditAllocationStatus(attendance);
@@ -861,6 +893,9 @@ public class MatchService {
             attendances.add(new AttendanceResponse(
                     attendance.getUserId(),
                     user.getDisplayName(),
+                    attendanceMember == null ? null : attendanceMember.getPrimaryPosition(),
+                    attendanceMember == null ? null : attendanceMember.getSecondaryPosition(),
+                    attendanceMember != null && attendanceMember.canPlayGoalkeeper(),
                     attendance.getStatus(),
                     attendance.isGoalkeeper(),
                     MatchPaymentPolicy.isExempt(match, attendance),
@@ -892,6 +927,12 @@ public class MatchService {
                         goalkeeper.getDisplayName(),
                         goalkeeper.getCreatedAt()))
                 .toList();
+        GoalkeeperSummary goalkeeperSummary = goalkeeperService.summary(
+                match,
+                storedAttendances,
+                groupMembers,
+                rentalGoalkeepers.size(),
+                now);
         return new MatchResponse(
                 match.getId(),
                 match.getGroupId(),
@@ -903,6 +944,13 @@ public class MatchService {
                 match.getTimeZone(),
                 match.getVenue(),
                 match.getMaxPlayers(),
+                match.getMatchType(),
+                match.getTeamCount(),
+                match.getRequiredGoalkeepers(),
+                goalkeeperSummary.currentGoalkeepers(),
+                goalkeeperSummary.missingGoalkeepers(),
+                goalkeeperSummary.goalkeeperDecisionRequired(),
+                goalkeeperSummary.secondaryGoalkeeperDecisionRequired(),
                 match.isPaymentRequired(),
                 match.isGoalkeeperPays(),
                 match.getPaymentAmount(),
@@ -1299,10 +1347,6 @@ public class MatchService {
     }
 
     public static final class GoalkeeperPaymentExemptException extends RuntimeException {
-        private static final long serialVersionUID = 1L;
-    }
-
-    public static final class GoalkeeperPaymentAlreadyRecordedException extends RuntimeException {
         private static final long serialVersionUID = 1L;
     }
 

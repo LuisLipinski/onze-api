@@ -29,6 +29,7 @@ public class MatchLifecycleService {
     private final GroupMemberRepository groupMemberRepository;
     private final MatchNotificationQueue notificationQueue;
     private final PlayerCreditService playerCreditService;
+    private final MatchGoalkeeperService goalkeeperService;
     private final Clock clock;
 
     public MatchLifecycleService(
@@ -38,6 +39,7 @@ public class MatchLifecycleService {
             GroupMemberRepository groupMemberRepository,
             MatchNotificationQueue notificationQueue,
             PlayerCreditService playerCreditService,
+            MatchGoalkeeperService goalkeeperService,
             Clock clock) {
         this.matchRepository = matchRepository;
         this.seriesRepository = seriesRepository;
@@ -45,6 +47,7 @@ public class MatchLifecycleService {
         this.groupMemberRepository = groupMemberRepository;
         this.notificationQueue = notificationQueue;
         this.playerCreditService = playerCreditService;
+        this.goalkeeperService = goalkeeperService;
         this.clock = clock;
     }
 
@@ -158,6 +161,9 @@ public class MatchLifecycleService {
 
             for (UUID userId : releasedCreditUsers.stream().distinct().toList()) {
                 playerCreditService.reserveForNextMatch(match.getGroupId(), userId, now);
+            }
+            if (signupExpired) {
+                goalkeeperService.processSignupDeadline(match, now);
             }
         }
     }
