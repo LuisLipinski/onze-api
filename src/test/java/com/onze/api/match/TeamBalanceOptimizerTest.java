@@ -38,6 +38,27 @@ class TeamBalanceOptimizerTest {
     }
 
     @Test
+    void shouldFindGlobalTwoTeamImprovementThatRequiresTwoSimultaneousSwaps() {
+        List<TeamBalanceOptimizer.Slot> initial = List.of(
+                slot(0, 1, "A", 31),
+                slot(1, 1, "B", 31),
+                slot(2, 1, "C", 21),
+                slot(3, 1, "D", 21),
+                slot(4, 2, "A", 25),
+                slot(5, 2, "B", 25),
+                slot(6, 2, "C", 25),
+                slot(7, 2, "D", 25));
+
+        assertThat(spread(initial, 2)).isEqualTo(1.0);
+
+        List<TeamBalanceOptimizer.Slot> optimized = TeamBalanceOptimizer.optimize(initial, 2);
+
+        assertThat(spread(optimized, 2)).isZero();
+        assertThat(roundedStrength(optimized, 1))
+                .isEqualTo(roundedStrength(optimized, 2));
+    }
+
+    @Test
     void shouldReduceSpreadAcrossThreeTeams() {
         List<TeamBalanceOptimizer.Slot> initial = List.of(
                 slot(0, 1, "A", 50),
@@ -69,6 +90,20 @@ class TeamBalanceOptimizerTest {
     }
 
     @Test
+    void shouldPreserveEstimatedEvaluationDistribution() {
+        List<TeamBalanceOptimizer.Slot> initial = List.of(
+                slot(0, 1, "A", 45, false),
+                slot(1, 1, "B", 35, true),
+                slot(2, 2, "A", 15, false),
+                slot(3, 2, "B", 25, true));
+
+        Map<Integer, Long> before = estimatedCountsByTeam(initial);
+        List<TeamBalanceOptimizer.Slot> optimized = TeamBalanceOptimizer.optimize(initial, 2);
+
+        assertThat(estimatedCountsByTeam(optimized)).isEqualTo(before);
+    }
+
+    @Test
     void shouldImproveAFormationComparableToTwentyNineVersusTwenty() {
         List<TeamBalanceOptimizer.Slot> initial = List.of(
                 slot(0, 1, "A", 40),
@@ -91,11 +126,21 @@ class TeamBalanceOptimizerTest {
             int team,
             String role,
             int score) {
+        return slot(index, team, role, score, false);
+    }
+
+    private TeamBalanceOptimizer.Slot slot(
+            int index,
+            int team,
+            String role,
+            int score,
+            boolean estimated) {
         return new TeamBalanceOptimizer.Slot(
                 index,
                 team,
                 role,
                 score,
+                estimated,
                 role + "-" + index);
     }
 
@@ -126,5 +171,13 @@ class TeamBalanceOptimizerTest {
         return slots.stream().collect(Collectors.groupingBy(
                 slot -> slot.teamNumber() + ":" + slot.role(),
                 Collectors.counting()));
+    }
+
+    private Map<Integer, Long> estimatedCountsByTeam(List<TeamBalanceOptimizer.Slot> slots) {
+        return slots.stream()
+                .filter(TeamBalanceOptimizer.Slot::estimated)
+                .collect(Collectors.groupingBy(
+                        TeamBalanceOptimizer.Slot::teamNumber,
+                        Collectors.counting()));
     }
 }
