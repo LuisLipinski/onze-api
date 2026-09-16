@@ -12,9 +12,10 @@ import java.util.TreeMap;
  *
  * <p>For two normal-sized teams, explores every reachable distribution while
  * preserving each team's quantity per role and per score-source category
- * (real/estimated). For larger or multi-team scenarios, uses a bounded local
- * search. This keeps the API cost safe while avoiding local minima in the most
- * common two-team case.</p>
+ * (real/estimated). The objective first keeps the displayed overall strengths
+ * close and then balances how attack faces the opponent defense, midfield and
+ * the individual team lines. For larger or multi-team scenarios, it uses a
+ * bounded local search with the same objective where applicable.</p>
  */
 final class TeamBalanceOptimizer {
 
@@ -78,12 +79,34 @@ final class TeamBalanceOptimizer {
             if (options.isEmpty() || options.size() > MAX_BUCKET_OPTIONS) {
                 return null;
             }
-            buckets.add(new Bucket(List.copyOf(bucketSlots), List.copyOf(options)));
+            buckets.add(new Bucket(
+                    List.copyOf(bucketSlots),
+                    List.copyOf(options),
+                    bucketSlots.get(0).line));
         }
 
         long totalScore = slots.stream().mapToLong(slot -> slot.score).sum();
+        long[] totalLineScores = new long[TeamLine.values().length];
+        int[] teamOneLineCounts = new int[TeamLine.values().length];
+        int[] teamTwoLineCounts = new int[TeamLine.values().length];
+        for (MutableSlot slot : slots) {
+            int line = slot.line.ordinal();
+            totalLineScores[line] += slot.score;
+            if (slot.teamNumber == 1) {
+                teamOneLineCounts[line]++;
+            } else {
+                teamTwoLineCounts[line]++;
+            }
+        }
+
         ExactSearch search = new ExactSearch(
-                buckets, teamOneCount, teamTwoCount, totalScore);
+                buckets,
+                teamOneCount,
+                teamTwoCount,
+                totalScore,
+                totalLineScores,
+                teamOneLineCounts,
+                teamTwoLineCounts);
         search.visit(0, 0, new int[buckets.size()]);
         if (search.aborted || search.bestChoices == null) {
             return null;
@@ -217,10 +240,31 @@ final class TeamBalanceOptimizer {
         }
     }
 
+    private enum TeamLine {
+        DEFENSE,
+        MIDFIELD,
+        ATTACK,
+        OTHER
+    }
+
+    private static TeamLine lineForRole(String role) {
+        return switch (role) {
+            case "DEFENDER", "RIGHT_DEFENDER", "LEFT_DEFENDER", "CENTER_DEFENDER",
+                    "RIGHT_BACK", "LEFT_BACK", "FIXO" -> TeamLine.DEFENSE;
+            case "DEFENSIVE_MIDFIELDER", "MIDFIELDER", "RIGHT_MIDFIELDER",
+                    "LEFT_MIDFIELDER", "CENTRAL_MIDFIELDER", "PLAYMAKER",
+                    "RIGHT_WINGER_FUTSAL", "LEFT_WINGER_FUTSAL" -> TeamLine.MIDFIELD;
+            case "ATTACKER", "RIGHT_WINGER", "LEFT_WINGER", "CENTER_FORWARD",
+                    "PIVOT" -> TeamLine.ATTACK;
+            default -> TeamLine.OTHER;
+        };
+    }
+
     private static final class MutableSlot {
         private final int index;
         private int teamNumber;
         private final String role;
+        private final TeamLine line;
         private final int score;
         private final boolean estimated;
         private final String stableKey;
@@ -229,13 +273,17 @@ final class TeamBalanceOptimizer {
             index = source.index();
             teamNumber = source.teamNumber();
             role = source.role();
+            line = lineForRole(source.role());
             score = source.score();
             estimated = source.estimated();
             stableKey = source.stableKey();
         }
     }
 
-    private record Bucket(List<MutableSlot> slots, List<BucketOption> options) {
+    private record Bucket(
+            List<MutableSlot> slots,
+            List<BucketOption> options,
+            TeamLine line) {
     }
 
     private record BucketOption(boolean[] teamOne, long teamOneScore) {
@@ -246,6 +294,9 @@ final class TeamBalanceOptimizer {
         private final int teamOneCount;
         private final int teamTwoCount;
         private final long totalScore;
+        private final long[] totalLineScores;
+        private final int[] teamOneLineCounts;
+        private final int[] teamTwoLineCounts;
         private long visited;
         private boolean aborted;
         private Objective bestObjective;
@@ -255,11 +306,17 @@ final class TeamBalanceOptimizer {
                 List<Bucket> buckets,
                 int teamOneCount,
                 int teamTwoCount,
-                long totalScore) {
+                long totalScore,
+                long[] totalLineScores,
+                int[] teamOneLineCounts,
+                int[] teamTwoLineCounts) {
             this.buckets = buckets;
             this.teamOneCount = teamOneCount;
             this.teamTwoCount = teamTwoCount;
             this.totalScore = totalScore;
+            this.totalLineScores = totalLineScores;
+            this.teamOneLineCounts = teamOneLineCounts;
+            this.teamTwoLineCounts = teamTwoLineCounts;
         }
 
         void visit(int bucketIndex, long teamOneScore, int[] choices) {
@@ -272,9 +329,22 @@ final class TeamBalanceOptimizer {
                     aborted = true;
                     return;
                 }
-                double firstAverage = (double) teamOneScore / teamOneCount;
-                double secondAverage = (double) (totalScore - teamOneScore) / teamTwoCount;
-                Objective candidate = Objective.of(List.of(firstAverage, secondAverage));
+
+                long[] teamOneLineScores = new long[TeamLine.values().length];
+                for (int index = 0; index < buckets.size(); index++) {
+                    Bucket bucket = buckets.get(index);
+                    BucketOption option = bucket.options().get(choices[index]);
+                    teamOneLineScores[bucket.line().ordinal()] += option.teamOneScore();
+                }
+                Objective candidate = Objective.forTwoTeams(
+                        teamOneScore,
+                        teamOneCount,
+                        totalScore - teamOneScore,
+                        teamTwoCount,
+                        teamOneLineScores,
+                        totalLineScores,
+                        teamOneLineCounts,
+                        teamTwoLineCounts);
                 if (bestObjective == null || candidate.isBetterThan(bestObjective)) {
                     bestObjective = candidate;
                     bestChoices = choices.clone();
@@ -299,42 +369,64 @@ final class TeamBalanceOptimizer {
     private static final class TeamState {
         private final long[] totals;
         private final int[] counts;
+        private final long[][] lineTotals;
+        private final int[][] lineCounts;
         private final int teamCount;
 
-        private TeamState(long[] totals, int[] counts, int teamCount) {
+        private TeamState(
+                long[] totals,
+                int[] counts,
+                long[][] lineTotals,
+                int[][] lineCounts,
+                int teamCount) {
             this.totals = totals;
             this.counts = counts;
+            this.lineTotals = lineTotals;
+            this.lineCounts = lineCounts;
             this.teamCount = teamCount;
         }
 
         static TeamState from(List<MutableSlot> slots, int teamCount) {
             long[] totals = new long[teamCount + 1];
             int[] counts = new int[teamCount + 1];
+            long[][] lineTotals = new long[teamCount + 1][TeamLine.values().length];
+            int[][] lineCounts = new int[teamCount + 1][TeamLine.values().length];
             for (MutableSlot slot : slots) {
                 if (slot.teamNumber < 1 || slot.teamNumber > teamCount) {
                     throw new IllegalArgumentException("Invalid team number");
                 }
                 totals[slot.teamNumber] += slot.score;
                 counts[slot.teamNumber]++;
+                lineTotals[slot.teamNumber][slot.line.ordinal()] += slot.score;
+                lineCounts[slot.teamNumber][slot.line.ordinal()]++;
             }
-            return new TeamState(totals, counts, teamCount);
+            return new TeamState(totals, counts, lineTotals, lineCounts, teamCount);
         }
 
         Objective objective() {
-            return objective(0, 0, 0, 0);
+            return objective(0, 0, 0, 0, TeamLine.OTHER);
         }
 
         Objective objectiveAfterSwap(MutableSlot left, MutableSlot right) {
             long leftDelta = (long) right.score - left.score;
             long rightDelta = (long) left.score - right.score;
-            return objective(left.teamNumber, leftDelta, right.teamNumber, rightDelta);
+            return objective(
+                    left.teamNumber,
+                    leftDelta,
+                    right.teamNumber,
+                    rightDelta,
+                    left.line);
         }
 
         void apply(MutableSlot left, MutableSlot right) {
             int leftTeam = left.teamNumber;
             int rightTeam = right.teamNumber;
-            totals[leftTeam] += (long) right.score - left.score;
-            totals[rightTeam] += (long) left.score - right.score;
+            long leftDelta = (long) right.score - left.score;
+            long rightDelta = (long) left.score - right.score;
+            totals[leftTeam] += leftDelta;
+            totals[rightTeam] += rightDelta;
+            lineTotals[leftTeam][left.line.ordinal()] += leftDelta;
+            lineTotals[rightTeam][left.line.ordinal()] += rightDelta;
             left.teamNumber = rightTeam;
             right.teamNumber = leftTeam;
         }
@@ -343,8 +435,10 @@ final class TeamBalanceOptimizer {
                 int firstTeam,
                 long firstDelta,
                 int secondTeam,
-                long secondDelta) {
-            List<Double> averages = new ArrayList<>(teamCount);
+                long secondDelta,
+                TeamLine changedLine) {
+            List<Double> overallAverages = new ArrayList<>(teamCount);
+            List<double[]> lineAverages = new ArrayList<>(teamCount);
             for (int team = 1; team <= teamCount; team++) {
                 if (counts[team] == 0) {
                     continue;
@@ -356,51 +450,247 @@ final class TeamBalanceOptimizer {
                 if (team == secondTeam) {
                     total += secondDelta;
                 }
-                averages.add((double) total / counts[team]);
+                overallAverages.add((double) total / counts[team]);
+
+                double[] averages = emptyLineAverages();
+                for (TeamLine line : TeamLine.values()) {
+                    int count = lineCounts[team][line.ordinal()];
+                    if (count == 0) {
+                        continue;
+                    }
+                    long lineTotal = lineTotals[team][line.ordinal()];
+                    if (line == changedLine) {
+                        if (team == firstTeam) {
+                            lineTotal += firstDelta;
+                        }
+                        if (team == secondTeam) {
+                            lineTotal += secondDelta;
+                        }
+                    }
+                    averages[line.ordinal()] = (double) lineTotal / count;
+                }
+                lineAverages.add(averages);
             }
-            return Objective.of(averages);
+            return Objective.of(overallAverages, lineAverages);
         }
     }
 
     private record Swap(MutableSlot left, MutableSlot right) {
     }
 
-    private record Objective(int displayedSpread, double rawSpread, double dispersion) {
-        static Objective of(List<Double> averages) {
-            if (averages.isEmpty()) {
-                return new Objective(0, 0, 0);
+    private record Objective(
+            int displayedOverallSpread,
+            int displayedMatchupImbalance,
+            int displayedMidfieldSpread,
+            int maxDisplayedLineSpread,
+            int totalDisplayedLineSpread,
+            double rawOverallSpread,
+            double rawMatchupImbalance,
+            double rawMidfieldSpread,
+            double totalRawLineSpread,
+            double dispersion) {
+
+        static Objective forTwoTeams(
+                long teamOneScore,
+                int teamOneCount,
+                long teamTwoScore,
+                int teamTwoCount,
+                long[] teamOneLineScores,
+                long[] totalLineScores,
+                int[] teamOneLineCounts,
+                int[] teamTwoLineCounts) {
+            List<Double> overall = List.of(
+                    (double) teamOneScore / teamOneCount,
+                    (double) teamTwoScore / teamTwoCount);
+            List<double[]> lines = new ArrayList<>(2);
+            double[] first = emptyLineAverages();
+            double[] second = emptyLineAverages();
+            for (TeamLine line : TeamLine.values()) {
+                int index = line.ordinal();
+                if (teamOneLineCounts[index] > 0) {
+                    first[index] = (double) teamOneLineScores[index]
+                            / teamOneLineCounts[index];
+                }
+                if (teamTwoLineCounts[index] > 0) {
+                    second[index] = (double) (totalLineScores[index] - teamOneLineScores[index])
+                            / teamTwoLineCounts[index];
+                }
             }
-            int minDisplayed = Integer.MAX_VALUE;
-            int maxDisplayed = Integer.MIN_VALUE;
-            double min = Double.POSITIVE_INFINITY;
-            double max = Double.NEGATIVE_INFINITY;
-            double mean = 0;
-            for (double average : averages) {
-                int displayed = (int) Math.round(average);
-                minDisplayed = Math.min(minDisplayed, displayed);
-                maxDisplayed = Math.max(maxDisplayed, displayed);
-                min = Math.min(min, average);
-                max = Math.max(max, average);
-                mean += average;
+            lines.add(first);
+            lines.add(second);
+            return of(overall, lines);
+        }
+
+        static Objective of(
+                List<Double> overallAverages,
+                List<double[]> lineAverages) {
+            if (overallAverages.isEmpty()) {
+                return new Objective(0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
             }
-            mean /= averages.size();
-            double dispersion = 0;
-            for (double average : averages) {
-                double difference = average - mean;
-                dispersion += difference * difference;
+
+            int displayedOverallSpread = displayedSpread(overallAverages);
+            double rawOverallSpread = rawSpread(overallAverages);
+            double dispersion = dispersion(overallAverages);
+
+            int displayedMatchupImbalance = 0;
+            double rawMatchupImbalance = 0;
+            int displayedMidfieldSpread = 0;
+            double rawMidfieldSpread = 0;
+            if (lineAverages.size() == 2) {
+                double[] first = lineAverages.get(0);
+                double[] second = lineAverages.get(1);
+                double firstAttack = first[TeamLine.ATTACK.ordinal()];
+                double secondAttack = second[TeamLine.ATTACK.ordinal()];
+                double firstDefense = first[TeamLine.DEFENSE.ordinal()];
+                double secondDefense = second[TeamLine.DEFENSE.ordinal()];
+                if (allPresent(firstAttack, secondAttack, firstDefense, secondDefense)) {
+                    int firstDisplayedAdvantage = rounded(firstAttack) - rounded(secondDefense);
+                    int secondDisplayedAdvantage = rounded(secondAttack) - rounded(firstDefense);
+                    displayedMatchupImbalance = Math.abs(
+                            firstDisplayedAdvantage - secondDisplayedAdvantage);
+                    double firstAdvantage = firstAttack - secondDefense;
+                    double secondAdvantage = secondAttack - firstDefense;
+                    rawMatchupImbalance = Math.abs(firstAdvantage - secondAdvantage);
+                }
+
+                double firstMidfield = first[TeamLine.MIDFIELD.ordinal()];
+                double secondMidfield = second[TeamLine.MIDFIELD.ordinal()];
+                if (allPresent(firstMidfield, secondMidfield)) {
+                    displayedMidfieldSpread = Math.abs(
+                            rounded(firstMidfield) - rounded(secondMidfield));
+                    rawMidfieldSpread = Math.abs(firstMidfield - secondMidfield);
+                }
             }
-            return new Objective(maxDisplayed - minDisplayed, max - min, dispersion);
+
+            int maxDisplayedLineSpread = 0;
+            int totalDisplayedLineSpread = 0;
+            double totalRawLineSpread = 0;
+            for (TeamLine line : List.of(
+                    TeamLine.DEFENSE,
+                    TeamLine.MIDFIELD,
+                    TeamLine.ATTACK)) {
+                List<Double> values = new ArrayList<>(lineAverages.size());
+                for (double[] team : lineAverages) {
+                    double value = team[line.ordinal()];
+                    if (!Double.isNaN(value)) {
+                        values.add(value);
+                    }
+                }
+                if (values.size() < 2) {
+                    continue;
+                }
+                int displayed = displayedSpread(values);
+                maxDisplayedLineSpread = Math.max(maxDisplayedLineSpread, displayed);
+                totalDisplayedLineSpread += displayed;
+                totalRawLineSpread += rawSpread(values);
+            }
+
+            return new Objective(
+                    displayedOverallSpread,
+                    displayedMatchupImbalance,
+                    displayedMidfieldSpread,
+                    maxDisplayedLineSpread,
+                    totalDisplayedLineSpread,
+                    rawOverallSpread,
+                    rawMatchupImbalance,
+                    rawMidfieldSpread,
+                    totalRawLineSpread,
+                    dispersion);
         }
 
         boolean isBetterThan(Objective other) {
-            if (displayedSpread != other.displayedSpread) {
-                return displayedSpread < other.displayedSpread;
+            if (displayedOverallSpread != other.displayedOverallSpread) {
+                return displayedOverallSpread < other.displayedOverallSpread;
             }
-            if (rawSpread < other.rawSpread - EPSILON) {
-                return true;
+            if (displayedMatchupImbalance != other.displayedMatchupImbalance) {
+                return displayedMatchupImbalance < other.displayedMatchupImbalance;
             }
-            return Math.abs(rawSpread - other.rawSpread) <= EPSILON
-                    && dispersion < other.dispersion - EPSILON;
+            if (displayedMidfieldSpread != other.displayedMidfieldSpread) {
+                return displayedMidfieldSpread < other.displayedMidfieldSpread;
+            }
+            if (maxDisplayedLineSpread != other.maxDisplayedLineSpread) {
+                return maxDisplayedLineSpread < other.maxDisplayedLineSpread;
+            }
+            if (totalDisplayedLineSpread != other.totalDisplayedLineSpread) {
+                return totalDisplayedLineSpread < other.totalDisplayedLineSpread;
+            }
+            int rawOverall = compare(rawOverallSpread, other.rawOverallSpread);
+            if (rawOverall != 0) {
+                return rawOverall < 0;
+            }
+            int rawMatchup = compare(rawMatchupImbalance, other.rawMatchupImbalance);
+            if (rawMatchup != 0) {
+                return rawMatchup < 0;
+            }
+            int rawMidfield = compare(rawMidfieldSpread, other.rawMidfieldSpread);
+            if (rawMidfield != 0) {
+                return rawMidfield < 0;
+            }
+            int rawLines = compare(totalRawLineSpread, other.totalRawLineSpread);
+            if (rawLines != 0) {
+                return rawLines < 0;
+            }
+            return dispersion < other.dispersion - EPSILON;
         }
+
+        private static int compare(double left, double right) {
+            if (left < right - EPSILON) {
+                return -1;
+            }
+            if (left > right + EPSILON) {
+                return 1;
+            }
+            return 0;
+        }
+
+        private static int displayedSpread(List<Double> averages) {
+            int min = Integer.MAX_VALUE;
+            int max = Integer.MIN_VALUE;
+            for (double average : averages) {
+                int displayed = rounded(average);
+                min = Math.min(min, displayed);
+                max = Math.max(max, displayed);
+            }
+            return max - min;
+        }
+
+        private static double rawSpread(List<Double> averages) {
+            double min = Double.POSITIVE_INFINITY;
+            double max = Double.NEGATIVE_INFINITY;
+            for (double average : averages) {
+                min = Math.min(min, average);
+                max = Math.max(max, average);
+            }
+            return max - min;
+        }
+
+        private static double dispersion(List<Double> averages) {
+            double mean = averages.stream().mapToDouble(Double::doubleValue).average().orElse(0);
+            double value = 0;
+            for (double average : averages) {
+                double difference = average - mean;
+                value += difference * difference;
+            }
+            return value;
+        }
+
+        private static int rounded(double value) {
+            return (int) Math.round(value);
+        }
+
+        private static boolean allPresent(double... values) {
+            for (double value : values) {
+                if (Double.isNaN(value)) {
+                    return false;
+                }
+            }
+            return true;
+        }
+    }
+
+    private static double[] emptyLineAverages() {
+        double[] averages = new double[TeamLine.values().length];
+        java.util.Arrays.fill(averages, Double.NaN);
+        return averages;
     }
 }
