@@ -174,7 +174,7 @@ public final class MatchModels {
     public record UpdateMatchPlayerConfigurationRequest(
             @NotNull MatchModality modality,
             @NotNull @Min(1) Integer minimumPlayers,
-            @NotNull @Min(2) Integer maxPlayers) {
+            @Min(2) Integer maxPlayers) {
     }
 
     public record AddGuestRequest(
