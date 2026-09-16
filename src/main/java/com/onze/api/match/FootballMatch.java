@@ -94,6 +94,9 @@ public class FootballMatch {
     @Column(name = "payment_deadline")
     private Instant paymentDeadline;
 
+    @Column(name = "below_minimum_approved", nullable = false)
+    private boolean belowMinimumApproved;
+
     @Column(name = "created_by", nullable = false)
     private UUID createdBy;
 
@@ -224,6 +227,7 @@ public class FootballMatch {
     public void updatePlayerConfiguration(MatchModality newModality, int newMinimumPlayers) {
         modality = newModality;
         minimumPlayers = newMinimumPlayers;
+        belowMinimumApproved = false;
     }
 
     public void updateMaximumPlayers(int newMaxPlayers) {
@@ -268,6 +272,20 @@ public class FootballMatch {
 
     public Instant getPaymentDeadline() {
         return paymentDeadline;
+    }
+
+    public boolean isBelowMinimumApproved() {
+        return belowMinimumApproved;
+    }
+
+    public void approveBelowMinimum() {
+        belowMinimumApproved = true;
+    }
+
+    public void extendSignupDeadline(Instant newSignupDeadline, Instant newPaymentDeadline) {
+        signupDeadline = newSignupDeadline;
+        paymentDeadline = newPaymentDeadline;
+        belowMinimumApproved = false;
     }
 
     public UUID getCreatedBy() {

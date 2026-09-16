@@ -96,7 +96,8 @@ public class MatchTeamService {
         }
 
         List<Participant> participants = participants(match);
-        if (participants.size() < match.getMinimumPlayers()) {
+        if (participants.size() < match.getMinimumPlayers()
+                && !match.isBelowMinimumApproved()) {
             throw new MinimumPlayersNotReachedException(
                     match.getMinimumPlayers() - participants.size());
         }
@@ -611,14 +612,14 @@ public class MatchTeamService {
         };
     }
 
-    private List<String> outfieldTemplate(MatchModality modality) {
+    static List<String> outfieldTemplate(MatchModality modality) {
         return switch (modality) {
             case FIELD -> List.of(
                     "CENTER_DEFENDER", "CENTRAL_MIDFIELDER", "CENTER_FORWARD",
                     "RIGHT_BACK", "DEFENSIVE_MIDFIELDER", "RIGHT_WINGER",
                     "LEFT_BACK", "PLAYMAKER", "LEFT_WINGER", "CENTER_DEFENDER");
             case FUT7 -> List.of(
-                    "RIGHT_DEFENDER", "RIGHT_MIDFIELDER", "RIGHT_WINGER",
+                    "RIGHT_DEFENDER", "RIGHT_MIDFIELDER", "CENTRAL_MIDFIELDER",
                     "LEFT_DEFENDER", "LEFT_MIDFIELDER", "CENTER_FORWARD");
             case FUTSAL -> List.of(
                     "FIXO", "RIGHT_WINGER_FUTSAL", "PIVOT", "LEFT_WINGER_FUTSAL");
