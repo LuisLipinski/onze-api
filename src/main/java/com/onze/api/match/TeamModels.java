@@ -51,6 +51,44 @@ public final class TeamModels {
             int idealPlayers,
             boolean reducedTeams,
             boolean technicalDetailsVisible,
-            List<TeamResponse> teams) {
+            List<TeamResponse> teams,
+            String generationNotice) {
+
+        public MatchTeamsResponse(
+                UUID matchId,
+                MatchModality modality,
+                int teamCount,
+                int confirmedPlayers,
+                int minimumPlayers,
+                int idealPlayers,
+                boolean reducedTeams,
+                boolean technicalDetailsVisible,
+                List<TeamResponse> teams) {
+            this(
+                    matchId,
+                    modality,
+                    teamCount,
+                    confirmedPlayers,
+                    minimumPlayers,
+                    idealPlayers,
+                    reducedTeams,
+                    technicalDetailsVisible,
+                    teams,
+                    null);
+        }
+
+        public MatchTeamsResponse withGenerationNotice(String notice) {
+            return new MatchTeamsResponse(
+                    matchId,
+                    modality,
+                    teamCount,
+                    confirmedPlayers,
+                    minimumPlayers,
+                    idealPlayers,
+                    reducedTeams,
+                    technicalDetailsVisible,
+                    teams,
+                    notice);
+        }
     }
 }
