@@ -97,6 +97,10 @@ public class MatchTeamAssignment {
     public TeamPositionOrigin getPositionOrigin() { return positionOrigin; }
     public boolean isManuallyChanged() { return manuallyChanged; }
 
+    void rebalanceToTeam(int newTeamNumber) {
+        teamNumber = newTeamNumber;
+    }
+
     public void changeByAdministrator(int newTeamNumber, String newRole) {
         teamNumber = newTeamNumber;
         assignedRole = newRole;
