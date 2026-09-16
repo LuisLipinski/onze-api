@@ -91,6 +91,15 @@ final class TeamBalanceOptimizer {
             Objects.requireNonNull(role);
             Objects.requireNonNull(stableKey);
         }
+
+        Slot(
+                int index,
+                int teamNumber,
+                String role,
+                int score,
+                String stableKey) {
+            this(index, teamNumber, role, score, false, stableKey);
+        }
     }
 
     private static final class MutableSlot {
