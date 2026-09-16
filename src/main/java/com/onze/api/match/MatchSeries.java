@@ -172,6 +172,10 @@ public class MatchSeries {
         minimumPlayers = newMinimumPlayers;
     }
 
+    public void updateMaximumPlayers(int newMaxPlayers) {
+        maxPlayers = newMaxPlayers;
+    }
+
     public BigDecimal getPaymentAmount() {
         return paymentAmount;
     }
