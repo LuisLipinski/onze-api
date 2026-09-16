@@ -1,0 +1,37 @@
+name: Apply issue 45 and 46 patch
+
+on:
+  push:
+    branches:
+      - fix/minimum-player-decision-and-fut7-formation
+    paths:
+      - scripts/apply_issue_45_46.py
+      - .github/workflows/apply-issue-45-46.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply-patch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply source changes
+        run: python3 scripts/apply_issue_45_46.py
+
+      - name: Remove temporary patch files
+        run: |
+          rm scripts/apply_issue_45_46.py
+          rm .github/workflows/apply-issue-45-46.yml
+
+      - name: Commit changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "fix: corrigir formação Fut7 e decisão abaixo do mínimo"
+          git push origin HEAD:${GITHUB_REF_NAME}
