@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.onze.api.group.PlayerPosition;
+import com.onze.api.match.MatchModality;
 import com.onze.api.technical.PlayerSkill;
 
 import org.junit.jupiter.api.Test;
@@ -17,27 +18,47 @@ class DevTestDataScenarioPolicyTest {
     void balancedPresetProvidesEnoughGoalkeepersForTwoFutsalTeams() {
         assertEquals(
                 PlayerPosition.GOALKEEPER,
-                DevTestDataScenarioPolicy.profile(1, 10, DevTestDataScenario.BALANCED).primaryPosition());
+                DevTestDataScenarioPolicy.profile(
+                        1, 10, MatchModality.FUTSAL, DevTestDataScenario.BALANCED).primaryPosition());
         assertEquals(
                 PlayerPosition.GOALKEEPER,
-                DevTestDataScenarioPolicy.profile(6, 10, DevTestDataScenario.BALANCED).primaryPosition());
+                DevTestDataScenarioPolicy.profile(
+                        6, 10, MatchModality.FUTSAL, DevTestDataScenario.BALANCED).primaryPosition());
     }
 
     @Test
     void balancedPresetProvidesEnoughGoalkeepersForTwoFut7Teams() {
         assertEquals(
                 PlayerPosition.GOALKEEPER,
-                DevTestDataScenarioPolicy.profile(1, 14, DevTestDataScenario.BALANCED).primaryPosition());
+                DevTestDataScenarioPolicy.profile(
+                        1, 14, MatchModality.FUT7, DevTestDataScenario.BALANCED).primaryPosition());
         assertEquals(
                 PlayerPosition.GOALKEEPER,
-                DevTestDataScenarioPolicy.profile(8, 14, DevTestDataScenario.BALANCED).primaryPosition());
+                DevTestDataScenarioPolicy.profile(
+                        8, 14, MatchModality.FUT7, DevTestDataScenario.BALANCED).primaryPosition());
+    }
+
+    @Test
+    void modalityControlsTemplateEvenWhenReusablePoolIsLargerThanIdeal() {
+        assertEquals(
+                PlayerPosition.GOALKEEPER,
+                DevTestDataScenarioPolicy.profile(
+                        15, 14, MatchModality.FUT7, DevTestDataScenario.BALANCED).primaryPosition());
+        assertEquals(
+                PlayerPosition.RIGHT_BACK,
+                DevTestDataScenarioPolicy.profile(
+                        17, 14, MatchModality.FUT7, DevTestDataScenario.BALANCED).primaryPosition());
+        assertEquals(
+                PlayerPosition.GOALKEEPER,
+                DevTestDataScenarioPolicy.profile(
+                        11, 10, MatchModality.FUTSAL, DevTestDataScenario.BALANCED).primaryPosition());
     }
 
     @Test
     void secondaryScenarioAddsFlexiblePositionsWithoutRepeatingPrimary() {
         for (int number = 1; number <= 14; number++) {
             var profile = DevTestDataScenarioPolicy.profile(
-                    number, 14, DevTestDataScenario.SECONDARY_POSITIONS);
+                    number, 14, MatchModality.FUT7, DevTestDataScenario.SECONDARY_POSITIONS);
             if (profile.primaryPosition() == PlayerPosition.GOALKEEPER) {
                 assertNull(profile.secondaryPosition());
             } else {
@@ -49,11 +70,11 @@ class DevTestDataScenarioPolicyTest {
     @Test
     void goalkeeperScenarioRepresentsPrimarySecondaryAndEmergencyCandidates() {
         var primary = DevTestDataScenarioPolicy.profile(
-                1, 14, DevTestDataScenario.GOALKEEPER_PRIORITY);
+                1, 14, MatchModality.FUT7, DevTestDataScenario.GOALKEEPER_PRIORITY);
         var secondary = DevTestDataScenarioPolicy.profile(
-                2, 14, DevTestDataScenario.GOALKEEPER_PRIORITY);
+                2, 14, MatchModality.FUT7, DevTestDataScenario.GOALKEEPER_PRIORITY);
         var emergency = DevTestDataScenarioPolicy.profile(
-                3, 14, DevTestDataScenario.GOALKEEPER_PRIORITY);
+                3, 14, MatchModality.FUT7, DevTestDataScenario.GOALKEEPER_PRIORITY);
 
         assertEquals(PlayerPosition.GOALKEEPER, primary.primaryPosition());
         assertFalse(primary.canPlayGoalkeeper());
@@ -65,9 +86,9 @@ class DevTestDataScenarioPolicyTest {
     @Test
     void attackVsDefenseScenarioCreatesOpposingStrengthProfiles() {
         var attackHeavy = DevTestDataScenarioPolicy.profile(
-                1, 14, DevTestDataScenario.ATTACK_VS_DEFENSE);
+                1, 14, MatchModality.FUT7, DevTestDataScenario.ATTACK_VS_DEFENSE);
         var defenseHeavy = DevTestDataScenarioPolicy.profile(
-                2, 14, DevTestDataScenario.ATTACK_VS_DEFENSE);
+                2, 14, MatchModality.FUT7, DevTestDataScenario.ATTACK_VS_DEFENSE);
 
         assertTrue(attackHeavy.ratings().get(PlayerSkill.FINISHING)
                 > attackHeavy.ratings().get(PlayerSkill.TACKLING));
@@ -78,7 +99,8 @@ class DevTestDataScenarioPolicyTest {
     @Test
     void everyScenarioProducesAllSeventeenRatingsWithinSupportedRange() {
         for (DevTestDataScenario scenario : DevTestDataScenario.values()) {
-            var profile = DevTestDataScenarioPolicy.profile(5, 14, scenario);
+            var profile = DevTestDataScenarioPolicy.profile(
+                    5, 14, MatchModality.FUT7, scenario);
             assertEquals(PlayerSkill.values().length, profile.ratings().size());
             assertTrue(profile.ratings().values().stream()
                     .allMatch(rating -> rating >= 1 && rating <= 10));

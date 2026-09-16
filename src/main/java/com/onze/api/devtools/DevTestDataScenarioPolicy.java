@@ -6,6 +6,7 @@ import java.util.Map;
 
 import com.onze.api.group.DominantFoot;
 import com.onze.api.group.PlayerPosition;
+import com.onze.api.match.MatchModality;
 import com.onze.api.technical.PlayerSkill;
 
 final class DevTestDataScenarioPolicy {
@@ -42,12 +43,16 @@ final class DevTestDataScenarioPolicy {
     private DevTestDataScenarioPolicy() {
     }
 
-    static TestProfile profile(int playerNumber, int totalPlayers, DevTestDataScenario scenario) {
-        if (playerNumber < 1 || totalPlayers < 1) {
-            throw new IllegalArgumentException("Player number and total players must be positive");
+    static TestProfile profile(
+            int playerNumber,
+            int idealPlayers,
+            MatchModality modality,
+            DevTestDataScenario scenario) {
+        if (playerNumber < 1 || idealPlayers < 1) {
+            throw new IllegalArgumentException("Player number and ideal players must be positive");
         }
 
-        PlayerPosition primary = basePosition(playerNumber, totalPlayers);
+        PlayerPosition primary = basePosition(playerNumber, modality);
         PlayerPosition secondary = null;
         boolean canPlayGoalkeeper = false;
 
@@ -72,7 +77,7 @@ final class DevTestDataScenarioPolicy {
             canPlayGoalkeeper = false;
         }
 
-        Map<PlayerSkill, Integer> ratings = ratings(primary, playerNumber, totalPlayers, scenario);
+        Map<PlayerSkill, Integer> ratings = ratings(primary, playerNumber, idealPlayers, scenario);
         if (scenario == DevTestDataScenario.GOALKEEPER_PRIORITY) {
             if (playerNumber == 2) {
                 setGoalkeeperSkills(ratings, 8);
@@ -90,10 +95,12 @@ final class DevTestDataScenarioPolicy {
         return new TestProfile(primary, secondary, canPlayGoalkeeper, dominantFoot, Map.copyOf(ratings));
     }
 
-    private static PlayerPosition basePosition(int playerNumber, int totalPlayers) {
-        List<PlayerPosition> template = totalPlayers <= 10
-                ? FUTSAL_TEMPLATE
-                : totalPlayers <= 14 ? FUT7_TEMPLATE : FIELD_TEMPLATE;
+    private static PlayerPosition basePosition(int playerNumber, MatchModality modality) {
+        List<PlayerPosition> template = switch (modality) {
+            case FUTSAL -> FUTSAL_TEMPLATE;
+            case FUT7 -> FUT7_TEMPLATE;
+            case FIELD -> FIELD_TEMPLATE;
+        };
         return template.get((playerNumber - 1) % template.size());
     }
 
@@ -117,11 +124,11 @@ final class DevTestDataScenarioPolicy {
     private static Map<PlayerSkill, Integer> ratings(
             PlayerPosition primary,
             int playerNumber,
-            int totalPlayers,
+            int idealPlayers,
             DevTestDataScenario scenario) {
         EnumMap<PlayerSkill, Integer> ratings = new EnumMap<>(PlayerSkill.class);
         int base = switch (scenario) {
-            case UNEVEN -> unevenBase(playerNumber, totalPlayers);
+            case UNEVEN -> unevenBase(playerNumber, idealPlayers);
             case SPECIALISTS -> 3;
             default -> 5 + ((playerNumber - 1) % 3) - 1;
         };
@@ -138,8 +145,8 @@ final class DevTestDataScenarioPolicy {
         return ratings;
     }
 
-    private static int unevenBase(int playerNumber, int totalPlayers) {
-        double ratio = (double) playerNumber / Math.max(totalPlayers, 1);
+    private static int unevenBase(int playerNumber, int idealPlayers) {
+        double ratio = (double) playerNumber / Math.max(idealPlayers, 1);
         if (ratio <= 0.34) {
             return 8;
         }
