@@ -115,10 +115,7 @@ public class MatchTeamService {
         List<Participant> remaining = new ArrayList<>(participants);
         List<Participant> goalkeeperParticipants = remaining.stream()
                 .filter(Participant::goalkeeper)
-                .sorted(Comparator.comparingInt(
-                        (Participant participant) -> score(participant, GOALKEEPER, match, averages).value())
-                        .reversed()
-                        .thenComparing(participant -> participant.id().toString()))
+                .sorted(goalkeeperOrder(match, averages))
                 .toList();
         remaining.removeAll(goalkeeperParticipants);
         List<MatchTeamAssignment> generated = new ArrayList<>();
@@ -245,6 +242,42 @@ public class MatchTeamService {
                 .thenComparingInt(item -> item.score().value())
                 .thenComparingInt(item -> item.score().source() == ScoreSource.REAL ? 1 : 0)
                 .thenComparing(item -> item.participant().id().toString());
+    }
+
+    private Comparator<Participant> goalkeeperOrder(
+            FootballMatch match,
+            GroupAverages averages) {
+        return Comparator
+                .comparingInt((Participant participant) -> goalkeeperPriority(
+                        participant.type(),
+                        participant.primaryPosition(),
+                        participant.secondaryPosition()))
+                .thenComparing(Comparator.comparingInt(
+                        (Participant participant) -> score(
+                                participant, GOALKEEPER, match, averages).value())
+                        .reversed())
+                .thenComparing(participant -> participant.id().toString());
+    }
+
+    static int goalkeeperPriority(
+            TeamParticipantType type,
+            PlayerPosition primaryPosition,
+            PlayerPosition secondaryPosition) {
+        if (type == TeamParticipantType.RENTAL_GOALKEEPER) {
+            return 0;
+        }
+        if (type == TeamParticipantType.MEMBER
+                && primaryPosition != PlayerPosition.GOALKEEPER
+                && secondaryPosition != PlayerPosition.GOALKEEPER) {
+            return 1;
+        }
+        if (primaryPosition == PlayerPosition.GOALKEEPER) {
+            return 2;
+        }
+        if (secondaryPosition == PlayerPosition.GOALKEEPER) {
+            return 3;
+        }
+        return 4;
     }
 
     private Comparator<TeamDraft> teamOrder() {
