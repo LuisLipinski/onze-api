@@ -7,9 +7,10 @@ import java.util.Objects;
 /**
  * Deterministic local optimizer for generated teams.
  *
- * <p>Only swaps assignments that have the same role. This preserves the exact
- * role/goalkeeper composition selected by the formation algorithm while trying
- * to reduce the difference between team strengths.</p>
+ * <p>Only swaps assignments that have the same role and the same score source
+ * category (real/estimated). This preserves the exact role/goalkeeper composition
+ * and the uncertainty distribution selected by the formation algorithm while
+ * trying to reduce the difference between team strengths.</p>
  */
 final class TeamBalanceOptimizer {
 
@@ -44,7 +45,8 @@ final class TeamBalanceOptimizer {
                 for (int rightIndex = leftIndex + 1; rightIndex < slots.size(); rightIndex++) {
                     MutableSlot right = slots.get(rightIndex);
                     if (left.teamNumber == right.teamNumber
-                            || !left.role.equals(right.role)) {
+                            || !left.role.equals(right.role)
+                            || left.estimated != right.estimated) {
                         continue;
                     }
                     if (evaluations >= MAX_PAIR_EVALUATIONS) {
@@ -73,6 +75,7 @@ final class TeamBalanceOptimizer {
                         slot.teamNumber,
                         slot.role,
                         slot.score,
+                        slot.estimated,
                         slot.stableKey))
                 .toList();
     }
@@ -82,6 +85,7 @@ final class TeamBalanceOptimizer {
             int teamNumber,
             String role,
             int score,
+            boolean estimated,
             String stableKey) {
         Slot {
             Objects.requireNonNull(role);
@@ -94,6 +98,7 @@ final class TeamBalanceOptimizer {
         private int teamNumber;
         private final String role;
         private final int score;
+        private final boolean estimated;
         private final String stableKey;
 
         MutableSlot(Slot source) {
@@ -101,6 +106,7 @@ final class TeamBalanceOptimizer {
             teamNumber = source.teamNumber();
             role = source.role();
             score = source.score();
+            estimated = source.estimated();
             stableKey = source.stableKey();
         }
     }
