@@ -32,3 +32,5 @@ services:
         sync: false
       - key: EXPO_PUSH_ENABLED
         value: true
+      - key: ONZE_TEST_DATA_ENABLED
+        value: true

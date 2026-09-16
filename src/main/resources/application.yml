@@ -56,6 +56,10 @@ notifications:
     enabled: ${EXPO_PUSH_ENABLED:true}
     endpoint: ${EXPO_PUSH_ENDPOINT:https://exp.host/--/api/v2/push/send}
 
+dev:
+  test-data:
+    enabled: ${ONZE_TEST_DATA_ENABLED:false}
+
 management:
   endpoint:
     health:
