@@ -20,11 +20,11 @@ final class DevTestDataScenarioPolicy {
 
     private static final List<PlayerPosition> FUT7_TEMPLATE = List.of(
             PlayerPosition.GOALKEEPER,
-            PlayerPosition.DEFENDER,
-            PlayerPosition.RIGHT_BACK,
-            PlayerPosition.MIDFIELDER,
-            PlayerPosition.PLAYMAKER,
-            PlayerPosition.ATTACKER,
+            PlayerPosition.RIGHT_DEFENDER,
+            PlayerPosition.LEFT_DEFENDER,
+            PlayerPosition.RIGHT_MIDFIELDER,
+            PlayerPosition.CENTRAL_MIDFIELDER,
+            PlayerPosition.LEFT_MIDFIELDER,
             PlayerPosition.CENTER_FORWARD);
 
     private static final List<PlayerPosition> FIELD_TEMPLATE = List.of(
