@@ -34,9 +34,10 @@ public class MatchPlayerConfigurationService {
             UUID matchId,
             MatchModality modality,
             int minimumPlayers,
-            int maxPlayers) {
+            Integer requestedMaxPlayers) {
         FootballMatch match = matchRepository.findByIdForUpdate(matchId)
                 .orElseThrow(MatchService.MatchNotFoundException::new);
+        int maxPlayers = requestedMaxPlayers == null ? match.getMaxPlayers() : requestedMaxPlayers;
         match.updateMaximumPlayers(maxPlayers);
 
         Instant now = clock.instant();
