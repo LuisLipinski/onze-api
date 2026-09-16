@@ -45,7 +45,7 @@ class DevTestDataScenarioPolicyTest {
                 DevTestDataScenarioPolicy.profile(
                         15, 14, MatchModality.FUT7, DevTestDataScenario.BALANCED).primaryPosition());
         assertEquals(
-                PlayerPosition.RIGHT_BACK,
+                PlayerPosition.LEFT_DEFENDER,
                 DevTestDataScenarioPolicy.profile(
                         17, 14, MatchModality.FUT7, DevTestDataScenario.BALANCED).primaryPosition());
         assertEquals(
