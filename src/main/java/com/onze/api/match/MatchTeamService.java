@@ -250,6 +250,7 @@ public class MatchTeamService {
                     assignment.getTeamNumber(),
                     assignment.getAssignedRole(),
                     resolved.value(),
+                    resolved.source() == ScoreSource.ESTIMATED,
                     participantKey));
         }
 
