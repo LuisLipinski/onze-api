@@ -24,6 +24,7 @@ import com.onze.api.match.MatchAttendanceRepository;
 import com.onze.api.match.MatchCapacityService;
 import com.onze.api.match.MatchStatus;
 import com.onze.api.match.MatchTeamAssignmentRepository;
+import com.onze.api.match.MatchType;
 import com.onze.api.technical.GroupMemberSkillRating;
 import com.onze.api.technical.GroupMemberSkillRatingRepository;
 import com.onze.api.user.User;
@@ -105,8 +106,7 @@ public class DevTestDataService {
 
         int created = 0;
         int reused = 0;
-        List<TestMember> existing = testMembers(match.getGroupId());
-        int profileTemplateSize = Math.max(requestedCount, existing.size());
+        int idealPlayers = idealPlayers(match);
 
         for (int number = 1; number <= requestedCount; number++) {
             String email = testEmail(match.getGroupId(), number);
@@ -127,7 +127,8 @@ public class DevTestDataService {
                         member,
                         DevTestDataScenarioPolicy.profile(
                                 number,
-                                profileTemplateSize,
+                                idealPlayers,
+                                match.getModality(),
                                 DevTestDataScenario.BALANCED));
                 created++;
             } else {
@@ -149,11 +150,16 @@ public class DevTestDataService {
         FootballMatch match = requireMatch(matchId);
         requirePrimaryAdmin(authenticatedUserId, match.getGroupId());
         List<TestMember> testMembers = testMembers(match.getGroupId());
+        int idealPlayers = idealPlayers(match);
 
         for (int index = 0; index < testMembers.size(); index++) {
             applyProfile(
                     testMembers.get(index).member(),
-                    DevTestDataScenarioPolicy.profile(index + 1, testMembers.size(), scenario));
+                    DevTestDataScenarioPolicy.profile(
+                            index + 1,
+                            idealPlayers,
+                            match.getModality(),
+                            scenario));
         }
         if (!testMembers.isEmpty()) {
             teamAssignmentRepository.deleteAllByMatchId(matchId);
@@ -265,6 +271,13 @@ public class DevTestDataService {
                 .map(entry -> new GroupMemberSkillRating(
                         member.getId(), entry.getKey(), entry.getValue()))
                 .toList());
+    }
+
+    private int idealPlayers(FootballMatch match) {
+        int sides = match.getMatchType() == MatchType.INTERNAL && match.getTeamCount() != null
+                ? match.getTeamCount()
+                : 1;
+        return match.getModality().playersPerTeam() * sides;
     }
 
     private List<TestMember> testMembers(UUID groupId) {
