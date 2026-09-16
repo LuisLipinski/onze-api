@@ -151,6 +151,7 @@ public class MatchTeamService {
             round++;
         }
 
+        rebalanceGeneratedTeams(match, participants, generated, averages);
         assignmentRepository.deleteAllByMatchId(matchId);
         assignmentRepository.saveAll(generated);
         return response(match, actor, participants, generated, averages);
@@ -224,6 +225,42 @@ public class MatchTeamService {
         return new MatchTeamAssignment(
                 match.getId(), team.number(), participant.type(), participant.id(), role,
                 reason, origin);
+    }
+
+    private void rebalanceGeneratedTeams(
+            FootballMatch match,
+            List<Participant> participants,
+            List<MatchTeamAssignment> assignments,
+            GroupAverages averages) {
+        Map<String, Participant> participantsByKey = participants.stream().collect(Collectors.toMap(
+                participant -> participant.type() + ":" + participant.id(), Function.identity()));
+        List<TeamBalanceOptimizer.Slot> slots = new ArrayList<>();
+
+        for (int index = 0; index < assignments.size(); index++) {
+            MatchTeamAssignment assignment = assignments.get(index);
+            String participantKey = assignment.getParticipantType() + ":" + assignment.getParticipantId();
+            Participant participant = participantsByKey.get(participantKey);
+            if (participant == null) {
+                continue;
+            }
+            ResolvedScore resolved = score(
+                    participant, assignment.getAssignedRole(), match, averages);
+            slots.add(new TeamBalanceOptimizer.Slot(
+                    index,
+                    assignment.getTeamNumber(),
+                    assignment.getAssignedRole(),
+                    resolved.value(),
+                    resolved.source() == ScoreSource.ESTIMATED,
+                    participantKey));
+        }
+
+        for (TeamBalanceOptimizer.Slot optimized : TeamBalanceOptimizer.optimize(
+                slots, match.getTeamCount())) {
+            MatchTeamAssignment assignment = assignments.get(optimized.index());
+            if (assignment.getTeamNumber() != optimized.teamNumber()) {
+                assignment.rebalanceToTeam(optimized.teamNumber());
+            }
+        }
     }
 
     private Candidate candidate(
