@@ -38,16 +38,19 @@ public class MatchController {
     private final MatchService matchService;
     private final MatchLifecycleService lifecycleService;
     private final MatchTeamService teamService;
+    private final MatchTeamGenerationService teamGenerationService;
     private final MatchPlayerConfigurationService playerConfigurationService;
 
     public MatchController(
             MatchService matchService,
             MatchLifecycleService lifecycleService,
             MatchTeamService teamService,
+            MatchTeamGenerationService teamGenerationService,
             MatchPlayerConfigurationService playerConfigurationService) {
         this.matchService = matchService;
         this.lifecycleService = lifecycleService;
         this.teamService = teamService;
+        this.teamGenerationService = teamGenerationService;
         this.playerConfigurationService = playerConfigurationService;
     }
 
@@ -252,7 +255,7 @@ public class MatchController {
     public MatchTeamsResponse generateTeams(
             Authentication authentication,
             @PathVariable UUID matchId) {
-        return teamService.generate(authentication.getName(), matchId);
+        return teamGenerationService.generate(authentication.getName(), matchId);
     }
 
     @GetMapping("/api/matches/{matchId}/teams")
