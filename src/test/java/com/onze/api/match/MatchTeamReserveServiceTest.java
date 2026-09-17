@@ -16,35 +16,67 @@ import static org.assertj.core.api.Assertions.assertThat;
 class MatchTeamReserveServiceTest {
 
     @Test
-    void shouldReserveWeakestPlayerWhenRoleHasMorePlayersThanFormationSlots() {
-        TeamAssignmentResponse strongest = assignment("Forte", "CENTER_DEFENDER", 42);
-        TeamAssignmentResponse medium = assignment("Medio", "CENTER_DEFENDER", 34);
-        TeamAssignmentResponse weakest = assignment("Fraco", "CENTER_DEFENDER", 25);
+    void shouldReserveWeakestPlayerFromSurplusDefenseInField() {
+        TeamAssignmentResponse weakestDefender = assignment("Defesa mais fraco", "CENTER_DEFENDER", 20);
         MatchTeamsResponse response = teams(
                 MatchModality.FIELD,
-                List.of(strongest, weakest, medium));
+                List.of(
+                        assignment("Goleiro", "GOALKEEPER", 30),
+                        assignment("LD", "RIGHT_BACK", 35),
+                        assignment("Z1", "CENTER_DEFENDER", 42),
+                        assignment("Z2", "CENTER_DEFENDER", 34),
+                        assignment("LE", "LEFT_BACK", 33),
+                        weakestDefender,
+                        assignment("Volante", "DEFENSIVE_MIDFIELDER", 30),
+                        assignment("Meia", "CENTRAL_MIDFIELDER", 31),
+                        assignment("Armador", "PLAYMAKER", 32),
+                        assignment("PD", "RIGHT_WINGER", 34),
+                        assignment("CA", "CENTER_FORWARD", 36),
+                        assignment("PE", "LEFT_WINGER", 35)));
 
         Set<UUID> reserves = MatchTeamReserveService.automaticReserveIds(response);
 
-        assertThat(reserves).containsExactly(weakest.id());
+        assertThat(reserves).containsExactly(weakestDefender.id());
     }
 
     @Test
-    void shouldKeepOnePlayerPerFut7RoleOnFieldAndReserveTheWeakerDuplicate() {
-        TeamAssignmentResponse rightDefender = assignment("Titular", "RIGHT_DEFENDER", 31);
-        TeamAssignmentResponse extraRightDefender = assignment("Reserva", "RIGHT_DEFENDER", 22);
-        TeamAssignmentResponse goalkeeper = assignment("Goleiro", "GOALKEEPER", 28);
+    void shouldReserveWeakestDefenderWhenFut7HasThreeDifferentDefensiveRoles() {
+        TeamAssignmentResponse weakestDefender = assignment("Defesa mais fraco", "CENTER_DEFENDER", 18);
         MatchTeamsResponse response = teams(
                 MatchModality.FUT7,
-                List.of(extraRightDefender, goalkeeper, rightDefender));
+                List.of(
+                        assignment("Goleiro", "GOALKEEPER", 28),
+                        assignment("Defesa D", "RIGHT_DEFENDER", 32),
+                        assignment("Defesa E", "LEFT_DEFENDER", 29),
+                        weakestDefender,
+                        assignment("Meia D", "RIGHT_MIDFIELDER", 31),
+                        assignment("Meia C", "CENTRAL_MIDFIELDER", 33),
+                        assignment("Meia E", "LEFT_MIDFIELDER", 30),
+                        assignment("Atacante", "CENTER_FORWARD", 35)));
 
         Set<UUID> reserves = MatchTeamReserveService.automaticReserveIds(response);
 
-        assertThat(reserves).containsExactly(extraRightDefender.id());
+        assertThat(reserves).containsExactly(weakestDefender.id());
     }
 
     @Test
-    void shouldNotCreateReserveWhenFormationHasCapacityForEveryRole() {
+    void shouldNotCreateReserveWhenTeamDoesNotExceedModalityCapacity() {
+        MatchTeamsResponse response = teams(
+                MatchModality.FUT7,
+                List.of(
+                        assignment("Goleiro", "GOALKEEPER", 30),
+                        assignment("Defesa", "RIGHT_DEFENDER", 30),
+                        assignment("Meia 1", "RIGHT_MIDFIELDER", 30),
+                        assignment("Meia 2", "CENTRAL_MIDFIELDER", 30),
+                        assignment("Meia 3", "LEFT_MIDFIELDER", 30),
+                        assignment("Meia 4", "PLAYMAKER", 30),
+                        assignment("Atacante", "CENTER_FORWARD", 30)));
+
+        assertThat(MatchTeamReserveService.automaticReserveIds(response)).isEmpty();
+    }
+
+    @Test
+    void shouldNotCreateReserveWhenFutsalFormationHasExactlyFivePlayers() {
         MatchTeamsResponse response = teams(
                 MatchModality.FUTSAL,
                 List.of(

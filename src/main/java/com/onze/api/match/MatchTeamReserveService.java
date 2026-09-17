@@ -2,7 +2,6 @@ package com.onze.api.match;
 
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -25,33 +24,55 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class MatchTeamReserveService {
 
-    private static final Map<String, Integer> FIELD_CAPACITY = Map.ofEntries(
-            Map.entry("GOALKEEPER", 1),
-            Map.entry("RIGHT_BACK", 1),
-            Map.entry("CENTER_DEFENDER", 2),
-            Map.entry("LEFT_BACK", 1),
-            Map.entry("CENTRAL_MIDFIELDER", 1),
-            Map.entry("DEFENSIVE_MIDFIELDER", 1),
-            Map.entry("PLAYMAKER", 1),
-            Map.entry("RIGHT_WINGER", 1),
-            Map.entry("CENTER_FORWARD", 1),
-            Map.entry("LEFT_WINGER", 1));
-
-    private static final Map<String, Integer> FUT7_CAPACITY = Map.of(
+    private static final Map<String, Integer> FIELD_SECTOR_CAPACITY = Map.of(
             "GOALKEEPER", 1,
-            "RIGHT_DEFENDER", 1,
-            "LEFT_DEFENDER", 1,
-            "RIGHT_MIDFIELDER", 1,
-            "CENTRAL_MIDFIELDER", 1,
-            "LEFT_MIDFIELDER", 1,
-            "CENTER_FORWARD", 1);
+            "DEFENSE", 4,
+            "MIDFIELD", 3,
+            "ATTACK", 3);
 
-    private static final Map<String, Integer> FUTSAL_CAPACITY = Map.of(
+    private static final Map<String, Integer> FUT7_SECTOR_CAPACITY = Map.of(
             "GOALKEEPER", 1,
-            "FIXO", 1,
-            "RIGHT_WINGER_FUTSAL", 1,
-            "LEFT_WINGER_FUTSAL", 1,
-            "PIVOT", 1);
+            "DEFENSE", 2,
+            "MIDFIELD", 3,
+            "ATTACK", 1);
+
+    private static final Map<String, Integer> FUTSAL_SECTOR_CAPACITY = Map.of(
+            "GOALKEEPER", 1,
+            "DEFENSE", 1,
+            "MIDFIELD", 2,
+            "ATTACK", 1);
+
+    private static final Set<String> DEFENSE_ROLES = Set.of(
+            "DEFENDER",
+            "RIGHT_DEFENDER",
+            "LEFT_DEFENDER",
+            "CENTER_DEFENDER",
+            "RIGHT_BACK",
+            "LEFT_BACK",
+            "FIXO");
+
+    private static final Set<String> MIDFIELD_ROLES = Set.of(
+            "DEFENSIVE_MIDFIELDER",
+            "MIDFIELDER",
+            "RIGHT_MIDFIELDER",
+            "LEFT_MIDFIELDER",
+            "CENTRAL_MIDFIELDER",
+            "PLAYMAKER",
+            "RIGHT_WINGER_FUTSAL",
+            "LEFT_WINGER_FUTSAL");
+
+    private static final Set<String> ATTACK_ROLES = Set.of(
+            "ATTACKER",
+            "RIGHT_WINGER",
+            "LEFT_WINGER",
+            "CENTER_FORWARD",
+            "PIVOT");
+
+    private static final Comparator<TeamAssignmentResponse> WEAKEST_FIRST = Comparator
+            .comparingInt((TeamAssignmentResponse assignment) ->
+                    assignment.overallUsed() == null ? Integer.MIN_VALUE : assignment.overallUsed())
+            .thenComparing(TeamAssignmentResponse::displayName)
+            .thenComparing(TeamAssignmentResponse::id);
 
     private final MatchTeamService teamService;
     private final FootballMatchRepository matchRepository;
@@ -106,29 +127,60 @@ public class MatchTeamReserveService {
 
     static Set<UUID> automaticReserveIds(MatchTeamsResponse teams) {
         Set<UUID> result = new LinkedHashSet<>();
-        Map<String, Integer> capacities = capacities(teams.modality());
+        Map<String, Integer> sectorCapacity = sectorCapacities(teams.modality());
+        int fieldCapacity = fieldCapacity(teams.modality());
 
         for (TeamResponse team : teams.teams()) {
-            Map<String, List<TeamAssignmentResponse>> byRole = team.assignments().stream()
+            int reserveCount = Math.max(0, team.assignments().size() - fieldCapacity);
+            if (reserveCount == 0) {
+                continue;
+            }
+
+            Map<String, List<TeamAssignmentResponse>> bySector = team.assignments().stream()
                     .collect(Collectors.groupingBy(
-                            TeamAssignmentResponse::assignedRole,
+                            assignment -> sectorForRole(assignment.assignedRole()),
                             java.util.LinkedHashMap::new,
                             Collectors.toCollection(ArrayList::new)));
 
-            for (Map.Entry<String, List<TeamAssignmentResponse>> entry : byRole.entrySet()) {
-                List<TeamAssignmentResponse> sameRole = entry.getValue();
-                sameRole.sort(Comparator
-                        .comparingInt((TeamAssignmentResponse assignment) ->
-                                assignment.overallUsed() == null ? Integer.MIN_VALUE : assignment.overallUsed())
-                        .reversed()
-                        .thenComparing(TeamAssignmentResponse::displayName)
-                        .thenComparing(TeamAssignmentResponse::id));
-
-                int fieldCapacity = capacities.getOrDefault(entry.getKey(), 1);
-                for (int index = fieldCapacity; index < sameRole.size(); index++) {
-                    result.add(sameRole.get(index).id());
+            List<TeamAssignmentResponse> surplusCandidates = new ArrayList<>();
+            for (Map.Entry<String, List<TeamAssignmentResponse>> entry : bySector.entrySet()) {
+                int capacity = sectorCapacity.getOrDefault(entry.getKey(), Integer.MAX_VALUE);
+                int surplus = Math.max(0, entry.getValue().size() - capacity);
+                if (surplus == 0) {
+                    continue;
                 }
+
+                List<TeamAssignmentResponse> weakestInSector = entry.getValue().stream()
+                        .sorted(WEAKEST_FIRST)
+                        .limit(surplus)
+                        .toList();
+                surplusCandidates.addAll(weakestInSector);
             }
+
+            surplusCandidates.sort(WEAKEST_FIRST);
+            List<TeamAssignmentResponse> selected = new ArrayList<>();
+            for (TeamAssignmentResponse candidate : surplusCandidates) {
+                if (selected.size() >= reserveCount) {
+                    break;
+                }
+                selected.add(candidate);
+            }
+
+            if (selected.size() < reserveCount) {
+                Set<UUID> alreadySelected = selected.stream()
+                        .map(TeamAssignmentResponse::id)
+                        .collect(Collectors.toSet());
+                team.assignments().stream()
+                        .filter(assignment -> !alreadySelected.contains(assignment.id()))
+                        .filter(assignment -> !"GOALKEEPER".equals(assignment.assignedRole()))
+                        .sorted(WEAKEST_FIRST)
+                        .limit(reserveCount - selected.size())
+                        .forEach(selected::add);
+            }
+
+            selected.stream()
+                    .map(TeamAssignmentResponse::id)
+                    .forEach(result::add);
         }
         return result;
     }
@@ -159,12 +211,36 @@ public class MatchTeamReserveService {
         return new MatchTeamReservesResponse(matchId, reserveIds);
     }
 
-    private static Map<String, Integer> capacities(MatchModality modality) {
+    private static Map<String, Integer> sectorCapacities(MatchModality modality) {
         return switch (modality) {
-            case FIELD -> FIELD_CAPACITY;
-            case FUT7 -> FUT7_CAPACITY;
-            case FUTSAL -> FUTSAL_CAPACITY;
+            case FIELD -> FIELD_SECTOR_CAPACITY;
+            case FUT7 -> FUT7_SECTOR_CAPACITY;
+            case FUTSAL -> FUTSAL_SECTOR_CAPACITY;
         };
+    }
+
+    private static int fieldCapacity(MatchModality modality) {
+        return switch (modality) {
+            case FIELD -> 11;
+            case FUT7 -> 7;
+            case FUTSAL -> 5;
+        };
+    }
+
+    private static String sectorForRole(String role) {
+        if ("GOALKEEPER".equals(role)) {
+            return "GOALKEEPER";
+        }
+        if (DEFENSE_ROLES.contains(role)) {
+            return "DEFENSE";
+        }
+        if (MIDFIELD_ROLES.contains(role)) {
+            return "MIDFIELD";
+        }
+        if (ATTACK_ROLES.contains(role)) {
+            return "ATTACK";
+        }
+        return "OTHER";
     }
 
     private GroupMember requireMembership(String authenticatedUserId, UUID groupId) {
