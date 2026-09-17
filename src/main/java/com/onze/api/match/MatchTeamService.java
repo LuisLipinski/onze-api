@@ -1,9 +1,11 @@
 package com.onze.api.match;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumMap;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -37,6 +39,11 @@ import org.springframework.transaction.annotation.Transactional;
 public class MatchTeamService {
 
     private static final String GOALKEEPER = "GOALKEEPER";
+    private static final String FORCED_REPEAT_NOTICE =
+            "Não foi possível variar os times sem piorar o equilíbrio técnico. "
+                    + "A melhor formação disponível foi mantida.";
+    private static final int RECENT_MATCH_HISTORY_LIMIT = 5;
+
     private static final Set<PlayerPosition> DEFENSIVE_POSITIONS = Set.of(
             PlayerPosition.DEFENDER, PlayerPosition.RIGHT_DEFENDER,
             PlayerPosition.LEFT_DEFENDER, PlayerPosition.CENTER_DEFENDER,
@@ -57,6 +64,7 @@ public class MatchTeamService {
     private final MatchGuestSkillRatingRepository guestRatingRepository;
     private final MatchRentalGoalkeeperRepository rentalRepository;
     private final MatchTeamAssignmentRepository assignmentRepository;
+    private final MatchTeamGenerationHistoryRepository generationHistoryRepository;
     private final GroupMemberRepository memberRepository;
     private final GroupMemberSkillRatingRepository memberRatingRepository;
     private final UserRepository userRepository;
@@ -68,6 +76,7 @@ public class MatchTeamService {
             MatchGuestSkillRatingRepository guestRatingRepository,
             MatchRentalGoalkeeperRepository rentalRepository,
             MatchTeamAssignmentRepository assignmentRepository,
+            MatchTeamGenerationHistoryRepository generationHistoryRepository,
             GroupMemberRepository memberRepository,
             GroupMemberSkillRatingRepository memberRatingRepository,
             UserRepository userRepository) {
@@ -77,6 +86,7 @@ public class MatchTeamService {
         this.guestRatingRepository = guestRatingRepository;
         this.rentalRepository = rentalRepository;
         this.assignmentRepository = assignmentRepository;
+        this.generationHistoryRepository = generationHistoryRepository;
         this.memberRepository = memberRepository;
         this.memberRatingRepository = memberRatingRepository;
         this.userRepository = userRepository;
@@ -152,10 +162,18 @@ public class MatchTeamService {
             round++;
         }
 
-        rebalanceGeneratedTeams(match, participants, generated, averages);
+        TeamDiversityOptimizer.Result diversity = rebalanceGeneratedTeams(
+                match, participants, generated, averages);
         assignmentRepository.deleteAllByMatchId(matchId);
         assignmentRepository.saveAll(generated);
-        return response(match, actor, participants, generated, averages);
+        rememberGeneration(match, generated);
+        return response(
+                match,
+                actor,
+                participants,
+                generated,
+                averages,
+                diversity.forcedRepeat() ? FORCED_REPEAT_NOTICE : null);
     }
 
     @Transactional(readOnly = true)
@@ -228,7 +246,7 @@ public class MatchTeamService {
                 reason, origin);
     }
 
-    private void rebalanceGeneratedTeams(
+    private TeamDiversityOptimizer.Result rebalanceGeneratedTeams(
             FootballMatch match,
             List<Participant> participants,
             List<MatchTeamAssignment> assignments,
@@ -255,12 +273,93 @@ public class MatchTeamService {
                     participantKey));
         }
 
-        for (TeamBalanceOptimizer.Slot optimized : TeamBalanceOptimizer.optimize(
-                slots, match.getTeamCount())) {
+        List<TeamBalanceOptimizer.Slot> technicalBest = TeamBalanceOptimizer.optimize(
+                slots, match.getTeamCount());
+        TeamDiversityOptimizer.Result diversity = TeamDiversityOptimizer.diversify(
+                technicalBest,
+                match.getTeamCount(),
+                diversityContext(match));
+
+        for (TeamBalanceOptimizer.Slot optimized : diversity.slots()) {
             MatchTeamAssignment assignment = assignments.get(optimized.index());
             if (assignment.getTeamNumber() != optimized.teamNumber()) {
                 assignment.rebalanceToTeam(optimized.teamNumber());
             }
+        }
+        return diversity;
+    }
+
+    private TeamDiversityOptimizer.Context diversityContext(FootballMatch match) {
+        Set<String> blockedDivisions = new HashSet<>();
+        generationHistoryRepository.findAllByMatchIdOrderByCreatedAtAsc(match.getId())
+                .forEach(history -> blockedDivisions.add(history.getNormalizedSignature()));
+
+        List<MatchTeamAssignment> currentAssignments = assignmentRepository
+                .findAllByMatchIdOrderByTeamNumberAscCreatedAtAsc(match.getId());
+        if (!currentAssignments.isEmpty()) {
+            blockedDivisions.add(TeamDiversityOptimizer.normalizedDivision(
+                    historySlots(currentAssignments), match.getTeamCount()));
+        }
+
+        Map<String, Double> teammateWeights = new HashMap<>();
+        List<FootballMatch> recentMatches = matchRepository
+                .findAllByGroupIdAndStatusAndStartsAtAfterOrderByStartsAtAsc(
+                        match.getGroupId(), MatchStatus.SCHEDULED, Instant.EPOCH)
+                .stream()
+                .filter(item -> !item.getId().equals(match.getId()))
+                .filter(item -> item.getMatchType() == MatchType.INTERNAL && item.getTeamCount() != null)
+                .filter(item -> item.getStartsAt().isBefore(match.getStartsAt()))
+                .sorted(Comparator.comparing(FootballMatch::getStartsAt).reversed())
+                .limit(RECENT_MATCH_HISTORY_LIMIT)
+                .toList();
+
+        double weight = RECENT_MATCH_HISTORY_LIMIT;
+        for (FootballMatch recent : recentMatches) {
+            List<MatchTeamAssignment> recentAssignments = assignmentRepository
+                    .findAllByMatchIdOrderByTeamNumberAscCreatedAtAsc(recent.getId());
+            if (recentAssignments.isEmpty()) {
+                weight = Math.max(1, weight - 1);
+                continue;
+            }
+            List<TeamBalanceOptimizer.Slot> recentSlots = historySlots(recentAssignments);
+            blockedDivisions.add(TeamDiversityOptimizer.normalizedDivision(
+                    recentSlots, recent.getTeamCount()));
+            TeamDiversityOptimizer.accumulateTeammateWeights(
+                    teammateWeights, recentSlots, weight);
+            weight = Math.max(1, weight - 1);
+        }
+
+        return new TeamDiversityOptimizer.Context(
+                blockedDivisions,
+                teammateWeights,
+                generationHistoryRepository.countByMatchId(match.getId()) + 1);
+    }
+
+    private List<TeamBalanceOptimizer.Slot> historySlots(
+            List<MatchTeamAssignment> assignments) {
+        List<TeamBalanceOptimizer.Slot> slots = new ArrayList<>(assignments.size());
+        for (int index = 0; index < assignments.size(); index++) {
+            MatchTeamAssignment assignment = assignments.get(index);
+            slots.add(new TeamBalanceOptimizer.Slot(
+                    index,
+                    assignment.getTeamNumber(),
+                    assignment.getAssignedRole(),
+                    0,
+                    false,
+                    assignment.getParticipantType() + ":" + assignment.getParticipantId()));
+        }
+        return slots;
+    }
+
+    private void rememberGeneration(
+            FootballMatch match,
+            List<MatchTeamAssignment> assignments) {
+        String signature = TeamDiversityOptimizer.normalizedDivision(
+                historySlots(assignments), match.getTeamCount());
+        if (!generationHistoryRepository.existsByMatchIdAndNormalizedSignature(
+                match.getId(), signature)) {
+            generationHistoryRepository.save(new MatchTeamGenerationHistory(
+                    match.getId(), signature));
         }
     }
 
@@ -477,6 +576,16 @@ public class MatchTeamService {
             List<Participant> participants,
             List<MatchTeamAssignment> assignments,
             GroupAverages averages) {
+        return response(match, actor, participants, assignments, averages, null);
+    }
+
+    private MatchTeamsResponse response(
+            FootballMatch match,
+            GroupMember actor,
+            List<Participant> participants,
+            List<MatchTeamAssignment> assignments,
+            GroupAverages averages,
+            String generationNotice) {
         boolean technicalVisible = actor.hasPermission(GroupAdminPermission.EDIT_PLAYER_PROFILES);
         Map<String, Participant> participantsByKey = participants.stream().collect(Collectors.toMap(
                 participant -> participant.type() + ":" + participant.id(), Function.identity()));
@@ -535,6 +644,7 @@ public class MatchTeamService {
                 match.getIdealPlayers(),
                 participants.size() < match.getIdealPlayers(),
                 technicalVisible,
+                generationNotice,
                 teams);
     }
 
