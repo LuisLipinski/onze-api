@@ -51,6 +51,7 @@ public final class TeamModels {
             int idealPlayers,
             boolean reducedTeams,
             boolean technicalDetailsVisible,
+            String generationNotice,
             List<TeamResponse> teams) {
     }
 }
