@@ -24,6 +24,34 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class MatchTeamReserveService {
 
+    private static final Map<String, Integer> FIELD_ROLE_CAPACITY = Map.ofEntries(
+            Map.entry("GOALKEEPER", 1),
+            Map.entry("RIGHT_BACK", 1),
+            Map.entry("CENTER_DEFENDER", 2),
+            Map.entry("LEFT_BACK", 1),
+            Map.entry("DEFENSIVE_MIDFIELDER", 1),
+            Map.entry("CENTRAL_MIDFIELDER", 1),
+            Map.entry("PLAYMAKER", 1),
+            Map.entry("RIGHT_WINGER", 1),
+            Map.entry("CENTER_FORWARD", 1),
+            Map.entry("LEFT_WINGER", 1));
+
+    private static final Map<String, Integer> FUT7_ROLE_CAPACITY = Map.of(
+            "GOALKEEPER", 1,
+            "RIGHT_DEFENDER", 1,
+            "LEFT_DEFENDER", 1,
+            "RIGHT_MIDFIELDER", 1,
+            "CENTRAL_MIDFIELDER", 1,
+            "LEFT_MIDFIELDER", 1,
+            "CENTER_FORWARD", 1);
+
+    private static final Map<String, Integer> FUTSAL_ROLE_CAPACITY = Map.of(
+            "GOALKEEPER", 1,
+            "FIXO", 1,
+            "RIGHT_WINGER_FUTSAL", 1,
+            "LEFT_WINGER_FUTSAL", 1,
+            "PIVOT", 1);
+
     private static final Map<String, Integer> FIELD_SECTOR_CAPACITY = Map.of(
             "GOALKEEPER", 1,
             "DEFENSE", 4,
@@ -43,30 +71,14 @@ public class MatchTeamReserveService {
             "ATTACK", 1);
 
     private static final Set<String> DEFENSE_ROLES = Set.of(
-            "DEFENDER",
-            "RIGHT_DEFENDER",
-            "LEFT_DEFENDER",
-            "CENTER_DEFENDER",
-            "RIGHT_BACK",
-            "LEFT_BACK",
-            "FIXO");
-
+            "DEFENDER", "RIGHT_DEFENDER", "LEFT_DEFENDER", "CENTER_DEFENDER",
+            "RIGHT_BACK", "LEFT_BACK", "FIXO");
     private static final Set<String> MIDFIELD_ROLES = Set.of(
-            "DEFENSIVE_MIDFIELDER",
-            "MIDFIELDER",
-            "RIGHT_MIDFIELDER",
-            "LEFT_MIDFIELDER",
-            "CENTRAL_MIDFIELDER",
-            "PLAYMAKER",
-            "RIGHT_WINGER_FUTSAL",
-            "LEFT_WINGER_FUTSAL");
-
+            "DEFENSIVE_MIDFIELDER", "MIDFIELDER", "RIGHT_MIDFIELDER",
+            "LEFT_MIDFIELDER", "CENTRAL_MIDFIELDER", "PLAYMAKER",
+            "RIGHT_WINGER_FUTSAL", "LEFT_WINGER_FUTSAL");
     private static final Set<String> ATTACK_ROLES = Set.of(
-            "ATTACKER",
-            "RIGHT_WINGER",
-            "LEFT_WINGER",
-            "CENTER_FORWARD",
-            "PIVOT");
+            "ATTACKER", "RIGHT_WINGER", "LEFT_WINGER", "CENTER_FORWARD", "PIVOT");
 
     private static final Comparator<TeamAssignmentResponse> WEAKEST_FIRST = Comparator
             .comparingInt((TeamAssignmentResponse assignment) ->
@@ -107,10 +119,8 @@ public class MatchTeamReserveService {
                 .orElseThrow(MatchService.MatchNotFoundException::new);
         GroupMember actor = requireMembership(authenticatedUserId, match.getGroupId());
         requireTechnicalPermission(actor);
-
         MatchTeamsResponse teams = teamService.get(authenticatedUserId, matchId);
-        Set<UUID> reserveIds = automaticReserveIds(teams);
-        return replace(matchId, reserveIds);
+        return replace(matchId, automaticReserveIds(teams));
     }
 
     @Transactional
@@ -127,62 +137,115 @@ public class MatchTeamReserveService {
 
     static Set<UUID> automaticReserveIds(MatchTeamsResponse teams) {
         Set<UUID> result = new LinkedHashSet<>();
-        Map<String, Integer> sectorCapacity = sectorCapacities(teams.modality());
-        int fieldCapacity = fieldCapacity(teams.modality());
+        int capacity = fieldCapacity(teams.modality());
 
         for (TeamResponse team : teams.teams()) {
-            int reserveCount = Math.max(0, team.assignments().size() - fieldCapacity);
+            int reserveCount = Math.max(0, team.assignments().size() - capacity);
             if (reserveCount == 0) {
                 continue;
             }
 
-            Map<String, List<TeamAssignmentResponse>> bySector = team.assignments().stream()
-                    .collect(Collectors.groupingBy(
-                            assignment -> sectorForRole(assignment.assignedRole()),
-                            java.util.LinkedHashMap::new,
-                            Collectors.toCollection(ArrayList::new)));
-
-            List<TeamAssignmentResponse> surplusCandidates = new ArrayList<>();
-            for (Map.Entry<String, List<TeamAssignmentResponse>> entry : bySector.entrySet()) {
-                int capacity = sectorCapacity.getOrDefault(entry.getKey(), Integer.MAX_VALUE);
-                int surplus = Math.max(0, entry.getValue().size() - capacity);
-                if (surplus == 0) {
-                    continue;
-                }
-
-                List<TeamAssignmentResponse> weakestInSector = entry.getValue().stream()
-                        .sorted(WEAKEST_FIRST)
-                        .limit(surplus)
-                        .toList();
-                surplusCandidates.addAll(weakestInSector);
-            }
-
-            surplusCandidates.sort(WEAKEST_FIRST);
             List<TeamAssignmentResponse> selected = new ArrayList<>();
-            for (TeamAssignmentResponse candidate : surplusCandidates) {
-                if (selected.size() >= reserveCount) {
-                    break;
-                }
-                selected.add(candidate);
-            }
-
-            if (selected.size() < reserveCount) {
-                Set<UUID> alreadySelected = selected.stream()
-                        .map(TeamAssignmentResponse::id)
-                        .collect(Collectors.toSet());
-                team.assignments().stream()
-                        .filter(assignment -> !alreadySelected.contains(assignment.id()))
-                        .filter(assignment -> !"GOALKEEPER".equals(assignment.assignedRole()))
-                        .sorted(WEAKEST_FIRST)
-                        .limit(reserveCount - selected.size())
-                        .forEach(selected::add);
-            }
+            selectExactRoleSurplus(
+                    team.assignments(), roleCapacities(teams.modality()), reserveCount, selected);
+            selectSectorSurplus(
+                    team.assignments(), sectorCapacities(teams.modality()), reserveCount, selected);
+            selectWeakestFallback(team.assignments(), reserveCount, selected);
 
             selected.stream()
                     .map(TeamAssignmentResponse::id)
                     .forEach(result::add);
         }
         return result;
+    }
+
+    private static void selectExactRoleSurplus(
+            List<TeamAssignmentResponse> assignments,
+            Map<String, Integer> capacities,
+            int reserveCount,
+            List<TeamAssignmentResponse> selected) {
+        Map<String, List<TeamAssignmentResponse>> byRole = assignments.stream()
+                .collect(Collectors.groupingBy(
+                        TeamAssignmentResponse::assignedRole,
+                        java.util.LinkedHashMap::new,
+                        Collectors.toCollection(ArrayList::new)));
+        List<TeamAssignmentResponse> candidates = new ArrayList<>();
+        for (Map.Entry<String, List<TeamAssignmentResponse>> entry : byRole.entrySet()) {
+            Integer roleCapacity = capacities.get(entry.getKey());
+            if (roleCapacity == null) {
+                continue;
+            }
+            int surplus = Math.max(0, entry.getValue().size() - roleCapacity);
+            entry.getValue().stream()
+                    .sorted(WEAKEST_FIRST)
+                    .limit(surplus)
+                    .forEach(candidates::add);
+        }
+        addWeakestCandidates(candidates, reserveCount, selected);
+    }
+
+    private static void selectSectorSurplus(
+            List<TeamAssignmentResponse> assignments,
+            Map<String, Integer> capacities,
+            int reserveCount,
+            List<TeamAssignmentResponse> selected) {
+        if (selected.size() >= reserveCount) {
+            return;
+        }
+        Set<UUID> selectedIds = selected.stream()
+                .map(TeamAssignmentResponse::id)
+                .collect(Collectors.toSet());
+        Map<String, List<TeamAssignmentResponse>> bySector = assignments.stream()
+                .filter(assignment -> !selectedIds.contains(assignment.id()))
+                .collect(Collectors.groupingBy(
+                        assignment -> sectorForRole(assignment.assignedRole()),
+                        java.util.LinkedHashMap::new,
+                        Collectors.toCollection(ArrayList::new)));
+        List<TeamAssignmentResponse> candidates = new ArrayList<>();
+        for (Map.Entry<String, List<TeamAssignmentResponse>> entry : bySector.entrySet()) {
+            int sectorCapacity = capacities.getOrDefault(entry.getKey(), Integer.MAX_VALUE);
+            int surplus = Math.max(0, entry.getValue().size() - sectorCapacity);
+            entry.getValue().stream()
+                    .sorted(WEAKEST_FIRST)
+                    .limit(surplus)
+                    .forEach(candidates::add);
+        }
+        addWeakestCandidates(candidates, reserveCount, selected);
+    }
+
+    private static void selectWeakestFallback(
+            List<TeamAssignmentResponse> assignments,
+            int reserveCount,
+            List<TeamAssignmentResponse> selected) {
+        if (selected.size() >= reserveCount) {
+            return;
+        }
+        Set<UUID> selectedIds = selected.stream()
+                .map(TeamAssignmentResponse::id)
+                .collect(Collectors.toSet());
+        assignments.stream()
+                .filter(assignment -> !selectedIds.contains(assignment.id()))
+                .filter(assignment -> !"GOALKEEPER".equals(assignment.assignedRole()))
+                .sorted(WEAKEST_FIRST)
+                .limit(reserveCount - selected.size())
+                .forEach(selected::add);
+    }
+
+    private static void addWeakestCandidates(
+            List<TeamAssignmentResponse> candidates,
+            int reserveCount,
+            List<TeamAssignmentResponse> selected) {
+        if (selected.size() >= reserveCount) {
+            return;
+        }
+        Set<UUID> selectedIds = selected.stream()
+                .map(TeamAssignmentResponse::id)
+                .collect(Collectors.toSet());
+        candidates.stream()
+                .filter(candidate -> !selectedIds.contains(candidate.id()))
+                .sorted(WEAKEST_FIRST)
+                .limit(reserveCount - selected.size())
+                .forEach(selected::add);
     }
 
     private MatchTeamReservesResponse replace(UUID matchId, Set<UUID> reserveAssignmentIds) {
@@ -194,7 +257,6 @@ public class MatchTeamReserveService {
         if (!validAssignmentIds.containsAll(reserveAssignmentIds)) {
             throw new MatchTeamService.InvalidTeamAssignmentException();
         }
-
         reserveRepository.deleteAllByMatchId(matchId);
         if (!reserveAssignmentIds.isEmpty()) {
             reserveRepository.saveAll(reserveAssignmentIds.stream()
@@ -205,10 +267,19 @@ public class MatchTeamReserveService {
     }
 
     private MatchTeamReservesResponse response(UUID matchId) {
-        List<UUID> reserveIds = reserveRepository.findAllByMatchIdOrderByCreatedAtAsc(matchId).stream()
-                .map(MatchTeamReserve::getAssignmentId)
-                .toList();
-        return new MatchTeamReservesResponse(matchId, reserveIds);
+        return new MatchTeamReservesResponse(
+                matchId,
+                reserveRepository.findAllByMatchIdOrderByCreatedAtAsc(matchId).stream()
+                        .map(MatchTeamReserve::getAssignmentId)
+                        .toList());
+    }
+
+    private static Map<String, Integer> roleCapacities(MatchModality modality) {
+        return switch (modality) {
+            case FIELD -> FIELD_ROLE_CAPACITY;
+            case FUT7 -> FUT7_ROLE_CAPACITY;
+            case FUTSAL -> FUTSAL_ROLE_CAPACITY;
+        };
     }
 
     private static Map<String, Integer> sectorCapacities(MatchModality modality) {
@@ -228,18 +299,10 @@ public class MatchTeamReserveService {
     }
 
     private static String sectorForRole(String role) {
-        if ("GOALKEEPER".equals(role)) {
-            return "GOALKEEPER";
-        }
-        if (DEFENSE_ROLES.contains(role)) {
-            return "DEFENSE";
-        }
-        if (MIDFIELD_ROLES.contains(role)) {
-            return "MIDFIELD";
-        }
-        if (ATTACK_ROLES.contains(role)) {
-            return "ATTACK";
-        }
+        if ("GOALKEEPER".equals(role)) return "GOALKEEPER";
+        if (DEFENSE_ROLES.contains(role)) return "DEFENSE";
+        if (MIDFIELD_ROLES.contains(role)) return "MIDFIELD";
+        if (ATTACK_ROLES.contains(role)) return "ATTACK";
         return "OTHER";
     }
 
