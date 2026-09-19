@@ -106,8 +106,7 @@ public class MatchTeamService {
         }
 
         List<Participant> participants = participants(match);
-        if (participants.size() < match.getMinimumPlayers()
-                && !match.isBelowMinimumApproved()) {
+        if (!minimumPlayersSatisfied(match, participants.size())) {
             throw new MinimumPlayersNotReachedException(
                     match.getMinimumPlayers() - participants.size());
         }
@@ -720,6 +719,11 @@ public class MatchTeamService {
             case GOALKEEPER -> 4;
             case MANUAL -> 0;
         };
+    }
+
+    static boolean minimumPlayersSatisfied(FootballMatch match, int participantCount) {
+        return participantCount >= match.getMinimumPlayers()
+                || match.isBelowMinimumApproved();
     }
 
     static List<String> outfieldTemplate(MatchModality modality) {
