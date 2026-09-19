@@ -145,6 +145,8 @@ public final class MatchModels {
             String pixKey,
             String notes,
             MatchStatus status,
+            Instant startedAt,
+            Instant finishedAt,
             Instant attendanceOpensAt,
             boolean attendanceOpen,
             Instant signupDeadline,

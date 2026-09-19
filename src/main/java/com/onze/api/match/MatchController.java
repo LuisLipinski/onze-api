@@ -39,16 +39,31 @@ public class MatchController {
     private final MatchLifecycleService lifecycleService;
     private final MatchTeamService teamService;
     private final MatchPlayerConfigurationService playerConfigurationService;
+    private final LiveMatchService liveMatchService;
 
     public MatchController(
             MatchService matchService,
             MatchLifecycleService lifecycleService,
             MatchTeamService teamService,
-            MatchPlayerConfigurationService playerConfigurationService) {
+            MatchPlayerConfigurationService playerConfigurationService,
+            LiveMatchService liveMatchService) {
         this.matchService = matchService;
         this.lifecycleService = lifecycleService;
         this.teamService = teamService;
         this.playerConfigurationService = playerConfigurationService;
+        this.liveMatchService = liveMatchService;
+    }
+
+    @PutMapping("/api/matches/{matchId}/live/start")
+    public MatchResponse startLiveMatch(Authentication authentication, @PathVariable UUID matchId) {
+        liveMatchService.start(authentication.getName(), matchId);
+        return matchService.get(authentication.getName(), matchId);
+    }
+
+    @PutMapping("/api/matches/{matchId}/live/finish")
+    public MatchResponse finishLiveMatch(Authentication authentication, @PathVariable UUID matchId) {
+        liveMatchService.finish(authentication.getName(), matchId);
+        return matchService.get(authentication.getName(), matchId);
     }
 
     @PostMapping("/api/groups/{groupId}/matches")
