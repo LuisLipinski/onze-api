@@ -9,4 +9,5 @@ import org.springframework.data.jpa.repository.JpaRepository;
 public interface LiveMatchScoreRepository extends JpaRepository<LiveMatchScore, UUID> {
     List<LiveMatchScore> findAllByMatchIdOrderBySideNumberAsc(UUID matchId);
     Optional<LiveMatchScore> findByMatchIdAndSideNumber(UUID matchId, int sideNumber);
+    void deleteAllByMatchId(UUID matchId);
 }

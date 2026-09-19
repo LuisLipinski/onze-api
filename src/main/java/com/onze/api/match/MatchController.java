@@ -68,6 +68,12 @@ public class MatchController {
         return matchService.get(authentication.getName(), matchId);
     }
 
+    @PutMapping("/api/matches/{matchId}/live/reset")
+    public MatchResponse resetLiveMatch(Authentication authentication, @PathVariable UUID matchId) {
+        liveMatchService.reset(authentication.getName(), matchId);
+        return matchService.get(authentication.getName(), matchId);
+    }
+
     @GetMapping("/api/matches/{matchId}/live")
     public LiveMatchStateResponse getLiveMatch(Authentication authentication, @PathVariable UUID matchId) {
         return liveMatchService.get(authentication.getName(), matchId);

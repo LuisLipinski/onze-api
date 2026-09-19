@@ -47,6 +47,14 @@ public class LiveMatchService {
         match.finish(Instant.now(clock));
     }
 
+    @Transactional
+    public void reset(String authenticatedUserId, UUID matchId) {
+        FootballMatch match = managedMatch(authenticatedUserId, matchId);
+        if (match.getStatus() != MatchStatus.IN_PROGRESS) throw new InvalidLiveMatchTransitionException();
+        scoreRepository.deleteAllByMatchId(matchId);
+        match.resetLiveMatch();
+    }
+
     @Transactional(readOnly = true)
     public LiveMatchStateResponse get(String authenticatedUserId, UUID matchId) {
         Access access = accessibleMatch(authenticatedUserId, matchId, false);

@@ -6,6 +6,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -93,5 +94,24 @@ class LiveMatchServiceTest {
                 () -> service.updateScore(adminId.toString(), matchId, 1, -1));
         assertThrows(LiveMatchService.InvalidLiveMatchScoreException.class,
                 () -> service.updateScore(adminId.toString(), matchId, 3, 1));
+    }
+
+    @Test
+    void resetsAnAccidentallyStartedMatchAndClearsItsScoreboard() {
+        service.start(adminId.toString(), matchId);
+
+        service.reset(adminId.toString(), matchId);
+
+        assertEquals(MatchStatus.SCHEDULED, match.getStatus());
+        assertEquals(null, match.getStartedAt());
+        assertEquals(null, match.getFinishedAt());
+        verify(scores).deleteAllByMatchId(matchId);
+    }
+
+    @Test
+    void rejectsResetBeforeTheMatchStarts() {
+        assertThrows(InvalidLiveMatchTransitionException.class,
+                () -> service.reset(adminId.toString(), matchId));
+        verifyNoInteractions(scores);
     }
 }
