@@ -42,6 +42,7 @@ import com.onze.api.match.MatchTeamService.IneligibleGoalkeeperException;
 import com.onze.api.match.MatchGoalkeeperService.GoalkeeperCandidateRequiredException;
 import com.onze.api.match.MatchGoalkeeperService.GoalkeeperPaymentAlreadyRecordedException;
 import com.onze.api.match.MatchGoalkeeperService.PrimaryGoalkeeperCannotBeUnassignedException;
+import com.onze.api.match.LiveMatchService.InvalidLiveMatchTransitionException;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -50,6 +51,12 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 @RestControllerAdvice(assignableTypes = {MatchController.class, PushDeviceController.class})
 public class MatchExceptionHandler {
+
+    @ExceptionHandler(InvalidLiveMatchTransitionException.class)
+    ResponseEntity<ErrorResponse> invalidLiveTransition() {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(new ErrorResponse("INVALID_LIVE_MATCH_TRANSITION", "A partida não está no estado correto para esta ação."));
+    }
 
     @ExceptionHandler(MatchNotFoundException.class)
     ResponseEntity<ErrorResponse> matchNotFound() {

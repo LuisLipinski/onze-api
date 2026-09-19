@@ -213,12 +213,15 @@ public class MatchService {
 
         Instant now = clock.instant();
         List<UUID> groupIds = memberships.stream().map(GroupMember::getGroupId).toList();
-        return matchRepository
+        List<FootballMatch> visible = new ArrayList<>(matchRepository
                 .findAllByGroupIdInAndStatusAndStartsAtAfterOrderByStartsAtAsc(
-                        groupIds,
-                        MatchStatus.SCHEDULED,
-                        now)
-                .stream()
+                        groupIds, MatchStatus.SCHEDULED, now));
+        matchRepository.findAllByGroupIdInAndStatusInOrderByStartsAtAsc(
+                        groupIds, List.of(MatchStatus.IN_PROGRESS))
+                .stream().filter(match -> visible.stream().noneMatch(item -> item.getId().equals(match.getId())))
+                .forEach(visible::add);
+        return visible.stream()
+                .sorted(Comparator.comparing(FootballMatch::getStartsAt))
                 .map(match -> {
                     Group group = requireGroup(match.getGroupId());
                     GroupMember membership = memberships.stream()
@@ -242,6 +245,10 @@ public class MatchService {
                         groupId,
                         MatchStatus.SCHEDULED,
                         now));
+        matchRepository.findAllByGroupIdAndStatusInOrderByStartsAtAsc(
+                        groupId, List.of(MatchStatus.IN_PROGRESS))
+                .stream().filter(match -> matches.stream().noneMatch(item -> item.getId().equals(match.getId())))
+                .forEach(matches::add);
         if (membership.hasPermission(GroupAdminPermission.SCHEDULE_GAMES)) {
             Set<UUID> scheduledIds = matches.stream()
                     .map(FootballMatch::getId)
@@ -1154,6 +1161,8 @@ public class MatchService {
                 match.getPixKey(),
                 match.getNotes(),
                 match.getStatus(),
+                match.getStartedAt(),
+                match.getFinishedAt(),
                 match.getAttendanceOpensAt(),
                 match.isAttendanceOpen(now),
                 match.getSignupDeadline(),
