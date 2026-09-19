@@ -37,7 +37,7 @@ public class LiveMatchService {
         FootballMatch match = managedMatch(authenticatedUserId, matchId);
         if (match.getStatus() != MatchStatus.SCHEDULED) throw new InvalidLiveMatchTransitionException();
         match.start(Instant.now(clock));
-        initializeScoreboard(match);
+        initializeScoreboard(match, matchId);
     }
 
     @Transactional
@@ -50,7 +50,7 @@ public class LiveMatchService {
     @Transactional(readOnly = true)
     public LiveMatchStateResponse get(String authenticatedUserId, UUID matchId) {
         Access access = accessibleMatch(authenticatedUserId, matchId, false);
-        return response(access.match(), access.member());
+        return response(matchId, access.match(), access.member());
     }
 
     @Transactional
@@ -62,11 +62,11 @@ public class LiveMatchService {
         if (sideNumber < 1 || sideNumber > sideCount(match) || score < 0) {
             throw new InvalidLiveMatchScoreException();
         }
-        initializeScoreboard(match);
+        initializeScoreboard(match, matchId);
         LiveMatchScore storedScore = scoreRepository.findByMatchIdAndSideNumber(matchId, sideNumber)
                 .orElseThrow(InvalidLiveMatchScoreException::new);
         storedScore.update(score);
-        return response(match, access.member());
+        return response(matchId, match, access.member());
     }
 
     private FootballMatch managedMatch(String authenticatedUserId, UUID matchId) {
@@ -85,21 +85,21 @@ public class LiveMatchService {
         return new Access(match, member);
     }
 
-    private void initializeScoreboard(FootballMatch match) {
-        if (!scoreRepository.findAllByMatchIdOrderBySideNumberAsc(match.getId()).isEmpty()) return;
+    private void initializeScoreboard(FootballMatch match, UUID matchId) {
+        if (!scoreRepository.findAllByMatchIdOrderBySideNumberAsc(matchId).isEmpty()) return;
         for (int sideNumber = 1; sideNumber <= sideCount(match); sideNumber++) {
-            scoreRepository.save(new LiveMatchScore(match.getId(), sideNumber));
+            scoreRepository.save(new LiveMatchScore(matchId, sideNumber));
         }
     }
 
-    private LiveMatchStateResponse response(FootballMatch match, GroupMember member) {
-        List<LiveScoreSideResponse> scores = scoreRepository.findAllByMatchIdOrderBySideNumberAsc(match.getId())
+    private LiveMatchStateResponse response(UUID matchId, FootballMatch match, GroupMember member) {
+        List<LiveScoreSideResponse> scores = scoreRepository.findAllByMatchIdOrderBySideNumberAsc(matchId)
                 .stream().map(item -> new LiveScoreSideResponse(item.getSideNumber(), item.getScore())).toList();
         if (scores.isEmpty() && match.getStatus() != MatchStatus.SCHEDULED) {
             scores = java.util.stream.IntStream.rangeClosed(1, sideCount(match))
                     .mapToObj(side -> new LiveScoreSideResponse(side, 0)).toList();
         }
-        return new LiveMatchStateResponse(match.getId(), match.getStatus(), match.getStartedAt(),
+        return new LiveMatchStateResponse(matchId, match.getStatus(), match.getStartedAt(),
                 match.getFinishedAt(), scores, member.hasPermission(GroupAdminPermission.SCHEDULE_GAMES));
     }
 
