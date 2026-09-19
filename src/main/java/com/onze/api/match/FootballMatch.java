@@ -280,6 +280,13 @@ public class FootballMatch {
         finishedAt = now;
     }
 
+    public void resetLiveMatch() {
+        if (status != MatchStatus.IN_PROGRESS) throw new IllegalStateException("Match cannot be reset");
+        status = MatchStatus.SCHEDULED;
+        startedAt = null;
+        finishedAt = null;
+    }
+
     public Instant getAttendanceOpensAt() {
         return attendanceOpensAt;
     }
