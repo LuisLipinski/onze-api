@@ -222,7 +222,6 @@ public class MatchService {
                 .forEach(visible::add);
         return visible.stream()
                 .sorted(Comparator.comparing(FootballMatch::getStartsAt))
-                .stream()
                 .map(match -> {
                     Group group = requireGroup(match.getGroupId());
                     GroupMember membership = memberships.stream()
