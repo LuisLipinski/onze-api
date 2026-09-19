@@ -19,6 +19,8 @@ import com.onze.api.match.MatchModels.UpdateGuestTechnicalProfileRequest;
 import com.onze.api.match.MatchModels.GuestTechnicalProfileResponse;
 import com.onze.api.match.TeamModels.MatchTeamsResponse;
 import com.onze.api.match.TeamModels.UpdateTeamAssignmentRequest;
+import com.onze.api.match.LiveMatchModels.LiveMatchStateResponse;
+import com.onze.api.match.LiveMatchModels.UpdateLiveScoreRequest;
 
 import jakarta.validation.Valid;
 
@@ -64,6 +66,20 @@ public class MatchController {
     public MatchResponse finishLiveMatch(Authentication authentication, @PathVariable UUID matchId) {
         liveMatchService.finish(authentication.getName(), matchId);
         return matchService.get(authentication.getName(), matchId);
+    }
+
+    @GetMapping("/api/matches/{matchId}/live")
+    public LiveMatchStateResponse getLiveMatch(Authentication authentication, @PathVariable UUID matchId) {
+        return liveMatchService.get(authentication.getName(), matchId);
+    }
+
+    @PutMapping("/api/matches/{matchId}/live/score")
+    public LiveMatchStateResponse updateLiveScore(
+            Authentication authentication,
+            @PathVariable UUID matchId,
+            @Valid @RequestBody UpdateLiveScoreRequest request) {
+        return liveMatchService.updateScore(
+                authentication.getName(), matchId, request.sideNumber(), request.score());
     }
 
     @PostMapping("/api/groups/{groupId}/matches")
