@@ -35,6 +35,9 @@ public class MatchGoalEvent {
     @Column(name = "scorer_participant_id", nullable = false)
     private UUID scorerParticipantId;
 
+    @Column(name = "scorer_display_name", length = 120)
+    private String scorerDisplayName;
+
     @Column(name = "assist_assignment_id")
     private UUID assistAssignmentId;
 
@@ -44,6 +47,9 @@ public class MatchGoalEvent {
 
     @Column(name = "assist_participant_id")
     private UUID assistParticipantId;
+
+    @Column(name = "assist_display_name", length = 120)
+    private String assistDisplayName;
 
     @Column(name = "penalty", nullable = false)
     private boolean penalty;
@@ -59,17 +65,20 @@ public class MatchGoalEvent {
 
     protected MatchGoalEvent() { }
 
-    public MatchGoalEvent(UUID matchId, MatchTeamAssignment scorer, MatchTeamAssignment assist,
+    public MatchGoalEvent(UUID matchId, MatchTeamAssignment scorer, String scorerDisplayName,
+            MatchTeamAssignment assist, String assistDisplayName,
             boolean penalty, long elapsedSeconds, UUID createdByUserId, Instant createdAt) {
         this.matchId = matchId;
         this.sideNumber = scorer.getTeamNumber();
         this.scorerAssignmentId = scorer.getId();
         this.scorerParticipantType = scorer.getParticipantType();
         this.scorerParticipantId = scorer.getParticipantId();
+        this.scorerDisplayName = scorerDisplayName;
         if (assist != null) {
             this.assistAssignmentId = assist.getId();
             this.assistParticipantType = assist.getParticipantType();
             this.assistParticipantId = assist.getParticipantId();
+            this.assistDisplayName = assistDisplayName;
         }
         this.penalty = penalty;
         this.elapsedSeconds = elapsedSeconds;
@@ -83,9 +92,11 @@ public class MatchGoalEvent {
     public UUID getScorerAssignmentId() { return scorerAssignmentId; }
     public TeamParticipantType getScorerParticipantType() { return scorerParticipantType; }
     public UUID getScorerParticipantId() { return scorerParticipantId; }
+    public String getScorerDisplayName() { return scorerDisplayName; }
     public UUID getAssistAssignmentId() { return assistAssignmentId; }
     public TeamParticipantType getAssistParticipantType() { return assistParticipantType; }
     public UUID getAssistParticipantId() { return assistParticipantId; }
+    public String getAssistDisplayName() { return assistDisplayName; }
     public boolean isPenalty() { return penalty; }
     public long getElapsedSeconds() { return elapsedSeconds; }
     public UUID getCreatedByUserId() { return createdByUserId; }
