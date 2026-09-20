@@ -7,6 +7,7 @@ import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.ArgumentMatchers.any;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -29,6 +30,8 @@ class LiveMatchServiceTest {
     private FootballMatchRepository matches;
     private GroupMemberRepository members;
     private LiveMatchScoreRepository scores;
+    private MatchTeamAssignmentRepository assignments;
+    private MatchGoalEventRepository goals;
     private LiveMatchService service;
     private UUID matchId;
     private UUID groupId;
@@ -40,7 +43,10 @@ class LiveMatchServiceTest {
         matches = mock(FootballMatchRepository.class);
         members = mock(GroupMemberRepository.class);
         scores = mock(LiveMatchScoreRepository.class);
-        service = new LiveMatchService(matches, members, scores, Clock.fixed(NOW, ZoneOffset.UTC));
+        assignments = mock(MatchTeamAssignmentRepository.class);
+        goals = mock(MatchGoalEventRepository.class);
+        service = new LiveMatchService(matches, members, scores, assignments, goals,
+                Clock.fixed(NOW, ZoneOffset.UTC));
         matchId = UUID.randomUUID();
         groupId = UUID.randomUUID();
         adminId = UUID.randomUUID();
@@ -51,6 +57,7 @@ class LiveMatchServiceTest {
         when(members.findByGroupIdAndUserId(groupId, adminId))
                 .thenReturn(Optional.of(new GroupMember(groupId, adminId, GroupRole.PRIMARY_ADMIN)));
         when(scores.findAllByMatchIdOrderBySideNumberAsc(matchId)).thenReturn(List.of());
+        when(goals.save(any(MatchGoalEvent.class))).thenAnswer(invocation -> invocation.getArgument(0));
     }
 
     @Test
@@ -106,12 +113,56 @@ class LiveMatchServiceTest {
         assertEquals(null, match.getStartedAt());
         assertEquals(null, match.getFinishedAt());
         verify(scores).deleteAllByMatchId(matchId);
+        verify(goals).deleteAllByMatchId(matchId);
     }
 
     @Test
     void rejectsResetBeforeTheMatchStarts() {
         assertThrows(InvalidLiveMatchTransitionException.class,
                 () -> service.reset(adminId.toString(), matchId));
-        verifyNoInteractions(scores);
+        verifyNoInteractions(scores, goals);
+    }
+
+    @Test
+    void createsGoalWithServerElapsedTimeAndIncrementsScore() {
+        service.start(adminId.toString(), matchId);
+        MatchTeamAssignment scorer = assignment(1);
+        LiveMatchScore teamOne = new LiveMatchScore(matchId, 1);
+        when(assignments.findByIdAndMatchId(scorer.getId(), matchId)).thenReturn(Optional.of(scorer));
+        when(scores.findByMatchIdAndSideNumber(matchId, 1)).thenReturn(Optional.of(teamOne));
+        when(scores.findAllByMatchIdOrderBySideNumberAsc(matchId)).thenReturn(List.of(teamOne));
+
+        var result = service.createGoal(adminId.toString(), matchId, scorer.getId(), null, true);
+
+        assertEquals(1, teamOne.getScore());
+        assertEquals(0, result.event().elapsedSeconds());
+        assertEquals(true, result.event().penalty());
+        assertEquals(null, result.event().assistAssignmentId());
+        assertEquals(1, result.liveMatch().scores().getFirst().score());
+    }
+
+    @Test
+    void rejectsPenaltyWithAssistAndAssistFromAnotherTeam() {
+        service.start(adminId.toString(), matchId);
+        MatchTeamAssignment scorer = assignment(1);
+        MatchTeamAssignment otherTeam = assignment(2);
+
+        assertThrows(LiveMatchService.InvalidGoalEventException.class,
+                () -> service.createGoal(adminId.toString(), matchId, scorer.getId(), otherTeam.getId(), true));
+
+        when(assignments.findByIdAndMatchId(scorer.getId(), matchId)).thenReturn(Optional.of(scorer));
+        when(assignments.findByIdAndMatchId(otherTeam.getId(), matchId)).thenReturn(Optional.of(otherTeam));
+        assertThrows(LiveMatchService.InvalidGoalEventException.class,
+                () -> service.createGoal(adminId.toString(), matchId, scorer.getId(), otherTeam.getId(), false));
+        verifyNoInteractions(goals);
+    }
+
+    private MatchTeamAssignment assignment(int teamNumber) {
+        MatchTeamAssignment assignment = mock(MatchTeamAssignment.class);
+        when(assignment.getId()).thenReturn(UUID.randomUUID());
+        when(assignment.getTeamNumber()).thenReturn(teamNumber);
+        when(assignment.getParticipantType()).thenReturn(TeamParticipantType.MEMBER);
+        when(assignment.getParticipantId()).thenReturn(UUID.randomUUID());
+        return assignment;
     }
 }
