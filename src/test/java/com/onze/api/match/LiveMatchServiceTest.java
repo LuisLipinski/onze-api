@@ -96,9 +96,6 @@ class LiveMatchServiceTest {
         LiveMatchScore teamOne = new LiveMatchScore(matchId, 1);
         when(scores.findByMatchIdAndSideNumber(matchId, 1)).thenReturn(Optional.of(teamOne));
         when(scores.findAllByMatchIdOrderBySideNumberAsc(matchId)).thenReturn(List.of(teamOne));
-        when(users.findById(scorer.getParticipantId()))
-                .thenReturn(Optional.of(new User("scorer@example.invalid", "hash", "Artilheiro")));
-
         service.start(adminId.toString(), matchId);
         LiveMatchStateResponse state = service.updateScore(adminId.toString(), matchId, 1, 3);
 
@@ -143,6 +140,8 @@ class LiveMatchServiceTest {
         when(assignments.findByIdAndMatchId(scorer.getId(), matchId)).thenReturn(Optional.of(scorer));
         when(scores.findByMatchIdAndSideNumber(matchId, 1)).thenReturn(Optional.of(teamOne));
         when(scores.findAllByMatchIdOrderBySideNumberAsc(matchId)).thenReturn(List.of(teamOne));
+        when(users.findById(scorer.getParticipantId()))
+                .thenReturn(Optional.of(new User("scorer@example.invalid", "hash", "Artilheiro")));
 
         var result = service.createGoal(adminId.toString(), matchId, scorer.getId(), null, true);
 
