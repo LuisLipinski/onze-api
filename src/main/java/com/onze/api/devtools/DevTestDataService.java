@@ -25,6 +25,8 @@ import com.onze.api.match.MatchCapacityService;
 import com.onze.api.match.MatchStatus;
 import com.onze.api.match.MatchTeamAssignmentRepository;
 import com.onze.api.match.MatchType;
+import com.onze.api.match.TeamParticipantType;
+import com.onze.api.group.PlayerPosition;
 import com.onze.api.technical.GroupMemberSkillRating;
 import com.onze.api.technical.GroupMemberSkillRatingRepository;
 import com.onze.api.user.User;
@@ -108,32 +110,19 @@ public class DevTestDataService {
         int reused = 0;
         int idealPlayers = idealPlayers(match);
 
+        removeExistingTestPlayers(match.getGroupId());
+
         for (int number = 1; number <= requestedCount; number++) {
             String email = testEmail(match.getGroupId(), number);
-            User user = userRepository.findByEmailIgnoreCase(email).orElse(null);
-            if (user == null) {
-                user = userRepository.save(new User(
-                        email,
-                        passwordEncoder.encode(UUID.randomUUID().toString()),
-                        testDisplayName(number)));
-            }
-
-            GroupMember member = memberRepository.findByGroupIdAndUserId(match.getGroupId(), user.getId())
-                    .orElse(null);
-            if (member == null) {
-                member = memberRepository.save(new GroupMember(
-                        match.getGroupId(), user.getId(), GroupRole.MEMBER));
-                applyProfile(
-                        member,
-                        DevTestDataScenarioPolicy.profile(
-                                number,
-                                idealPlayers,
-                                match.getModality(),
-                                DevTestDataScenario.BALANCED));
-                created++;
-            } else {
-                reused++;
-            }
+            User user = userRepository.save(new User(
+                    email,
+                    passwordEncoder.encode(UUID.randomUUID().toString()),
+                    testDisplayName(number)));
+            GroupMember member = memberRepository.save(new GroupMember(
+                    match.getGroupId(), user.getId(), GroupRole.MEMBER));
+            applyProfile(member, DevTestDataScenarioPolicy.profile(
+                    number, idealPlayers, match.getModality(), DevTestDataScenario.BALANCED));
+            created++;
         }
 
         return new GeneratePlayersResponse(
@@ -202,6 +191,8 @@ public class DevTestDataService {
                         match.getPaymentAmount(),
                         clock.instant());
             }
+            attendance.setGoalkeeper(
+                    testMember.member().getPrimaryPosition() == PlayerPosition.GOALKEEPER);
             attendanceRepository.save(attendance);
             added++;
             occupied++;
@@ -271,6 +262,16 @@ public class DevTestDataService {
                 .map(entry -> new GroupMemberSkillRating(
                         member.getId(), entry.getKey(), entry.getValue()))
                 .toList());
+    }
+
+    private void removeExistingTestPlayers(UUID groupId) {
+        List<TestMember> existing = testMembers(groupId);
+        if (existing.isEmpty()) return;
+        List<UUID> userIds = existing.stream().map(item -> item.user().getId()).toList();
+        teamAssignmentRepository.deleteAllByParticipantTypeAndParticipantIdIn(
+                TeamParticipantType.MEMBER, userIds);
+        userRepository.deleteAllInBatch(existing.stream().map(TestMember::user).toList());
+        userRepository.flush();
     }
 
     private int idealPlayers(FootballMatch match) {
