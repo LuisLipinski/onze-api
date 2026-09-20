@@ -16,6 +16,7 @@ import com.onze.api.match.LiveMatchModels.LiveMatchStateResponse;
 import com.onze.api.match.LiveMatchModels.LiveScoreSideResponse;
 import com.onze.api.match.LiveMatchModels.CreateGoalEventResponse;
 import com.onze.api.match.LiveMatchModels.GoalEventResponse;
+import com.onze.api.user.UserRepository;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -27,16 +28,24 @@ public class LiveMatchService {
     private final LiveMatchScoreRepository scoreRepository;
     private final MatchTeamAssignmentRepository assignmentRepository;
     private final MatchGoalEventRepository goalEventRepository;
+    private final UserRepository userRepository;
+    private final MatchGuestRepository guestRepository;
+    private final MatchRentalGoalkeeperRepository rentalGoalkeeperRepository;
     private final Clock clock;
 
     public LiveMatchService(FootballMatchRepository matchRepository, GroupMemberRepository memberRepository,
             LiveMatchScoreRepository scoreRepository, MatchTeamAssignmentRepository assignmentRepository,
-            MatchGoalEventRepository goalEventRepository, Clock clock) {
+            MatchGoalEventRepository goalEventRepository, UserRepository userRepository,
+            MatchGuestRepository guestRepository,
+            MatchRentalGoalkeeperRepository rentalGoalkeeperRepository, Clock clock) {
         this.matchRepository = matchRepository;
         this.memberRepository = memberRepository;
         this.scoreRepository = scoreRepository;
         this.assignmentRepository = assignmentRepository;
         this.goalEventRepository = goalEventRepository;
+        this.userRepository = userRepository;
+        this.guestRepository = guestRepository;
+        this.rentalGoalkeeperRepository = rentalGoalkeeperRepository;
         this.clock = clock;
     }
 
@@ -116,7 +125,9 @@ public class LiveMatchService {
         Instant now = Instant.now(clock);
         long elapsedSeconds = Math.max(0, Duration.between(match.getStartedAt(), now).getSeconds());
         MatchGoalEvent event = goalEventRepository.save(new MatchGoalEvent(
-                matchId, scorer, assist, penalty, elapsedSeconds, access.member().getUserId(), now));
+                matchId, scorer, participantName(matchId, scorer), assist,
+                assist == null ? null : participantName(matchId, assist),
+                penalty, elapsedSeconds, access.member().getUserId(), now));
         score.update(score.getScore() + 1);
         return new CreateGoalEventResponse(goalResponse(event), response(matchId, match, access.member()));
     }
@@ -124,8 +135,22 @@ public class LiveMatchService {
     private GoalEventResponse goalResponse(MatchGoalEvent event) {
         return new GoalEventResponse(event.getId(), event.getMatchId(), event.getSideNumber(),
                 event.getScorerAssignmentId(), event.getScorerParticipantType(), event.getScorerParticipantId(),
-                event.getAssistAssignmentId(), event.getAssistParticipantType(), event.getAssistParticipantId(),
+                event.getScorerDisplayName(), event.getAssistAssignmentId(), event.getAssistParticipantType(),
+                event.getAssistParticipantId(), event.getAssistDisplayName(),
                 event.isPenalty(), event.getElapsedSeconds(), event.getCreatedAt());
+    }
+
+    private String participantName(UUID matchId, MatchTeamAssignment assignment) {
+        return switch (assignment.getParticipantType()) {
+            case MEMBER -> userRepository.findById(assignment.getParticipantId())
+                    .map(user -> user.getDisplayName()).orElseThrow(InvalidGoalEventException::new);
+            case GUEST -> guestRepository.findByIdAndMatchId(assignment.getParticipantId(), matchId)
+                    .map(MatchGuest::getDisplayName).orElseThrow(InvalidGoalEventException::new);
+            case RENTAL_GOALKEEPER -> rentalGoalkeeperRepository
+                    .findByIdAndMatchId(assignment.getParticipantId(), matchId)
+                    .map(MatchRentalGoalkeeper::getDisplayName)
+                    .orElseThrow(InvalidGoalEventException::new);
+        };
     }
 
     private FootballMatch managedMatch(String authenticatedUserId, UUID matchId) {
@@ -158,8 +183,12 @@ public class LiveMatchService {
             scores = java.util.stream.IntStream.rangeClosed(1, sideCount(match))
                     .mapToObj(side -> new LiveScoreSideResponse(side, 0)).toList();
         }
+        List<GoalEventResponse> goalEvents = goalEventRepository
+                .findAllByMatchIdOrderByElapsedSecondsDescCreatedAtDesc(matchId)
+                .stream().map(this::goalResponse).toList();
         return new LiveMatchStateResponse(matchId, match.getStatus(), match.getStartedAt(),
-                match.getFinishedAt(), scores, member.hasPermission(GroupAdminPermission.SCHEDULE_GAMES));
+                match.getFinishedAt(), scores, goalEvents,
+                member.hasPermission(GroupAdminPermission.SCHEDULE_GAMES));
     }
 
     private int sideCount(FootballMatch match) {
