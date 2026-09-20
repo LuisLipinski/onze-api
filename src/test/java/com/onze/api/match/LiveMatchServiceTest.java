@@ -21,6 +21,8 @@ import com.onze.api.group.GroupMemberRepository;
 import com.onze.api.group.GroupRole;
 import com.onze.api.match.LiveMatchService.InvalidLiveMatchTransitionException;
 import com.onze.api.match.LiveMatchModels.LiveMatchStateResponse;
+import com.onze.api.user.User;
+import com.onze.api.user.UserRepository;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -32,6 +34,9 @@ class LiveMatchServiceTest {
     private LiveMatchScoreRepository scores;
     private MatchTeamAssignmentRepository assignments;
     private MatchGoalEventRepository goals;
+    private UserRepository users;
+    private MatchGuestRepository guests;
+    private MatchRentalGoalkeeperRepository rentalGoalkeepers;
     private LiveMatchService service;
     private UUID matchId;
     private UUID groupId;
@@ -45,7 +50,11 @@ class LiveMatchServiceTest {
         scores = mock(LiveMatchScoreRepository.class);
         assignments = mock(MatchTeamAssignmentRepository.class);
         goals = mock(MatchGoalEventRepository.class);
+        users = mock(UserRepository.class);
+        guests = mock(MatchGuestRepository.class);
+        rentalGoalkeepers = mock(MatchRentalGoalkeeperRepository.class);
         service = new LiveMatchService(matches, members, scores, assignments, goals,
+                users, guests, rentalGoalkeepers,
                 Clock.fixed(NOW, ZoneOffset.UTC));
         matchId = UUID.randomUUID();
         groupId = UUID.randomUUID();
@@ -58,6 +67,7 @@ class LiveMatchServiceTest {
                 .thenReturn(Optional.of(new GroupMember(groupId, adminId, GroupRole.PRIMARY_ADMIN)));
         when(scores.findAllByMatchIdOrderBySideNumberAsc(matchId)).thenReturn(List.of());
         when(goals.save(any(MatchGoalEvent.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(goals.findAllByMatchIdOrderByElapsedSecondsDescCreatedAtDesc(matchId)).thenReturn(List.of());
     }
 
     @Test
@@ -86,6 +96,8 @@ class LiveMatchServiceTest {
         LiveMatchScore teamOne = new LiveMatchScore(matchId, 1);
         when(scores.findByMatchIdAndSideNumber(matchId, 1)).thenReturn(Optional.of(teamOne));
         when(scores.findAllByMatchIdOrderBySideNumberAsc(matchId)).thenReturn(List.of(teamOne));
+        when(users.findById(scorer.getParticipantId()))
+                .thenReturn(Optional.of(new User("scorer@example.invalid", "hash", "Artilheiro")));
 
         service.start(adminId.toString(), matchId);
         LiveMatchStateResponse state = service.updateScore(adminId.toString(), matchId, 1, 3);
@@ -137,6 +149,7 @@ class LiveMatchServiceTest {
         assertEquals(1, teamOne.getScore());
         assertEquals(0, result.event().elapsedSeconds());
         assertEquals(true, result.event().penalty());
+        assertEquals("Artilheiro", result.event().scorerDisplayName());
         assertEquals(null, result.event().assistAssignmentId());
         assertEquals(1, result.liveMatch().scores().getFirst().score());
     }
