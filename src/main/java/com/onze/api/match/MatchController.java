@@ -21,6 +21,8 @@ import com.onze.api.match.TeamModels.MatchTeamsResponse;
 import com.onze.api.match.TeamModels.UpdateTeamAssignmentRequest;
 import com.onze.api.match.LiveMatchModels.LiveMatchStateResponse;
 import com.onze.api.match.LiveMatchModels.UpdateLiveScoreRequest;
+import com.onze.api.match.LiveMatchModels.CreateGoalEventRequest;
+import com.onze.api.match.LiveMatchModels.CreateGoalEventResponse;
 
 import jakarta.validation.Valid;
 
@@ -86,6 +88,16 @@ public class MatchController {
             @Valid @RequestBody UpdateLiveScoreRequest request) {
         return liveMatchService.updateScore(
                 authentication.getName(), matchId, request.sideNumber(), request.score());
+    }
+
+    @PostMapping("/api/matches/{matchId}/live/goals")
+    public ResponseEntity<CreateGoalEventResponse> createGoal(
+            Authentication authentication,
+            @PathVariable UUID matchId,
+            @Valid @RequestBody CreateGoalEventRequest request) {
+        CreateGoalEventResponse response = liveMatchService.createGoal(authentication.getName(), matchId,
+                request.scorerAssignmentId(), request.assistAssignmentId(), request.penalty());
+        return ResponseEntity.status(201).body(response);
     }
 
     @PostMapping("/api/groups/{groupId}/matches")
