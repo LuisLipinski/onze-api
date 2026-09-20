@@ -130,7 +130,7 @@ final class DevTestDataScenarioPolicy {
         int base = switch (scenario) {
             case UNEVEN -> unevenBase(playerNumber, idealPlayers);
             case SPECIALISTS -> 3;
-            default -> 5 + ((playerNumber - 1) % 3) - 1;
+            default -> realisticBase(playerNumber);
         };
         for (PlayerSkill skill : PlayerSkill.values()) {
             ratings.put(skill, clamp(base));
@@ -143,6 +143,11 @@ final class DevTestDataScenarioPolicy {
             default -> applyRoleBoosts(ratings, primary, clamp(base + 2));
         }
         return ratings;
+    }
+
+    private static int realisticBase(int playerNumber) {
+        int[] distribution = {3, 5, 7, 4, 8, 2, 6, 9, 5, 7, 3, 6, 8, 4};
+        return distribution[(playerNumber - 1) % distribution.length];
     }
 
     private static int unevenBase(int playerNumber, int idealPlayers) {
