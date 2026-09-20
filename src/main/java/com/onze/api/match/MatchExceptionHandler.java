@@ -44,6 +44,7 @@ import com.onze.api.match.MatchGoalkeeperService.GoalkeeperPaymentAlreadyRecorde
 import com.onze.api.match.MatchGoalkeeperService.PrimaryGoalkeeperCannotBeUnassignedException;
 import com.onze.api.match.LiveMatchService.InvalidLiveMatchTransitionException;
 import com.onze.api.match.LiveMatchService.InvalidLiveMatchScoreException;
+import com.onze.api.match.LiveMatchService.InvalidGoalEventException;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -63,6 +64,12 @@ public class MatchExceptionHandler {
     ResponseEntity<ErrorResponse> invalidLiveScore() {
         return ResponseEntity.badRequest()
                 .body(new ErrorResponse("INVALID_LIVE_MATCH_SCORE", "O placar informado não é válido para esta partida."));
+    }
+
+    @ExceptionHandler(InvalidGoalEventException.class)
+    ResponseEntity<ErrorResponse> invalidGoalEvent() {
+        return ResponseEntity.badRequest()
+                .body(new ErrorResponse("INVALID_GOAL_EVENT", "Confira o autor, a assistência e o time do gol."));
     }
 
     @ExceptionHandler(MatchNotFoundException.class)
