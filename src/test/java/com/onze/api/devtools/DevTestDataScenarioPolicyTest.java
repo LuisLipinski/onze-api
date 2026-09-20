@@ -97,6 +97,19 @@ class DevTestDataScenarioPolicyTest {
     }
 
     @Test
+    void balancedScenarioSpansWeakAverageAndStrongPlayers() {
+        var values = java.util.stream.IntStream.rangeClosed(1, 14)
+                .mapToObj(number -> DevTestDataScenarioPolicy.profile(
+                        number, 14, MatchModality.FUT7, DevTestDataScenario.BALANCED))
+                .flatMap(profile -> profile.ratings().values().stream())
+                .toList();
+
+        assertTrue(values.stream().anyMatch(value -> value <= 3));
+        assertTrue(values.stream().anyMatch(value -> value >= 9));
+        assertTrue(values.stream().distinct().count() >= 7);
+    }
+
+    @Test
     void everyScenarioProducesAllSeventeenRatingsWithinSupportedRange() {
         for (DevTestDataScenario scenario : DevTestDataScenario.values()) {
             var profile = DevTestDataScenarioPolicy.profile(
