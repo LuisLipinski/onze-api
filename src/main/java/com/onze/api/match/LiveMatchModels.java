@@ -27,6 +27,7 @@ public final class LiveMatchModels {
             Instant startedAt,
             Instant finishedAt,
             List<LiveScoreSideResponse> scores,
+            List<GoalEventResponse> goalEvents,
             boolean canManage) { }
 
     public record GoalEventResponse(
@@ -36,9 +37,11 @@ public final class LiveMatchModels {
             UUID scorerAssignmentId,
             TeamParticipantType scorerParticipantType,
             UUID scorerParticipantId,
+            String scorerDisplayName,
             UUID assistAssignmentId,
             TeamParticipantType assistParticipantType,
             UUID assistParticipantId,
+            String assistDisplayName,
             boolean penalty,
             long elapsedSeconds,
             Instant createdAt) { }
