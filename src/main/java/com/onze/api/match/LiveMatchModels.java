@@ -19,6 +19,10 @@ public final class LiveMatchModels {
             UUID assistAssignmentId,
             @NotNull Boolean penalty) { }
 
+    public record CreateCardEventRequest(
+            @NotNull UUID playerAssignmentId,
+            @NotNull MatchCardType cardType) { }
+
     public record LiveScoreSideResponse(int sideNumber, int score) { }
 
     public record LiveMatchStateResponse(
@@ -28,6 +32,7 @@ public final class LiveMatchModels {
             Instant finishedAt,
             List<LiveScoreSideResponse> scores,
             List<GoalEventResponse> goalEvents,
+            List<CardEventResponse> cardEvents,
             boolean canManage) { }
 
     public record GoalEventResponse(
@@ -47,4 +52,18 @@ public final class LiveMatchModels {
             Instant createdAt) { }
 
     public record CreateGoalEventResponse(GoalEventResponse event, LiveMatchStateResponse liveMatch) { }
+
+    public record CardEventResponse(
+            UUID id,
+            UUID matchId,
+            int sideNumber,
+            UUID playerAssignmentId,
+            TeamParticipantType playerParticipantType,
+            UUID playerParticipantId,
+            String playerDisplayName,
+            MatchCardType cardType,
+            long elapsedSeconds,
+            Instant createdAt) { }
+
+    public record CreateCardEventResponse(CardEventResponse event, LiveMatchStateResponse liveMatch) { }
 }

@@ -12,18 +12,26 @@ public class MatchBackgroundTasks {
 
     private final MatchLifecycleService lifecycleService;
     private final MatchNotificationProcessor notificationProcessor;
+    private final LiveMatchService liveMatchService;
 
     public MatchBackgroundTasks(
             MatchLifecycleService lifecycleService,
-            MatchNotificationProcessor notificationProcessor) {
+            MatchNotificationProcessor notificationProcessor,
+            LiveMatchService liveMatchService) {
         this.lifecycleService = lifecycleService;
         this.notificationProcessor = notificationProcessor;
+        this.liveMatchService = liveMatchService;
     }
 
     @Scheduled(
             fixedDelayString = "${matches.processing.delay-ms:60000}",
             initialDelayString = "${matches.processing.initial-delay-ms:5000}")
     public void processMatchesAndNotifications() {
+        try {
+            liveMatchService.finishExpiredMatches();
+        } catch (RuntimeException exception) {
+            LOGGER.error("Could not finish expired live matches", exception);
+        }
         try {
             lifecycleService.openDueAttendances();
             lifecycleService.scheduleDueAttendanceReminders();

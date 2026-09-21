@@ -34,6 +34,7 @@ class LiveMatchServiceTest {
     private LiveMatchScoreRepository scores;
     private MatchTeamAssignmentRepository assignments;
     private MatchGoalEventRepository goals;
+    private MatchCardEventRepository cards;
     private UserRepository users;
     private MatchGuestRepository guests;
     private MatchRentalGoalkeeperRepository rentalGoalkeepers;
@@ -50,10 +51,11 @@ class LiveMatchServiceTest {
         scores = mock(LiveMatchScoreRepository.class);
         assignments = mock(MatchTeamAssignmentRepository.class);
         goals = mock(MatchGoalEventRepository.class);
+        cards = mock(MatchCardEventRepository.class);
         users = mock(UserRepository.class);
         guests = mock(MatchGuestRepository.class);
         rentalGoalkeepers = mock(MatchRentalGoalkeeperRepository.class);
-        service = new LiveMatchService(matches, members, scores, assignments, goals,
+        service = new LiveMatchService(matches, members, scores, assignments, goals, cards,
                 users, guests, rentalGoalkeepers,
                 Clock.fixed(NOW, ZoneOffset.UTC));
         matchId = UUID.randomUUID();
@@ -68,6 +70,7 @@ class LiveMatchServiceTest {
         when(scores.findAllByMatchIdOrderBySideNumberAsc(matchId)).thenReturn(List.of());
         when(goals.save(any(MatchGoalEvent.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(goals.findAllByMatchIdOrderByElapsedSecondsDescCreatedAtDesc(matchId)).thenReturn(List.of());
+        when(cards.findAllByMatchIdOrderByElapsedSecondsDescCreatedAtDesc(matchId)).thenReturn(List.of());
     }
 
     @Test
@@ -123,13 +126,14 @@ class LiveMatchServiceTest {
         assertEquals(null, match.getFinishedAt());
         verify(scores).deleteAllByMatchId(matchId);
         verify(goals).deleteAllByMatchId(matchId);
+        verify(cards).deleteAllByMatchId(matchId);
     }
 
     @Test
     void rejectsResetBeforeTheMatchStarts() {
         assertThrows(InvalidLiveMatchTransitionException.class,
                 () -> service.reset(adminId.toString(), matchId));
-        verifyNoInteractions(scores, goals);
+        verifyNoInteractions(scores, goals, cards);
     }
 
     @Test
@@ -167,6 +171,34 @@ class LiveMatchServiceTest {
         assertThrows(LiveMatchService.InvalidGoalEventException.class,
                 () -> service.createGoal(adminId.toString(), matchId, scorer.getId(), otherTeam.getId(), false));
         verifyNoInteractions(goals);
+    }
+
+    @Test
+    void createsCardWithPlayerTeamAndServerTime() {
+        service.start(adminId.toString(), matchId);
+        MatchTeamAssignment player = assignment(2);
+        when(assignments.findByIdAndMatchId(player.getId(), matchId)).thenReturn(Optional.of(player));
+        when(users.findById(player.getParticipantId()))
+                .thenReturn(Optional.of(new User("player@example.invalid", "hash", "Jogador Teste")));
+        when(cards.save(any(MatchCardEvent.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        var result = service.createCard(adminId.toString(), matchId, player.getId(), MatchCardType.YELLOW);
+
+        assertEquals(2, result.event().sideNumber());
+        assertEquals("Jogador Teste", result.event().playerDisplayName());
+        assertEquals(MatchCardType.YELLOW, result.event().cardType());
+        assertEquals(0, result.event().elapsedSeconds());
+    }
+
+    @Test
+    void automaticallyFinishesAtExactlyThreeHours() {
+        match.start(NOW.minus(LiveMatchService.MAX_MATCH_DURATION));
+        when(matches.findById(matchId)).thenReturn(Optional.of(match));
+
+        var state = service.get(adminId.toString(), matchId);
+
+        assertEquals(MatchStatus.FINISHED, state.status());
+        assertEquals(NOW, state.finishedAt());
     }
 
     private MatchTeamAssignment assignment(int teamNumber) {

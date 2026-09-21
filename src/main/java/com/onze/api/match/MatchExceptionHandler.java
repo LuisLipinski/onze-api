@@ -45,6 +45,7 @@ import com.onze.api.match.MatchGoalkeeperService.PrimaryGoalkeeperCannotBeUnassi
 import com.onze.api.match.LiveMatchService.InvalidLiveMatchTransitionException;
 import com.onze.api.match.LiveMatchService.InvalidLiveMatchScoreException;
 import com.onze.api.match.LiveMatchService.InvalidGoalEventException;
+import com.onze.api.match.LiveMatchService.InvalidCardEventException;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -70,6 +71,12 @@ public class MatchExceptionHandler {
     ResponseEntity<ErrorResponse> invalidGoalEvent() {
         return ResponseEntity.badRequest()
                 .body(new ErrorResponse("INVALID_GOAL_EVENT", "Confira o autor, a assistência e o time do gol."));
+    }
+
+    @ExceptionHandler(InvalidCardEventException.class)
+    ResponseEntity<ErrorResponse> invalidCardEvent() {
+        return ResponseEntity.badRequest()
+                .body(new ErrorResponse("INVALID_CARD_EVENT", "Confira o jogador e o time do cartão."));
     }
 
     @ExceptionHandler(MatchNotFoundException.class)
