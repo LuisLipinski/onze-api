@@ -3,6 +3,7 @@ package com.onze.api.match;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.times;
@@ -188,6 +189,124 @@ class LiveMatchServiceTest {
         assertEquals("Jogador Teste", result.event().playerDisplayName());
         assertEquals(MatchCardType.YELLOW, result.event().cardType());
         assertEquals(0, result.event().elapsedSeconds());
+    }
+
+    @Test
+    void directRedCardBlocksGoalsAssistsAndNewCards() {
+        service.start(adminId.toString(), matchId);
+        MatchTeamAssignment sentOff = assignment(1);
+        MatchTeamAssignment active = assignment(1);
+        when(assignments.findByIdAndMatchId(sentOff.getId(), matchId)).thenReturn(Optional.of(sentOff));
+        when(assignments.findByIdAndMatchId(active.getId(), matchId)).thenReturn(Optional.of(active));
+        when(cards.existsByMatchIdAndPlayerAssignmentIdAndCardType(
+                matchId, sentOff.getId(), MatchCardType.RED)).thenReturn(true);
+
+        assertThrows(LiveMatchService.InvalidGoalEventException.class,
+                () -> service.createGoal(adminId.toString(), matchId, sentOff.getId(), null, false));
+        assertThrows(LiveMatchService.InvalidGoalEventException.class,
+                () -> service.createGoal(adminId.toString(), matchId, active.getId(), sentOff.getId(), false));
+        assertThrows(LiveMatchService.InvalidCardEventException.class,
+                () -> service.createCard(adminId.toString(), matchId, sentOff.getId(), MatchCardType.YELLOW));
+        verify(goals, never()).save(any(MatchGoalEvent.class));
+        verify(cards, never()).save(any(MatchCardEvent.class));
+    }
+
+    @Test
+    void twoYellowCardsBlockGoalsAssistsAndNewCards() {
+        service.start(adminId.toString(), matchId);
+        MatchTeamAssignment sentOff = assignment(1);
+        MatchTeamAssignment active = assignment(1);
+        when(assignments.findByIdAndMatchId(sentOff.getId(), matchId)).thenReturn(Optional.of(sentOff));
+        when(assignments.findByIdAndMatchId(active.getId(), matchId)).thenReturn(Optional.of(active));
+        when(cards.countByMatchIdAndPlayerAssignmentIdAndCardType(
+                matchId, sentOff.getId(), MatchCardType.YELLOW)).thenReturn(2L);
+
+        assertThrows(LiveMatchService.InvalidGoalEventException.class,
+                () -> service.createGoal(adminId.toString(), matchId, sentOff.getId(), null, false));
+        assertThrows(LiveMatchService.InvalidGoalEventException.class,
+                () -> service.createGoal(adminId.toString(), matchId, active.getId(), sentOff.getId(), false));
+        assertThrows(LiveMatchService.InvalidCardEventException.class,
+                () -> service.createCard(adminId.toString(), matchId, sentOff.getId(), MatchCardType.RED));
+        verify(goals, never()).save(any(MatchGoalEvent.class));
+        verify(cards, never()).save(any(MatchCardEvent.class));
+    }
+
+    @Test
+    void deletesGoalAndDecreasesItsTeamScore() {
+        LiveMatchScore teamOne = new LiveMatchScore(matchId, 1);
+        teamOne.update(2);
+        when(scores.findAllByMatchIdOrderBySideNumberAsc(matchId)).thenReturn(List.of(teamOne));
+        when(scores.findByMatchIdAndSideNumber(matchId, 1)).thenReturn(Optional.of(teamOne));
+        service.start(adminId.toString(), matchId);
+        UUID eventId = UUID.randomUUID();
+        MatchGoalEvent event = mock(MatchGoalEvent.class);
+        when(event.getSideNumber()).thenReturn(1);
+        when(goals.findByIdAndMatchId(eventId, matchId)).thenReturn(Optional.of(event));
+
+        LiveMatchStateResponse state = service.deleteGoal(adminId.toString(), matchId, eventId);
+
+        assertEquals(1, teamOne.getScore());
+        assertEquals(1, state.scores().getFirst().score());
+        verify(goals).delete(event);
+    }
+
+    @Test
+    void deletingGoalNeverMakesScoreNegative() {
+        LiveMatchScore teamOne = new LiveMatchScore(matchId, 1);
+        when(scores.findAllByMatchIdOrderBySideNumberAsc(matchId)).thenReturn(List.of(teamOne));
+        when(scores.findByMatchIdAndSideNumber(matchId, 1)).thenReturn(Optional.of(teamOne));
+        service.start(adminId.toString(), matchId);
+        UUID eventId = UUID.randomUUID();
+        MatchGoalEvent event = mock(MatchGoalEvent.class);
+        when(event.getSideNumber()).thenReturn(1);
+        when(goals.findByIdAndMatchId(eventId, matchId)).thenReturn(Optional.of(event));
+
+        LiveMatchStateResponse state = service.deleteGoal(adminId.toString(), matchId, eventId);
+
+        assertEquals(0, teamOne.getScore());
+        assertEquals(0, state.scores().getFirst().score());
+    }
+
+    @Test
+    void deletesCardAndReturnsUpdatedTimeline() {
+        service.start(adminId.toString(), matchId);
+        UUID eventId = UUID.randomUUID();
+        MatchCardEvent event = mock(MatchCardEvent.class);
+        when(cards.findByIdAndMatchId(eventId, matchId)).thenReturn(Optional.of(event));
+
+        LiveMatchStateResponse state = service.deleteCard(adminId.toString(), matchId, eventId);
+
+        assertEquals(List.of(), state.cardEvents());
+        verify(cards).delete(event);
+    }
+
+    @Test
+    void deletionCannotAccessEventFromAnotherMatch() {
+        service.start(adminId.toString(), matchId);
+        UUID foreignEventId = UUID.randomUUID();
+
+        assertThrows(LiveMatchService.InvalidGoalEventException.class,
+                () -> service.deleteGoal(adminId.toString(), matchId, foreignEventId));
+        assertThrows(LiveMatchService.InvalidCardEventException.class,
+                () -> service.deleteCard(adminId.toString(), matchId, foreignEventId));
+        verify(goals, never()).delete(any(MatchGoalEvent.class));
+        verify(cards, never()).delete(any(MatchCardEvent.class));
+    }
+
+    @Test
+    void liveEventActionsRemainBlockedAfterThreeHours() {
+        match.start(NOW.minus(LiveMatchService.MAX_MATCH_DURATION));
+        UUID assignmentId = UUID.randomUUID();
+        UUID eventId = UUID.randomUUID();
+
+        assertThrows(InvalidLiveMatchTransitionException.class,
+                () -> service.createGoal(adminId.toString(), matchId, assignmentId, null, false));
+        assertThrows(InvalidLiveMatchTransitionException.class,
+                () -> service.createCard(adminId.toString(), matchId, assignmentId, MatchCardType.YELLOW));
+        assertThrows(InvalidLiveMatchTransitionException.class,
+                () -> service.deleteGoal(adminId.toString(), matchId, eventId));
+        assertThrows(InvalidLiveMatchTransitionException.class,
+                () -> service.deleteCard(adminId.toString(), matchId, eventId));
     }
 
     @Test
