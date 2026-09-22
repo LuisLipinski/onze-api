@@ -117,6 +117,7 @@ public class LiveMatchService {
 
         MatchTeamAssignment scorer = assignmentRepository.findByIdAndMatchId(scorerAssignmentId, matchId)
                 .orElseThrow(InvalidGoalEventException::new);
+        if (isSentOff(matchId, scorer.getId())) throw new InvalidGoalEventException();
         MatchTeamAssignment assist = null;
         if (assistAssignmentId != null) {
             assist = assignmentRepository.findByIdAndMatchId(assistAssignmentId, matchId)
@@ -124,6 +125,7 @@ public class LiveMatchService {
             if (assist.getId().equals(scorer.getId()) || assist.getTeamNumber() != scorer.getTeamNumber()) {
                 throw new InvalidGoalEventException();
             }
+            if (isSentOff(matchId, assist.getId())) throw new InvalidGoalEventException();
         }
         if (scorer.getTeamNumber() < 1 || scorer.getTeamNumber() > sideCount(match)) {
             throw new InvalidGoalEventException();
@@ -157,10 +159,42 @@ public class LiveMatchService {
         if (player.getTeamNumber() < 1 || player.getTeamNumber() > sideCount(match)) {
             throw new InvalidCardEventException();
         }
+        if (isSentOff(matchId, player.getId())) throw new InvalidCardEventException();
         MatchCardEvent event = cardEventRepository.save(new MatchCardEvent(matchId, player,
                 participantName(matchId, player), cardType, elapsedSeconds(match, now),
                 access.member().getUserId(), now));
         return new CreateCardEventResponse(cardResponse(event), response(matchId, match, access.member()));
+    }
+
+    @Transactional
+    public LiveMatchStateResponse deleteGoal(String authenticatedUserId, UUID matchId, UUID eventId) {
+        Access access = accessibleMatch(authenticatedUserId, matchId, true);
+        FootballMatch match = access.match();
+        finishIfExpired(match, Instant.now(clock));
+        if (match.getStatus() != MatchStatus.IN_PROGRESS || match.getStartedAt() == null) {
+            throw new InvalidLiveMatchTransitionException();
+        }
+        MatchGoalEvent event = goalEventRepository.findByIdAndMatchId(eventId, matchId)
+                .orElseThrow(InvalidGoalEventException::new);
+        LiveMatchScore score = scoreRepository.findByMatchIdAndSideNumber(matchId, event.getSideNumber())
+                .orElseThrow(InvalidLiveMatchScoreException::new);
+        score.update(Math.max(0, score.getScore() - 1));
+        goalEventRepository.delete(event);
+        return response(matchId, match, access.member());
+    }
+
+    @Transactional
+    public LiveMatchStateResponse deleteCard(String authenticatedUserId, UUID matchId, UUID eventId) {
+        Access access = accessibleMatch(authenticatedUserId, matchId, true);
+        FootballMatch match = access.match();
+        finishIfExpired(match, Instant.now(clock));
+        if (match.getStatus() != MatchStatus.IN_PROGRESS || match.getStartedAt() == null) {
+            throw new InvalidLiveMatchTransitionException();
+        }
+        MatchCardEvent event = cardEventRepository.findByIdAndMatchId(eventId, matchId)
+                .orElseThrow(InvalidCardEventException::new);
+        cardEventRepository.delete(event);
+        return response(matchId, match, access.member());
     }
 
     @Transactional
@@ -183,6 +217,13 @@ public class LiveMatchService {
     private long elapsedSeconds(FootballMatch match, Instant now) {
         return Math.min(MAX_MATCH_DURATION.toSeconds(),
                 Math.max(0, Duration.between(match.getStartedAt(), now).getSeconds()));
+    }
+
+    private boolean isSentOff(UUID matchId, UUID playerAssignmentId) {
+        return cardEventRepository.existsByMatchIdAndPlayerAssignmentIdAndCardType(
+                matchId, playerAssignmentId, MatchCardType.RED)
+                || cardEventRepository.countByMatchIdAndPlayerAssignmentIdAndCardType(
+                        matchId, playerAssignmentId, MatchCardType.YELLOW) >= 2;
     }
 
     private GoalEventResponse goalResponse(MatchGoalEvent event) {

@@ -112,6 +112,22 @@ public class MatchController {
         return ResponseEntity.status(201).body(response);
     }
 
+    @DeleteMapping("/api/matches/{matchId}/live/goals/{eventId}")
+    public LiveMatchStateResponse deleteGoal(
+            Authentication authentication,
+            @PathVariable UUID matchId,
+            @PathVariable UUID eventId) {
+        return liveMatchService.deleteGoal(authentication.getName(), matchId, eventId);
+    }
+
+    @DeleteMapping("/api/matches/{matchId}/live/cards/{eventId}")
+    public LiveMatchStateResponse deleteCard(
+            Authentication authentication,
+            @PathVariable UUID matchId,
+            @PathVariable UUID eventId) {
+        return liveMatchService.deleteCard(authentication.getName(), matchId, eventId);
+    }
+
     @PostMapping("/api/groups/{groupId}/matches")
     public ResponseEntity<MatchResponse> create(
             Authentication authentication,
