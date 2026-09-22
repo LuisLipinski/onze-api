@@ -1,7 +1,10 @@
 package com.onze.api.match;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.when;
@@ -20,6 +23,7 @@ import java.util.UUID;
 import com.onze.api.group.GroupMember;
 import com.onze.api.group.GroupMemberRepository;
 import com.onze.api.group.GroupRole;
+import com.onze.api.group.GroupService.GroupAccessDeniedException;
 import com.onze.api.match.LiveMatchService.InvalidLiveMatchTransitionException;
 import com.onze.api.match.LiveMatchModels.LiveMatchStateResponse;
 import com.onze.api.user.User;
@@ -79,11 +83,41 @@ class LiveMatchServiceTest {
         service.start(adminId.toString(), matchId);
         assertEquals(MatchStatus.IN_PROGRESS, match.getStatus());
         assertEquals(NOW, match.getStartedAt());
+        assertEquals(1L, match.getLiveVersion());
         verify(scores, times(2)).save(org.mockito.ArgumentMatchers.any(LiveMatchScore.class));
 
         service.finish(adminId.toString(), matchId);
         assertEquals(MatchStatus.FINISHED, match.getStatus());
         assertEquals(NOW, match.getFinishedAt());
+        assertEquals(2L, match.getLiveVersion());
+    }
+
+    @Test
+    void memberCanWatchButCannotManageLiveMatch() {
+        service.start(adminId.toString(), matchId);
+        UUID memberId = UUID.randomUUID();
+        when(matches.findById(matchId)).thenReturn(Optional.of(match));
+        when(members.findByGroupIdAndUserId(groupId, memberId))
+                .thenReturn(Optional.of(new GroupMember(groupId, memberId, GroupRole.MEMBER)));
+
+        LiveMatchStateResponse state = service.get(memberId.toString(), matchId);
+
+        assertFalse(state.canManage());
+        assertEquals(MatchStatus.IN_PROGRESS, state.status());
+        assertThrows(GroupAccessDeniedException.class,
+                () -> service.updateScore(memberId.toString(), matchId, 1, 1));
+    }
+
+    @Test
+    void unchangedVersionSkipsScoreAndTimelineQueries() {
+        service.start(adminId.toString(), matchId);
+        when(matches.findById(matchId)).thenReturn(Optional.of(match));
+        clearInvocations(scores, goals, cards);
+
+        var state = service.getIfChanged(adminId.toString(), matchId, match.getLiveVersion());
+
+        assertTrue(state.isEmpty());
+        verifyNoInteractions(scores, goals, cards);
     }
 
     @Test
@@ -105,6 +139,10 @@ class LiveMatchServiceTest {
 
         assertEquals(3, teamOne.getScore());
         assertEquals(3, state.scores().getFirst().score());
+        assertEquals(2L, state.version());
+
+        LiveMatchStateResponse unchanged = service.updateScore(adminId.toString(), matchId, 1, 3);
+        assertEquals(2L, unchanged.version());
     }
 
     @Test

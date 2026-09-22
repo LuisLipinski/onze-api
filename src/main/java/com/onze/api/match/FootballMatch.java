@@ -88,6 +88,9 @@ public class FootballMatch {
     @Column(name = "finished_at")
     private Instant finishedAt;
 
+    @Column(name = "live_version", nullable = false)
+    private long liveVersion;
+
     @Column(name = "attendance_opens_at", nullable = false)
     private Instant attendanceOpensAt;
 
@@ -268,16 +271,20 @@ public class FootballMatch {
 
     public Instant getFinishedAt() { return finishedAt; }
 
+    public long getLiveVersion() { return liveVersion; }
+
     public void start(Instant now) {
         if (status != MatchStatus.SCHEDULED) throw new IllegalStateException("Match cannot be started");
         status = MatchStatus.IN_PROGRESS;
         startedAt = now;
+        liveStateChanged();
     }
 
     public void finish(Instant now) {
         if (status != MatchStatus.IN_PROGRESS) throw new IllegalStateException("Match cannot be finished");
         status = MatchStatus.FINISHED;
         finishedAt = now;
+        liveStateChanged();
     }
 
     public void resetLiveMatch() {
@@ -285,6 +292,11 @@ public class FootballMatch {
         status = MatchStatus.SCHEDULED;
         startedAt = null;
         finishedAt = null;
+        liveStateChanged();
+    }
+
+    public void liveStateChanged() {
+        liveVersion++;
     }
 
     public Instant getAttendanceOpensAt() {
