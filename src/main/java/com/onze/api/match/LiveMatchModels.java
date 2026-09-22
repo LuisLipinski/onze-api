@@ -30,9 +30,24 @@ public final class LiveMatchModels {
             MatchStatus status,
             Instant startedAt,
             Instant finishedAt,
+            long version,
             List<LiveScoreSideResponse> scores,
             List<GoalEventResponse> goalEvents,
             List<CardEventResponse> cardEvents,
+            boolean canManage) { }
+
+    public record LiveMatchSummaryResponse(
+            UUID matchId,
+            UUID groupId,
+            String groupName,
+            Instant startsAt,
+            String timeZone,
+            String venue,
+            Instant startedAt,
+            MatchType matchType,
+            Integer teamCount,
+            long version,
+            List<LiveScoreSideResponse> scores,
             boolean canManage) { }
 
     public record GoalEventResponse(

@@ -20,6 +20,7 @@ import com.onze.api.match.MatchModels.GuestTechnicalProfileResponse;
 import com.onze.api.match.TeamModels.MatchTeamsResponse;
 import com.onze.api.match.TeamModels.UpdateTeamAssignmentRequest;
 import com.onze.api.match.LiveMatchModels.LiveMatchStateResponse;
+import com.onze.api.match.LiveMatchModels.LiveMatchSummaryResponse;
 import com.onze.api.match.LiveMatchModels.UpdateLiveScoreRequest;
 import com.onze.api.match.LiveMatchModels.CreateGoalEventRequest;
 import com.onze.api.match.LiveMatchModels.CreateGoalEventResponse;
@@ -36,6 +37,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -46,18 +48,21 @@ public class MatchController {
     private final MatchTeamService teamService;
     private final MatchPlayerConfigurationService playerConfigurationService;
     private final LiveMatchService liveMatchService;
+    private final LiveMatchFeedService liveMatchFeedService;
 
     public MatchController(
             MatchService matchService,
             MatchLifecycleService lifecycleService,
             MatchTeamService teamService,
             MatchPlayerConfigurationService playerConfigurationService,
-            LiveMatchService liveMatchService) {
+            LiveMatchService liveMatchService,
+            LiveMatchFeedService liveMatchFeedService) {
         this.matchService = matchService;
         this.lifecycleService = lifecycleService;
         this.teamService = teamService;
         this.playerConfigurationService = playerConfigurationService;
         this.liveMatchService = liveMatchService;
+        this.liveMatchFeedService = liveMatchFeedService;
     }
 
     @PutMapping("/api/matches/{matchId}/live/start")
@@ -79,8 +84,18 @@ public class MatchController {
     }
 
     @GetMapping("/api/matches/{matchId}/live")
-    public LiveMatchStateResponse getLiveMatch(Authentication authentication, @PathVariable UUID matchId) {
-        return liveMatchService.get(authentication.getName(), matchId);
+    public ResponseEntity<LiveMatchStateResponse> getLiveMatch(
+            Authentication authentication,
+            @PathVariable UUID matchId,
+            @RequestParam(required = false) Long version) {
+        return liveMatchService.getIfChanged(authentication.getName(), matchId, version)
+                .map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.noContent().build());
+    }
+
+    @GetMapping("/api/matches/live")
+    public List<LiveMatchSummaryResponse> listLiveMatches(Authentication authentication) {
+        return liveMatchFeedService.list(authentication.getName());
     }
 
     @PutMapping("/api/matches/{matchId}/live/score")

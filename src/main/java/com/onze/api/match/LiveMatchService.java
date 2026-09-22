@@ -4,6 +4,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.Duration;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import com.onze.api.group.GroupAdminPermission;
@@ -82,9 +83,18 @@ public class LiveMatchService {
 
     @Transactional
     public LiveMatchStateResponse get(String authenticatedUserId, UUID matchId) {
+        return getIfChanged(authenticatedUserId, matchId, null).orElseThrow();
+    }
+
+    @Transactional
+    public Optional<LiveMatchStateResponse> getIfChanged(
+            String authenticatedUserId, UUID matchId, Long knownVersion) {
         Access access = accessibleMatch(authenticatedUserId, matchId, false);
         finishIfExpired(access.match(), Instant.now(clock));
-        return response(matchId, access.match(), access.member());
+        if (knownVersion != null && knownVersion == access.match().getLiveVersion()) {
+            return Optional.empty();
+        }
+        return Optional.of(response(matchId, access.match(), access.member()));
     }
 
     @Transactional
@@ -100,7 +110,10 @@ public class LiveMatchService {
         initializeScoreboard(match, matchId);
         LiveMatchScore storedScore = scoreRepository.findByMatchIdAndSideNumber(matchId, sideNumber)
                 .orElseThrow(InvalidLiveMatchScoreException::new);
-        storedScore.update(score);
+        if (storedScore.getScore() != score) {
+            storedScore.update(score);
+            match.liveStateChanged();
+        }
         return response(matchId, match, access.member());
     }
 
@@ -141,6 +154,7 @@ public class LiveMatchService {
                 assist == null ? null : participantName(matchId, assist),
                 penalty, elapsedSeconds, access.member().getUserId(), now));
         score.update(score.getScore() + 1);
+        match.liveStateChanged();
         return new CreateGoalEventResponse(goalResponse(event), response(matchId, match, access.member()));
     }
 
@@ -163,6 +177,7 @@ public class LiveMatchService {
         MatchCardEvent event = cardEventRepository.save(new MatchCardEvent(matchId, player,
                 participantName(matchId, player), cardType, elapsedSeconds(match, now),
                 access.member().getUserId(), now));
+        match.liveStateChanged();
         return new CreateCardEventResponse(cardResponse(event), response(matchId, match, access.member()));
     }
 
@@ -180,6 +195,7 @@ public class LiveMatchService {
                 .orElseThrow(InvalidLiveMatchScoreException::new);
         score.update(Math.max(0, score.getScore() - 1));
         goalEventRepository.delete(event);
+        match.liveStateChanged();
         return response(matchId, match, access.member());
     }
 
@@ -194,6 +210,7 @@ public class LiveMatchService {
         MatchCardEvent event = cardEventRepository.findByIdAndMatchId(eventId, matchId)
                 .orElseThrow(InvalidCardEventException::new);
         cardEventRepository.delete(event);
+        match.liveStateChanged();
         return response(matchId, match, access.member());
     }
 
@@ -290,7 +307,7 @@ public class LiveMatchService {
                 .findAllByMatchIdOrderByElapsedSecondsDescCreatedAtDesc(matchId)
                 .stream().map(this::cardResponse).toList();
         return new LiveMatchStateResponse(matchId, match.getStatus(), match.getStartedAt(),
-                match.getFinishedAt(), scores, goalEvents, cardEvents,
+                match.getFinishedAt(), match.getLiveVersion(), scores, goalEvents, cardEvents,
                 member.hasPermission(GroupAdminPermission.SCHEDULE_GAMES));
     }
 
