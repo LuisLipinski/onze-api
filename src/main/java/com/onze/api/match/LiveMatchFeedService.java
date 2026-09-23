@@ -26,16 +26,19 @@ public class LiveMatchFeedService {
     private final GroupMemberRepository memberRepository;
     private final GroupRepository groupRepository;
     private final LiveMatchScoreRepository scoreRepository;
+    private final MatchTeamImageRepository teamImageRepository;
 
     public LiveMatchFeedService(
             FootballMatchRepository matchRepository,
             GroupMemberRepository memberRepository,
             GroupRepository groupRepository,
-            LiveMatchScoreRepository scoreRepository) {
+            LiveMatchScoreRepository scoreRepository,
+            MatchTeamImageRepository teamImageRepository) {
         this.matchRepository = matchRepository;
         this.memberRepository = memberRepository;
         this.groupRepository = groupRepository;
         this.scoreRepository = scoreRepository;
+        this.teamImageRepository = teamImageRepository;
     }
 
     @Transactional(readOnly = true)
@@ -54,12 +57,22 @@ public class LiveMatchFeedService {
         List<UUID> matchIds = matches.stream().map(FootballMatch::getId).toList();
         Map<UUID, Group> groupsById = groupRepository.findAllById(membershipsByGroup.keySet()).stream()
                 .collect(Collectors.toMap(Group::getId, Function.identity()));
+        Map<UUID, Map<Integer, String>> imagesByMatch = teamImageRepository
+                .findAllByMatchIdInOrderByMatchIdAscTeamNumberAsc(matchIds)
+                .stream()
+                .collect(Collectors.groupingBy(
+                        MatchTeamImage::getMatchId,
+                        Collectors.toMap(MatchTeamImage::getTeamNumber, MatchTeamImage::getImageUrl)));
         Map<UUID, List<LiveScoreSideResponse>> scoresByMatch = scoreRepository
                 .findAllByMatchIdInOrderByMatchIdAscSideNumberAsc(matchIds).stream()
                 .collect(Collectors.groupingBy(
                         LiveMatchScore::getMatchId,
                         Collectors.mapping(
-                                score -> new LiveScoreSideResponse(score.getSideNumber(), score.getScore()),
+                                score -> new LiveScoreSideResponse(
+                                        score.getSideNumber(),
+                                        score.getScore(),
+                                        imagesByMatch.getOrDefault(score.getMatchId(), Map.of())
+                                                .get(score.getSideNumber())),
                                 Collectors.toList())));
 
         return matches.stream()
@@ -79,14 +92,24 @@ public class LiveMatchFeedService {
     public Optional<LiveMatchSummaryResponse> getSummary(UUID matchId) {
         return matchRepository.findById(matchId).flatMap(match -> groupRepository
                 .findById(match.getGroupId())
-                .map(group -> summary(
-                        match,
-                        group,
-                        scoreRepository.findAllByMatchIdOrderBySideNumberAsc(matchId).stream()
-                                .map(score -> new LiveScoreSideResponse(
-                                        score.getSideNumber(), score.getScore()))
-                                .toList(),
-                        false)));
+                .map(group -> {
+                    Map<Integer, String> imagesByTeam = teamImageRepository
+                            .findAllByMatchIdOrderByTeamNumberAsc(matchId)
+                            .stream()
+                            .collect(Collectors.toMap(
+                                    MatchTeamImage::getTeamNumber,
+                                    MatchTeamImage::getImageUrl));
+                    return summary(
+                            match,
+                            group,
+                            scoreRepository.findAllByMatchIdOrderBySideNumberAsc(matchId).stream()
+                                    .map(score -> new LiveScoreSideResponse(
+                                            score.getSideNumber(),
+                                            score.getScore(),
+                                            imagesByTeam.get(score.getSideNumber())))
+                                    .toList(),
+                            false);
+                }));
     }
 
     private LiveMatchSummaryResponse summary(

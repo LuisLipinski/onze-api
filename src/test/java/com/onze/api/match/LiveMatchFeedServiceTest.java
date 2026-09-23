@@ -25,6 +25,7 @@ class LiveMatchFeedServiceTest {
     private GroupMemberRepository members;
     private GroupRepository groups;
     private LiveMatchScoreRepository scores;
+    private MatchTeamImageRepository teamImages;
     private LiveMatchFeedService service;
 
     @BeforeEach
@@ -33,7 +34,8 @@ class LiveMatchFeedServiceTest {
         members = mock(GroupMemberRepository.class);
         groups = mock(GroupRepository.class);
         scores = mock(LiveMatchScoreRepository.class);
-        service = new LiveMatchFeedService(matches, members, groups, scores);
+        teamImages = mock(MatchTeamImageRepository.class);
+        service = new LiveMatchFeedService(matches, members, groups, scores, teamImages);
     }
 
     @Test
@@ -45,6 +47,7 @@ class LiveMatchFeedServiceTest {
         FootballMatch match = mock(FootballMatch.class);
         Group group = mock(Group.class);
         LiveMatchScore score = mock(LiveMatchScore.class);
+        MatchTeamImage teamImage = mock(MatchTeamImage.class);
         Instant startsAt = Instant.parse("2026-09-22T18:00:00Z");
         Instant startedAt = Instant.parse("2026-09-22T18:02:00Z");
 
@@ -63,12 +66,17 @@ class LiveMatchFeedServiceTest {
         when(score.getMatchId()).thenReturn(matchId);
         when(score.getSideNumber()).thenReturn(1);
         when(score.getScore()).thenReturn(3);
+        when(teamImage.getMatchId()).thenReturn(matchId);
+        when(teamImage.getTeamNumber()).thenReturn(1);
+        when(teamImage.getImageUrl()).thenReturn("https://cdn.example/time-1.jpg");
         when(members.findAllByUserIdOrderByCreatedAtAsc(userId)).thenReturn(List.of(membership));
         when(matches.findAllByGroupIdInAndStatusInOrderByStartsAtAsc(
                 Set.of(groupId), List.of(MatchStatus.IN_PROGRESS))).thenReturn(List.of(match));
         when(groups.findAllById(Set.of(groupId))).thenReturn(List.of(group));
         when(scores.findAllByMatchIdInOrderByMatchIdAscSideNumberAsc(List.of(matchId)))
                 .thenReturn(List.of(score));
+        when(teamImages.findAllByMatchIdInOrderByMatchIdAscTeamNumberAsc(List.of(matchId)))
+                .thenReturn(List.of(teamImage));
 
         var result = service.list(userId.toString());
 
@@ -76,6 +84,8 @@ class LiveMatchFeedServiceTest {
         assertEquals(matchId, result.getFirst().matchId());
         assertEquals("Time de terça", result.getFirst().groupName());
         assertEquals(3, result.getFirst().scores().getFirst().score());
+        assertEquals("https://cdn.example/time-1.jpg",
+                result.getFirst().scores().getFirst().imageUrl());
         assertEquals(7L, result.getFirst().version());
         assertEquals(MatchStatus.IN_PROGRESS, result.getFirst().status());
         assertFalse(result.getFirst().canManage());
@@ -87,6 +97,6 @@ class LiveMatchFeedServiceTest {
         when(members.findAllByUserIdOrderByCreatedAtAsc(userId)).thenReturn(List.of());
 
         assertEquals(List.of(), service.list(userId.toString()));
-        verifyNoInteractions(matches, groups, scores);
+        verifyNoInteractions(matches, groups, scores, teamImages);
     }
 }

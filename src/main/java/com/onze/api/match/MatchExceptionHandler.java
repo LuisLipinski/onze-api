@@ -39,6 +39,10 @@ import com.onze.api.match.MatchTeamService.GoalkeepersNotReadyException;
 import com.onze.api.match.MatchTeamService.InvalidTeamAssignmentException;
 import com.onze.api.match.MatchTeamService.TeamAssignmentNotFoundException;
 import com.onze.api.match.MatchTeamService.IneligibleGoalkeeperException;
+import com.onze.api.match.MatchTeamImageService.InvalidTeamImageException;
+import com.onze.api.match.MatchTeamImageService.TeamImageLockedException;
+import com.onze.api.match.MatchTeamImageService.TeamImageStorageNotConfiguredException;
+import com.onze.api.match.MatchTeamImageService.TeamImageUploadFailedException;
 import com.onze.api.match.MatchGoalkeeperService.GoalkeeperCandidateRequiredException;
 import com.onze.api.match.MatchGoalkeeperService.GoalkeeperPaymentAlreadyRecordedException;
 import com.onze.api.match.MatchGoalkeeperService.PrimaryGoalkeeperCannotBeUnassignedException;
@@ -77,6 +81,38 @@ public class MatchExceptionHandler {
     ResponseEntity<ErrorResponse> invalidCardEvent() {
         return ResponseEntity.badRequest()
                 .body(new ErrorResponse("INVALID_CARD_EVENT", "Confira o jogador e o time do cartão."));
+    }
+
+    @ExceptionHandler(InvalidTeamImageException.class)
+    ResponseEntity<ErrorResponse> invalidTeamImage() {
+        return ResponseEntity.badRequest()
+                .body(new ErrorResponse(
+                        "INVALID_TEAM_IMAGE",
+                        "Escolha uma imagem válida de até 5 MB para um time desta partida."));
+    }
+
+    @ExceptionHandler(TeamImageLockedException.class)
+    ResponseEntity<ErrorResponse> teamImageLocked() {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(new ErrorResponse(
+                        "TEAM_IMAGE_LOCKED",
+                        "As imagens dos times não podem ser alteradas após o encerramento da partida."));
+    }
+
+    @ExceptionHandler(TeamImageStorageNotConfiguredException.class)
+    ResponseEntity<ErrorResponse> teamImageStorageNotConfigured() {
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .body(new ErrorResponse(
+                        "TEAM_IMAGE_STORAGE_NOT_CONFIGURED",
+                        "O envio de imagens ainda não está disponível."));
+    }
+
+    @ExceptionHandler(TeamImageUploadFailedException.class)
+    ResponseEntity<ErrorResponse> teamImageUploadFailed() {
+        return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
+                .body(new ErrorResponse(
+                        "TEAM_IMAGE_UPLOAD_FAILED",
+                        "Não foi possível enviar a imagem agora. Tente novamente."));
     }
 
     @ExceptionHandler(MatchNotFoundException.class)

@@ -4,6 +4,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -32,6 +33,7 @@ public class LiveMatchService {
     private final FootballMatchRepository matchRepository;
     private final GroupMemberRepository memberRepository;
     private final LiveMatchScoreRepository scoreRepository;
+    private final MatchTeamImageRepository teamImageRepository;
     private final MatchTeamAssignmentRepository assignmentRepository;
     private final MatchGoalEventRepository goalEventRepository;
     private final MatchCardEventRepository cardEventRepository;
@@ -43,7 +45,8 @@ public class LiveMatchService {
     private final Clock clock;
 
     public LiveMatchService(FootballMatchRepository matchRepository, GroupMemberRepository memberRepository,
-            LiveMatchScoreRepository scoreRepository, MatchTeamAssignmentRepository assignmentRepository,
+            LiveMatchScoreRepository scoreRepository, MatchTeamImageRepository teamImageRepository,
+            MatchTeamAssignmentRepository assignmentRepository,
             MatchGoalEventRepository goalEventRepository, MatchCardEventRepository cardEventRepository,
             UserRepository userRepository,
             MatchGuestRepository guestRepository,
@@ -54,6 +57,7 @@ public class LiveMatchService {
         this.matchRepository = matchRepository;
         this.memberRepository = memberRepository;
         this.scoreRepository = scoreRepository;
+        this.teamImageRepository = teamImageRepository;
         this.assignmentRepository = assignmentRepository;
         this.goalEventRepository = goalEventRepository;
         this.cardEventRepository = cardEventRepository;
@@ -350,11 +354,22 @@ public class LiveMatchService {
     }
 
     private LiveMatchSnapshotResponse snapshot(UUID matchId, FootballMatch match) {
+        Map<Integer, String> imagesByTeam = teamImageRepository
+                .findAllByMatchIdOrderByTeamNumberAsc(matchId)
+                .stream()
+                .collect(java.util.stream.Collectors.toMap(
+                        MatchTeamImage::getTeamNumber,
+                        MatchTeamImage::getImageUrl));
         List<LiveScoreSideResponse> scores = scoreRepository.findAllByMatchIdOrderBySideNumberAsc(matchId)
-                .stream().map(item -> new LiveScoreSideResponse(item.getSideNumber(), item.getScore())).toList();
+                .stream().map(item -> new LiveScoreSideResponse(
+                        item.getSideNumber(),
+                        item.getScore(),
+                        imagesByTeam.get(item.getSideNumber())))
+                .toList();
         if (scores.isEmpty() && match.getStatus() != MatchStatus.SCHEDULED) {
             scores = java.util.stream.IntStream.rangeClosed(1, sideCount(match))
-                    .mapToObj(side -> new LiveScoreSideResponse(side, 0)).toList();
+                    .mapToObj(side -> new LiveScoreSideResponse(side, 0, imagesByTeam.get(side)))
+                    .toList();
         }
         List<GoalEventResponse> goalEvents = goalEventRepository
                 .findAllByMatchIdOrderByElapsedSecondsDescCreatedAtDesc(matchId)

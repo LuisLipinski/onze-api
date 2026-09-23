@@ -20,6 +20,9 @@ public final class TeamModels {
             @NotBlank @Size(max = 48) String assignedRole) {
     }
 
+    public record MatchTeamImageResponse(int teamNumber, String imageUrl) {
+    }
+
     public record TeamAssignmentResponse(
             UUID id,
             TeamParticipantType participantType,

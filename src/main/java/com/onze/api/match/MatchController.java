@@ -18,6 +18,7 @@ import com.onze.api.match.MatchModels.AddGuestRequest;
 import com.onze.api.match.MatchModels.UpdateGuestTechnicalProfileRequest;
 import com.onze.api.match.MatchModels.GuestTechnicalProfileResponse;
 import com.onze.api.match.TeamModels.MatchTeamsResponse;
+import com.onze.api.match.TeamModels.MatchTeamImageResponse;
 import com.onze.api.match.TeamModels.UpdateTeamAssignmentRequest;
 import com.onze.api.match.LiveMatchModels.LiveMatchStateResponse;
 import com.onze.api.match.LiveMatchModels.LiveMatchSummaryResponse;
@@ -38,9 +39,11 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+import org.springframework.web.multipart.MultipartFile;
 
 @RestController
 public class MatchController {
@@ -48,6 +51,7 @@ public class MatchController {
     private final MatchService matchService;
     private final MatchLifecycleService lifecycleService;
     private final MatchTeamService teamService;
+    private final MatchTeamImageService teamImageService;
     private final MatchPlayerConfigurationService playerConfigurationService;
     private final LiveMatchService liveMatchService;
     private final LiveMatchFeedService liveMatchFeedService;
@@ -57,6 +61,7 @@ public class MatchController {
             MatchService matchService,
             MatchLifecycleService lifecycleService,
             MatchTeamService teamService,
+            MatchTeamImageService teamImageService,
             MatchPlayerConfigurationService playerConfigurationService,
             LiveMatchService liveMatchService,
             LiveMatchFeedService liveMatchFeedService,
@@ -64,6 +69,7 @@ public class MatchController {
         this.matchService = matchService;
         this.lifecycleService = lifecycleService;
         this.teamService = teamService;
+        this.teamImageService = teamImageService;
         this.playerConfigurationService = playerConfigurationService;
         this.liveMatchService = liveMatchService;
         this.liveMatchFeedService = liveMatchFeedService;
@@ -368,6 +374,24 @@ public class MatchController {
             Authentication authentication,
             @PathVariable UUID matchId) {
         return teamService.get(authentication.getName(), matchId);
+    }
+
+    @GetMapping("/api/matches/{matchId}/teams/images")
+    public List<MatchTeamImageResponse> getTeamImages(
+            Authentication authentication,
+            @PathVariable UUID matchId) {
+        return teamImageService.list(authentication.getName(), matchId);
+    }
+
+    @PostMapping(
+            value = "/api/matches/{matchId}/teams/{teamNumber}/image",
+            consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public MatchTeamImageResponse uploadTeamImage(
+            Authentication authentication,
+            @PathVariable UUID matchId,
+            @PathVariable int teamNumber,
+            @RequestPart("image") MultipartFile image) {
+        return teamImageService.upload(authentication.getName(), matchId, teamNumber, image);
     }
 
     @PutMapping("/api/matches/{matchId}/teams/assignments/{assignmentId}")

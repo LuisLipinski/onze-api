@@ -23,7 +23,11 @@ public final class LiveMatchModels {
             @NotNull UUID playerAssignmentId,
             @NotNull MatchCardType cardType) { }
 
-    public record LiveScoreSideResponse(int sideNumber, int score) { }
+    public record LiveScoreSideResponse(int sideNumber, int score, String imageUrl) {
+        public LiveScoreSideResponse(int sideNumber, int score) {
+            this(sideNumber, score, null);
+        }
+    }
 
     public record LiveMatchStateResponse(
             UUID matchId,

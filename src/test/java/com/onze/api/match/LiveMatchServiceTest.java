@@ -41,6 +41,7 @@ class LiveMatchServiceTest {
     private FootballMatchRepository matches;
     private GroupMemberRepository members;
     private LiveMatchScoreRepository scores;
+    private MatchTeamImageRepository teamImages;
     private MatchTeamAssignmentRepository assignments;
     private MatchGoalEventRepository goals;
     private MatchCardEventRepository cards;
@@ -60,6 +61,7 @@ class LiveMatchServiceTest {
         matches = mock(FootballMatchRepository.class);
         members = mock(GroupMemberRepository.class);
         scores = mock(LiveMatchScoreRepository.class);
+        teamImages = mock(MatchTeamImageRepository.class);
         assignments = mock(MatchTeamAssignmentRepository.class);
         goals = mock(MatchGoalEventRepository.class);
         cards = mock(MatchCardEventRepository.class);
@@ -68,7 +70,7 @@ class LiveMatchServiceTest {
         rentalGoalkeepers = mock(MatchRentalGoalkeeperRepository.class);
         notifications = mock(MatchNotificationQueue.class);
         events = mock(ApplicationEventPublisher.class);
-        service = new LiveMatchService(matches, members, scores, assignments, goals, cards,
+        service = new LiveMatchService(matches, members, scores, teamImages, assignments, goals, cards,
                 users, guests, rentalGoalkeepers, notifications, events,
                 Clock.fixed(NOW, ZoneOffset.UTC));
         matchId = UUID.randomUUID();
@@ -81,6 +83,7 @@ class LiveMatchServiceTest {
         when(members.findByGroupIdAndUserId(groupId, adminId))
                 .thenReturn(Optional.of(new GroupMember(groupId, adminId, GroupRole.PRIMARY_ADMIN)));
         when(scores.findAllByMatchIdOrderBySideNumberAsc(matchId)).thenReturn(List.of());
+        when(teamImages.findAllByMatchIdOrderByTeamNumberAsc(matchId)).thenReturn(List.of());
         when(goals.save(any(MatchGoalEvent.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(goals.findAllByMatchIdOrderByElapsedSecondsDescCreatedAtDesc(matchId)).thenReturn(List.of());
         when(cards.findAllByMatchIdOrderByElapsedSecondsDescCreatedAtDesc(matchId)).thenReturn(List.of());
@@ -121,6 +124,23 @@ class LiveMatchServiceTest {
     }
 
     @Test
+    void liveScoreIncludesTheImageSelectedForEachTeam() {
+        LiveMatchScore teamOne = new LiveMatchScore(matchId, 1);
+        teamOne.update(2);
+        MatchTeamImage teamOneImage = new MatchTeamImage(
+                matchId, 1, "https://cdn.example/time-1.jpg");
+        when(matches.findById(matchId)).thenReturn(Optional.of(match));
+        when(scores.findAllByMatchIdOrderBySideNumberAsc(matchId)).thenReturn(List.of(teamOne));
+        when(teamImages.findAllByMatchIdOrderByTeamNumberAsc(matchId))
+                .thenReturn(List.of(teamOneImage));
+
+        LiveMatchStateResponse state = service.get(adminId.toString(), matchId);
+
+        assertEquals(2, state.scores().getFirst().score());
+        assertEquals("https://cdn.example/time-1.jpg", state.scores().getFirst().imageUrl());
+    }
+
+    @Test
     void unchangedVersionSkipsScoreAndTimelineQueries() {
         service.start(adminId.toString(), matchId);
         when(matches.findById(matchId)).thenReturn(Optional.of(match));
@@ -129,7 +149,7 @@ class LiveMatchServiceTest {
         var state = service.getIfChanged(adminId.toString(), matchId, match.getLiveVersion());
 
         assertTrue(state.isEmpty());
-        verifyNoInteractions(scores, goals, cards);
+        verifyNoInteractions(scores, teamImages, goals, cards);
     }
 
     @Test
