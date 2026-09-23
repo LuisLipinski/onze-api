@@ -4,6 +4,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.Optional;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -67,21 +68,46 @@ public class LiveMatchFeedService {
                 .map(match -> {
                     GroupMember membership = membershipsByGroup.get(match.getGroupId());
                     Group group = groupsById.get(match.getGroupId());
-                    return new LiveMatchSummaryResponse(
-                            match.getId(),
-                            match.getGroupId(),
-                            group.getName(),
-                            match.getStartsAt(),
-                            match.getTimeZone(),
-                            match.getVenue(),
-                            match.getStartedAt(),
-                            match.getMatchType(),
-                            match.getTeamCount(),
-                            match.getLiveVersion(),
+                    return summary(match, group,
                             scoresByMatch.getOrDefault(match.getId(), List.of()),
                             membership.hasPermission(GroupAdminPermission.SCHEDULE_GAMES));
                 })
                 .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<LiveMatchSummaryResponse> getSummary(UUID matchId) {
+        return matchRepository.findById(matchId).flatMap(match -> groupRepository
+                .findById(match.getGroupId())
+                .map(group -> summary(
+                        match,
+                        group,
+                        scoreRepository.findAllByMatchIdOrderBySideNumberAsc(matchId).stream()
+                                .map(score -> new LiveScoreSideResponse(
+                                        score.getSideNumber(), score.getScore()))
+                                .toList(),
+                        false)));
+    }
+
+    private LiveMatchSummaryResponse summary(
+            FootballMatch match,
+            Group group,
+            List<LiveScoreSideResponse> scores,
+            boolean canManage) {
+        return new LiveMatchSummaryResponse(
+                match.getId(),
+                match.getGroupId(),
+                group.getName(),
+                match.getStartsAt(),
+                match.getTimeZone(),
+                match.getVenue(),
+                match.getStatus(),
+                match.getStartedAt(),
+                match.getMatchType(),
+                match.getTeamCount(),
+                match.getLiveVersion(),
+                scores,
+                canManage);
     }
 
     private UUID parseUserId(String authenticatedUserId) {

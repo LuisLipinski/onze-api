@@ -12,6 +12,9 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -31,6 +34,7 @@ import com.onze.api.user.UserRepository;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.context.ApplicationEventPublisher;
 
 class LiveMatchServiceTest {
     private static final Instant NOW = Instant.parse("2026-09-19T18:00:00Z");
@@ -43,6 +47,8 @@ class LiveMatchServiceTest {
     private UserRepository users;
     private MatchGuestRepository guests;
     private MatchRentalGoalkeeperRepository rentalGoalkeepers;
+    private MatchNotificationQueue notifications;
+    private ApplicationEventPublisher events;
     private LiveMatchService service;
     private UUID matchId;
     private UUID groupId;
@@ -60,8 +66,10 @@ class LiveMatchServiceTest {
         users = mock(UserRepository.class);
         guests = mock(MatchGuestRepository.class);
         rentalGoalkeepers = mock(MatchRentalGoalkeeperRepository.class);
+        notifications = mock(MatchNotificationQueue.class);
+        events = mock(ApplicationEventPublisher.class);
         service = new LiveMatchService(matches, members, scores, assignments, goals, cards,
-                users, guests, rentalGoalkeepers,
+                users, guests, rentalGoalkeepers, notifications, events,
                 Clock.fixed(NOW, ZoneOffset.UTC));
         matchId = UUID.randomUUID();
         groupId = UUID.randomUUID();
@@ -85,11 +93,15 @@ class LiveMatchServiceTest {
         assertEquals(NOW, match.getStartedAt());
         assertEquals(1L, match.getLiveVersion());
         verify(scores, times(2)).save(org.mockito.ArgumentMatchers.any(LiveMatchScore.class));
+        verify(notifications).enqueue(eq(matchId), isNull(),
+                eq(MatchNotificationType.LIVE_MATCH_STARTED), anyString(), eq(NOW));
 
         service.finish(adminId.toString(), matchId);
         assertEquals(MatchStatus.FINISHED, match.getStatus());
         assertEquals(NOW, match.getFinishedAt());
         assertEquals(2L, match.getLiveVersion());
+        verify(notifications).enqueue(eq(matchId), isNull(),
+                eq(MatchNotificationType.LIVE_MATCH_FINISHED), anyString(), eq(NOW));
     }
 
     @Test
@@ -194,6 +206,8 @@ class LiveMatchServiceTest {
         assertEquals("Artilheiro", result.event().scorerDisplayName());
         assertEquals(null, result.event().assistAssignmentId());
         assertEquals(1, result.liveMatch().scores().getFirst().score());
+        verify(notifications).enqueue(eq(matchId), isNull(),
+                eq(MatchNotificationType.LIVE_MATCH_GOAL), anyString(), eq(NOW));
     }
 
     @Test
@@ -227,6 +241,24 @@ class LiveMatchServiceTest {
         assertEquals("Jogador Teste", result.event().playerDisplayName());
         assertEquals(MatchCardType.YELLOW, result.event().cardType());
         assertEquals(0, result.event().elapsedSeconds());
+        verify(notifications).enqueue(eq(matchId), isNull(),
+                eq(MatchNotificationType.LIVE_MATCH_YELLOW_CARD), anyString(), eq(NOW));
+    }
+
+    @Test
+    void secondYellowCardQueuesExpulsionNotification() {
+        service.start(adminId.toString(), matchId);
+        MatchTeamAssignment player = assignment(1);
+        when(assignments.findByIdAndMatchId(player.getId(), matchId)).thenReturn(Optional.of(player));
+        when(users.findById(player.getParticipantId()))
+                .thenReturn(Optional.of(new User("player@example.invalid", "hash", "Jogador Teste")));
+        when(cards.countByMatchIdAndPlayerAssignmentIdAndCardType(
+                matchId, player.getId(), MatchCardType.YELLOW)).thenReturn(1L);
+
+        service.createCard(adminId.toString(), matchId, player.getId(), MatchCardType.YELLOW);
+
+        verify(notifications).enqueue(eq(matchId), isNull(),
+                eq(MatchNotificationType.LIVE_MATCH_SECOND_YELLOW_CARD), anyString(), eq(NOW));
     }
 
     @Test

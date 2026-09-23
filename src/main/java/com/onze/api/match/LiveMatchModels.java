@@ -36,6 +36,16 @@ public final class LiveMatchModels {
             List<CardEventResponse> cardEvents,
             boolean canManage) { }
 
+    public record LiveMatchSnapshotResponse(
+            UUID matchId,
+            MatchStatus status,
+            Instant startedAt,
+            Instant finishedAt,
+            long version,
+            List<LiveScoreSideResponse> scores,
+            List<GoalEventResponse> goalEvents,
+            List<CardEventResponse> cardEvents) { }
+
     public record LiveMatchSummaryResponse(
             UUID matchId,
             UUID groupId,
@@ -43,12 +53,21 @@ public final class LiveMatchModels {
             Instant startsAt,
             String timeZone,
             String venue,
+            MatchStatus status,
             Instant startedAt,
             MatchType matchType,
             Integer teamCount,
             long version,
             List<LiveScoreSideResponse> scores,
             boolean canManage) { }
+
+    public record LiveMatchStreamEventResponse(
+            LiveMatchChangeType type,
+            UUID matchId,
+            UUID groupId,
+            long version,
+            LiveMatchSummaryResponse summary,
+            LiveMatchSnapshotResponse liveMatch) { }
 
     public record GoalEventResponse(
             UUID id,

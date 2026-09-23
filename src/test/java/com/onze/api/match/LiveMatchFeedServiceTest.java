@@ -54,6 +54,7 @@ class LiveMatchFeedServiceTest {
         when(match.getStartedAt()).thenReturn(startedAt);
         when(match.getTimeZone()).thenReturn("America/Sao_Paulo");
         when(match.getVenue()).thenReturn("Arena Onze");
+        when(match.getStatus()).thenReturn(MatchStatus.IN_PROGRESS);
         when(match.getMatchType()).thenReturn(MatchType.INTERNAL);
         when(match.getTeamCount()).thenReturn(2);
         when(match.getLiveVersion()).thenReturn(7L);
@@ -76,6 +77,7 @@ class LiveMatchFeedServiceTest {
         assertEquals("Time de terça", result.getFirst().groupName());
         assertEquals(3, result.getFirst().scores().getFirst().score());
         assertEquals(7L, result.getFirst().version());
+        assertEquals(MatchStatus.IN_PROGRESS, result.getFirst().status());
         assertFalse(result.getFirst().canManage());
     }
 

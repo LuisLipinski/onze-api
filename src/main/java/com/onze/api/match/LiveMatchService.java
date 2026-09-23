@@ -14,6 +14,7 @@ import com.onze.api.group.GroupService.GroupAccessDeniedException;
 import com.onze.api.group.GroupService.GroupUserNotFoundException;
 import com.onze.api.match.MatchService.MatchNotFoundException;
 import com.onze.api.match.LiveMatchModels.LiveMatchStateResponse;
+import com.onze.api.match.LiveMatchModels.LiveMatchSnapshotResponse;
 import com.onze.api.match.LiveMatchModels.LiveScoreSideResponse;
 import com.onze.api.match.LiveMatchModels.CreateGoalEventResponse;
 import com.onze.api.match.LiveMatchModels.GoalEventResponse;
@@ -23,6 +24,7 @@ import com.onze.api.user.UserRepository;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.context.ApplicationEventPublisher;
 
 @Service
 public class LiveMatchService {
@@ -36,6 +38,8 @@ public class LiveMatchService {
     private final UserRepository userRepository;
     private final MatchGuestRepository guestRepository;
     private final MatchRentalGoalkeeperRepository rentalGoalkeeperRepository;
+    private final MatchNotificationQueue notificationQueue;
+    private final ApplicationEventPublisher eventPublisher;
     private final Clock clock;
 
     public LiveMatchService(FootballMatchRepository matchRepository, GroupMemberRepository memberRepository,
@@ -43,7 +47,10 @@ public class LiveMatchService {
             MatchGoalEventRepository goalEventRepository, MatchCardEventRepository cardEventRepository,
             UserRepository userRepository,
             MatchGuestRepository guestRepository,
-            MatchRentalGoalkeeperRepository rentalGoalkeeperRepository, Clock clock) {
+            MatchRentalGoalkeeperRepository rentalGoalkeeperRepository,
+            MatchNotificationQueue notificationQueue,
+            ApplicationEventPublisher eventPublisher,
+            Clock clock) {
         this.matchRepository = matchRepository;
         this.memberRepository = memberRepository;
         this.scoreRepository = scoreRepository;
@@ -53,6 +60,8 @@ public class LiveMatchService {
         this.userRepository = userRepository;
         this.guestRepository = guestRepository;
         this.rentalGoalkeeperRepository = rentalGoalkeeperRepository;
+        this.notificationQueue = notificationQueue;
+        this.eventPublisher = eventPublisher;
         this.clock = clock;
     }
 
@@ -62,6 +71,8 @@ public class LiveMatchService {
         if (match.getStatus() != MatchStatus.SCHEDULED) throw new InvalidLiveMatchTransitionException();
         match.start(Instant.now(clock));
         initializeScoreboard(match, matchId);
+        enqueueLiveNotification(matchId, match, MatchNotificationType.LIVE_MATCH_STARTED);
+        publish(matchId, match, LiveMatchChangeType.MATCH_STARTED);
     }
 
     @Transactional
@@ -69,6 +80,8 @@ public class LiveMatchService {
         FootballMatch match = managedMatch(authenticatedUserId, matchId);
         if (match.getStatus() != MatchStatus.IN_PROGRESS) throw new InvalidLiveMatchTransitionException();
         match.finish(Instant.now(clock));
+        enqueueLiveNotification(matchId, match, MatchNotificationType.LIVE_MATCH_FINISHED);
+        publish(matchId, match, LiveMatchChangeType.MATCH_FINISHED);
     }
 
     @Transactional
@@ -79,6 +92,7 @@ public class LiveMatchService {
         goalEventRepository.deleteAllByMatchId(matchId);
         cardEventRepository.deleteAllByMatchId(matchId);
         match.resetLiveMatch();
+        publish(matchId, match, LiveMatchChangeType.MATCH_RESET);
     }
 
     @Transactional
@@ -90,7 +104,10 @@ public class LiveMatchService {
     public Optional<LiveMatchStateResponse> getIfChanged(
             String authenticatedUserId, UUID matchId, Long knownVersion) {
         Access access = accessibleMatch(authenticatedUserId, matchId, false);
-        finishIfExpired(access.match(), Instant.now(clock));
+        if (finishIfExpired(access.match(), Instant.now(clock))) {
+            enqueueLiveNotification(matchId, access.match(), MatchNotificationType.LIVE_MATCH_FINISHED);
+            publish(matchId, access.match(), LiveMatchChangeType.MATCH_FINISHED);
+        }
         if (knownVersion != null && knownVersion == access.match().getLiveVersion()) {
             return Optional.empty();
         }
@@ -113,6 +130,7 @@ public class LiveMatchService {
         if (storedScore.getScore() != score) {
             storedScore.update(score);
             match.liveStateChanged();
+            publish(matchId, match, LiveMatchChangeType.SCORE_UPDATED);
         }
         return response(matchId, match, access.member());
     }
@@ -155,6 +173,8 @@ public class LiveMatchService {
                 penalty, elapsedSeconds, access.member().getUserId(), now));
         score.update(score.getScore() + 1);
         match.liveStateChanged();
+        enqueueLiveNotification(matchId, match, MatchNotificationType.LIVE_MATCH_GOAL);
+        publish(matchId, match, LiveMatchChangeType.GOAL_ADDED);
         return new CreateGoalEventResponse(goalResponse(event), response(matchId, match, access.member()));
     }
 
@@ -173,11 +193,22 @@ public class LiveMatchService {
         if (player.getTeamNumber() < 1 || player.getTeamNumber() > sideCount(match)) {
             throw new InvalidCardEventException();
         }
-        if (isSentOff(matchId, player.getId())) throw new InvalidCardEventException();
+        boolean directRed = cardEventRepository.existsByMatchIdAndPlayerAssignmentIdAndCardType(
+                matchId, player.getId(), MatchCardType.RED);
+        long yellowCards = cardEventRepository.countByMatchIdAndPlayerAssignmentIdAndCardType(
+                matchId, player.getId(), MatchCardType.YELLOW);
+        if (directRed || yellowCards >= 2) throw new InvalidCardEventException();
         MatchCardEvent event = cardEventRepository.save(new MatchCardEvent(matchId, player,
                 participantName(matchId, player), cardType, elapsedSeconds(match, now),
                 access.member().getUserId(), now));
         match.liveStateChanged();
+        MatchNotificationType notificationType = cardType == MatchCardType.RED
+                ? MatchNotificationType.LIVE_MATCH_RED_CARD
+                : yellowCards == 1
+                        ? MatchNotificationType.LIVE_MATCH_SECOND_YELLOW_CARD
+                        : MatchNotificationType.LIVE_MATCH_YELLOW_CARD;
+        enqueueLiveNotification(matchId, match, notificationType);
+        publish(matchId, match, LiveMatchChangeType.CARD_ADDED);
         return new CreateCardEventResponse(cardResponse(event), response(matchId, match, access.member()));
     }
 
@@ -196,6 +227,7 @@ public class LiveMatchService {
         score.update(Math.max(0, score.getScore() - 1));
         goalEventRepository.delete(event);
         match.liveStateChanged();
+        publish(matchId, match, LiveMatchChangeType.GOAL_REMOVED);
         return response(matchId, match, access.member());
     }
 
@@ -211,6 +243,7 @@ public class LiveMatchService {
                 .orElseThrow(InvalidCardEventException::new);
         cardEventRepository.delete(event);
         match.liveStateChanged();
+        publish(matchId, match, LiveMatchChangeType.CARD_REMOVED);
         return response(matchId, match, access.member());
     }
 
@@ -220,15 +253,25 @@ public class LiveMatchService {
         Instant cutoff = now.minus(MAX_MATCH_DURATION);
         for (FootballMatch candidate : matchRepository
                 .findAllByStatusAndStartedAtLessThanEqualOrderByStartedAtAsc(MatchStatus.IN_PROGRESS, cutoff)) {
-            matchRepository.findByIdForUpdate(candidate.getId()).ifPresent(match -> finishIfExpired(match, now));
+            matchRepository.findByIdForUpdate(candidate.getId()).ifPresent(match -> {
+                if (finishIfExpired(match, now)) {
+                    enqueueLiveNotification(candidate.getId(), match,
+                            MatchNotificationType.LIVE_MATCH_FINISHED);
+                    publish(candidate.getId(), match, LiveMatchChangeType.MATCH_FINISHED);
+                }
+            });
         }
     }
 
-    private void finishIfExpired(FootballMatch match, Instant now) {
+    private boolean finishIfExpired(FootballMatch match, Instant now) {
         if (match.getStatus() == MatchStatus.IN_PROGRESS && match.getStartedAt() != null) {
             Instant deadline = match.getStartedAt().plus(MAX_MATCH_DURATION);
-            if (!now.isBefore(deadline)) match.finish(deadline);
+            if (!now.isBefore(deadline)) {
+                match.finish(deadline);
+                return true;
+            }
         }
+        return false;
     }
 
     private long elapsedSeconds(FootballMatch match, Instant now) {
@@ -294,6 +337,19 @@ public class LiveMatchService {
     }
 
     private LiveMatchStateResponse response(UUID matchId, FootballMatch match, GroupMember member) {
+        LiveMatchSnapshotResponse snapshot = snapshot(matchId, match);
+        return new LiveMatchStateResponse(
+                snapshot.matchId(), snapshot.status(), snapshot.startedAt(), snapshot.finishedAt(),
+                snapshot.version(), snapshot.scores(), snapshot.goalEvents(), snapshot.cardEvents(),
+                member.hasPermission(GroupAdminPermission.SCHEDULE_GAMES));
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<LiveMatchSnapshotResponse> getSnapshot(UUID matchId) {
+        return matchRepository.findById(matchId).map(match -> snapshot(matchId, match));
+    }
+
+    private LiveMatchSnapshotResponse snapshot(UUID matchId, FootballMatch match) {
         List<LiveScoreSideResponse> scores = scoreRepository.findAllByMatchIdOrderBySideNumberAsc(matchId)
                 .stream().map(item -> new LiveScoreSideResponse(item.getSideNumber(), item.getScore())).toList();
         if (scores.isEmpty() && match.getStatus() != MatchStatus.SCHEDULED) {
@@ -306,9 +362,25 @@ public class LiveMatchService {
         List<CardEventResponse> cardEvents = cardEventRepository
                 .findAllByMatchIdOrderByElapsedSecondsDescCreatedAtDesc(matchId)
                 .stream().map(this::cardResponse).toList();
-        return new LiveMatchStateResponse(matchId, match.getStatus(), match.getStartedAt(),
-                match.getFinishedAt(), match.getLiveVersion(), scores, goalEvents, cardEvents,
-                member.hasPermission(GroupAdminPermission.SCHEDULE_GAMES));
+        return new LiveMatchSnapshotResponse(matchId, match.getStatus(), match.getStartedAt(),
+                match.getFinishedAt(), match.getLiveVersion(), scores, goalEvents, cardEvents);
+    }
+
+    private void enqueueLiveNotification(
+            UUID matchId,
+            FootballMatch match,
+            MatchNotificationType notificationType) {
+        notificationQueue.enqueue(
+                matchId,
+                null,
+                notificationType,
+                matchId + ":" + notificationType + ":" + match.getLiveVersion(),
+                Instant.now(clock));
+    }
+
+    private void publish(UUID matchId, FootballMatch match, LiveMatchChangeType type) {
+        eventPublisher.publishEvent(new LiveMatchChangedEvent(
+                matchId, match.getGroupId(), match.getLiveVersion(), type));
     }
 
     private int sideCount(FootballMatch match) {

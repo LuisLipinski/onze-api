@@ -30,6 +30,7 @@ import com.onze.api.match.LiveMatchModels.CreateCardEventResponse;
 import jakarta.validation.Valid;
 
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.MediaType;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -39,6 +40,7 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 @RestController
 public class MatchController {
@@ -49,6 +51,7 @@ public class MatchController {
     private final MatchPlayerConfigurationService playerConfigurationService;
     private final LiveMatchService liveMatchService;
     private final LiveMatchFeedService liveMatchFeedService;
+    private final LiveMatchStreamService liveMatchStreamService;
 
     public MatchController(
             MatchService matchService,
@@ -56,13 +59,15 @@ public class MatchController {
             MatchTeamService teamService,
             MatchPlayerConfigurationService playerConfigurationService,
             LiveMatchService liveMatchService,
-            LiveMatchFeedService liveMatchFeedService) {
+            LiveMatchFeedService liveMatchFeedService,
+            LiveMatchStreamService liveMatchStreamService) {
         this.matchService = matchService;
         this.lifecycleService = lifecycleService;
         this.teamService = teamService;
         this.playerConfigurationService = playerConfigurationService;
         this.liveMatchService = liveMatchService;
         this.liveMatchFeedService = liveMatchFeedService;
+        this.liveMatchStreamService = liveMatchStreamService;
     }
 
     @PutMapping("/api/matches/{matchId}/live/start")
@@ -96,6 +101,17 @@ public class MatchController {
     @GetMapping("/api/matches/live")
     public List<LiveMatchSummaryResponse> listLiveMatches(Authentication authentication) {
         return liveMatchFeedService.list(authentication.getName());
+    }
+
+    @GetMapping(value = "/api/matches/live/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public ResponseEntity<SseEmitter> streamLiveMatches(
+            Authentication authentication,
+            @RequestParam(required = false) UUID matchId) {
+        return ResponseEntity.ok()
+                .contentType(MediaType.TEXT_EVENT_STREAM)
+                .header("Cache-Control", "no-cache, no-transform")
+                .header("X-Accel-Buffering", "no")
+                .body(liveMatchStreamService.subscribe(authentication.getName(), matchId));
     }
 
     @PutMapping("/api/matches/{matchId}/live/score")

@@ -2,6 +2,7 @@ package com.onze.api.match;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Collection;
 import java.util.UUID;
 
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -12,5 +13,10 @@ public interface MatchNotificationJobRepository extends JpaRepository<MatchNotif
 
     List<MatchNotificationJob> findTop25ByStatusAndNextAttemptAtLessThanEqualOrderByCreatedAtAsc(
             MatchNotificationStatus status,
+            Instant nextAttemptAt);
+
+    List<MatchNotificationJob> findTop25ByStatusAndNotificationTypeInAndNextAttemptAtLessThanEqualOrderByCreatedAtAsc(
+            MatchNotificationStatus status,
+            Collection<MatchNotificationType> notificationTypes,
             Instant nextAttemptAt);
 }

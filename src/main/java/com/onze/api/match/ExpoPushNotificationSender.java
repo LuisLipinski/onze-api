@@ -150,6 +150,24 @@ public class ExpoPushNotificationSender {
             case SERIES_CANCELLED -> new NotificationCopy(
                     "Jogos semanais encerrados ⚠️",
                     "Os próximos jogos semanais de " + group.getName() + " foram encerrados.");
+            case LIVE_MATCH_STARTED -> new NotificationCopy(
+                    "Partida iniciada ⚽",
+                    group.getName() + " começou a partida. Toque para acompanhar ao vivo.");
+            case LIVE_MATCH_GOAL -> new NotificationCopy(
+                    "Gol na partida! ⚽",
+                    "O placar de " + group.getName() + " foi atualizado. Toque para acompanhar ao vivo.");
+            case LIVE_MATCH_YELLOW_CARD -> new NotificationCopy(
+                    "Cartão amarelo 🟨",
+                    "Novo cartão em " + group.getName() + ". Toque para acompanhar ao vivo.");
+            case LIVE_MATCH_SECOND_YELLOW_CARD -> new NotificationCopy(
+                    "Expulso por dois amarelos 🟨 🟥",
+                    "Houve uma expulsão em " + group.getName() + ". Toque para acompanhar ao vivo.");
+            case LIVE_MATCH_RED_CARD -> new NotificationCopy(
+                    "Cartão vermelho 🟥",
+                    "Houve uma expulsão em " + group.getName() + ". Toque para acompanhar ao vivo.");
+            case LIVE_MATCH_FINISHED -> new NotificationCopy(
+                    "Partida encerrada 🏁",
+                    "A partida de " + group.getName() + " terminou. Toque para conferir o resultado.");
         };
     }
 
@@ -271,7 +289,7 @@ public class ExpoPushNotificationSender {
             message.put("title", copy.title());
             message.put("body", copy.body());
             message.put("data", Map.of(
-                    "route", "/match",
+                    "route", isLiveMatchNotification(notificationType) ? "/live-match" : "/match",
                     "matchId", match.getId().toString(),
                     "groupId", match.getGroupId().toString(),
                     "notificationType", notificationType.name()));
@@ -307,6 +325,10 @@ public class ExpoPushNotificationSender {
         if (retryableError != null) {
             throw new IllegalStateException("Expo push failed: " + retryableError);
         }
+    }
+
+    private boolean isLiveMatchNotification(MatchNotificationType notificationType) {
+        return notificationType.name().startsWith("LIVE_MATCH_");
     }
 
     private record NotificationCopy(String title, String body) {
