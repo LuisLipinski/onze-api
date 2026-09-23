@@ -252,6 +252,7 @@ class LiveMatchServiceTest {
         when(assignments.findByIdAndMatchId(player.getId(), matchId)).thenReturn(Optional.of(player));
         when(users.findById(player.getParticipantId()))
                 .thenReturn(Optional.of(new User("player@example.invalid", "hash", "Jogador Teste")));
+        when(cards.save(any(MatchCardEvent.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(cards.countByMatchIdAndPlayerAssignmentIdAndCardType(
                 matchId, player.getId(), MatchCardType.YELLOW)).thenReturn(1L);
 
