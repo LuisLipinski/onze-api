@@ -102,7 +102,8 @@ class MatchTeamReserveServiceTest {
                 false,
                 true,
                 null,
-                List.of(new TeamResponse(1, 30, assignments.size(), 0, assignments)));
+                List.of(new TeamResponse(
+                        1, "Time 1", null, 30, assignments.size(), 0, assignments)));
     }
 
     private TeamAssignmentResponse assignment(String name, String role, int overall) {

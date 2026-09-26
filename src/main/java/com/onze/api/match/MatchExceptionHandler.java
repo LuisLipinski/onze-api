@@ -40,6 +40,7 @@ import com.onze.api.match.MatchTeamService.InvalidTeamAssignmentException;
 import com.onze.api.match.MatchTeamService.TeamAssignmentNotFoundException;
 import com.onze.api.match.MatchTeamService.IneligibleGoalkeeperException;
 import com.onze.api.match.MatchTeamImageService.InvalidTeamImageException;
+import com.onze.api.match.MatchTeamImageService.InvalidTeamIdentityException;
 import com.onze.api.match.MatchTeamImageService.TeamImageLockedException;
 import com.onze.api.match.MatchTeamImageService.TeamImageStorageNotConfiguredException;
 import com.onze.api.match.MatchTeamImageService.TeamImageUploadFailedException;
@@ -89,6 +90,14 @@ public class MatchExceptionHandler {
                 .body(new ErrorResponse(
                         "INVALID_TEAM_IMAGE",
                         "Escolha uma imagem válida de até 5 MB para um time desta partida."));
+    }
+
+    @ExceptionHandler(InvalidTeamIdentityException.class)
+    ResponseEntity<ErrorResponse> invalidTeamIdentity() {
+        return ResponseEntity.badRequest()
+                .body(new ErrorResponse(
+                        "INVALID_TEAM_IDENTITY",
+                        "Informe um nome válido para cada time desta partida."));
     }
 
     @ExceptionHandler(TeamImageLockedException.class)

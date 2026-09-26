@@ -5,6 +5,8 @@ import java.util.UUID;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -14,15 +16,20 @@ import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 
 @Entity
-@Table(name = "match_team_images", uniqueConstraints = @UniqueConstraint(
-        name = "uk_match_team_images_match_team", columnNames = {"match_id", "team_number"}))
-public class MatchTeamImage {
+@Table(name = "group_team_identities", uniqueConstraints = @UniqueConstraint(
+        name = "uk_group_team_identities_group_type_team",
+        columnNames = {"group_id", "match_type", "team_number"}))
+public class GroupTeamIdentity {
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
-    @Column(name = "match_id", nullable = false)
-    private UUID matchId;
+    @Column(name = "group_id", nullable = false)
+    private UUID groupId;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "match_type", nullable = false, length = 32)
+    private MatchType matchType;
 
     @Column(name = "team_number", nullable = false)
     private int teamNumber;
@@ -39,14 +46,16 @@ public class MatchTeamImage {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
-    protected MatchTeamImage() { }
+    protected GroupTeamIdentity() { }
 
-    public MatchTeamImage(UUID matchId, int teamNumber, String imageUrl) {
-        this(matchId, teamNumber, "Time " + teamNumber, imageUrl);
-    }
-
-    public MatchTeamImage(UUID matchId, int teamNumber, String teamName, String imageUrl) {
-        this.matchId = matchId;
+    public GroupTeamIdentity(
+            UUID groupId,
+            MatchType matchType,
+            int teamNumber,
+            String teamName,
+            String imageUrl) {
+        this.groupId = groupId;
+        this.matchType = matchType;
         this.teamNumber = teamNumber;
         this.teamName = teamName;
         this.imageUrl = imageUrl;
@@ -62,14 +71,12 @@ public class MatchTeamImage {
     void onUpdate() { updatedAt = Instant.now(); }
 
     public UUID getId() { return id; }
-    public UUID getMatchId() { return matchId; }
+    public UUID getGroupId() { return groupId; }
+    public MatchType getMatchType() { return matchType; }
     public int getTeamNumber() { return teamNumber; }
     public String getTeamName() { return teamName; }
     public String getImageUrl() { return imageUrl; }
 
+    public void updateName(String newName) { teamName = newName; }
     public void updateImageUrl(String newImageUrl) { imageUrl = newImageUrl; }
-    public void updateIdentity(String newTeamName, String newImageUrl) {
-        teamName = newTeamName;
-        imageUrl = newImageUrl;
-    }
 }

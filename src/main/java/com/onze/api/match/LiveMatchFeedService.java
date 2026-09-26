@@ -57,22 +57,29 @@ public class LiveMatchFeedService {
         List<UUID> matchIds = matches.stream().map(FootballMatch::getId).toList();
         Map<UUID, Group> groupsById = groupRepository.findAllById(membershipsByGroup.keySet()).stream()
                 .collect(Collectors.toMap(Group::getId, Function.identity()));
-        Map<UUID, Map<Integer, String>> imagesByMatch = teamImageRepository
+        Map<UUID, Map<Integer, MatchTeamImage>> identitiesByMatch = teamImageRepository
                 .findAllByMatchIdInOrderByMatchIdAscTeamNumberAsc(matchIds)
                 .stream()
                 .collect(Collectors.groupingBy(
                         MatchTeamImage::getMatchId,
-                        Collectors.toMap(MatchTeamImage::getTeamNumber, MatchTeamImage::getImageUrl)));
+                        Collectors.toMap(MatchTeamImage::getTeamNumber, item -> item)));
         Map<UUID, List<LiveScoreSideResponse>> scoresByMatch = scoreRepository
                 .findAllByMatchIdInOrderByMatchIdAscSideNumberAsc(matchIds).stream()
                 .collect(Collectors.groupingBy(
                         LiveMatchScore::getMatchId,
                         Collectors.mapping(
-                                score -> new LiveScoreSideResponse(
-                                        score.getSideNumber(),
-                                        score.getScore(),
-                                        imagesByMatch.getOrDefault(score.getMatchId(), Map.of())
-                                                .get(score.getSideNumber())),
+                                score -> {
+                                    MatchTeamImage identity = identitiesByMatch
+                                            .getOrDefault(score.getMatchId(), Map.of())
+                                            .get(score.getSideNumber());
+                                    return new LiveScoreSideResponse(
+                                            score.getSideNumber(),
+                                            score.getScore(),
+                                            identity == null
+                                                    ? "Time " + score.getSideNumber()
+                                                    : identity.getTeamName(),
+                                            identity == null ? null : identity.getImageUrl());
+                                },
                                 Collectors.toList())));
 
         return matches.stream()
@@ -93,20 +100,26 @@ public class LiveMatchFeedService {
         return matchRepository.findById(matchId).flatMap(match -> groupRepository
                 .findById(match.getGroupId())
                 .map(group -> {
-                    Map<Integer, String> imagesByTeam = teamImageRepository
+                    Map<Integer, MatchTeamImage> identitiesByTeam = teamImageRepository
                             .findAllByMatchIdOrderByTeamNumberAsc(matchId)
                             .stream()
                             .collect(Collectors.toMap(
                                     MatchTeamImage::getTeamNumber,
-                                    MatchTeamImage::getImageUrl));
+                                    item -> item));
                     return summary(
                             match,
                             group,
                             scoreRepository.findAllByMatchIdOrderBySideNumberAsc(matchId).stream()
-                                    .map(score -> new LiveScoreSideResponse(
-                                            score.getSideNumber(),
-                                            score.getScore(),
-                                            imagesByTeam.get(score.getSideNumber())))
+                                    .map(score -> {
+                                        MatchTeamImage identity = identitiesByTeam.get(score.getSideNumber());
+                                        return new LiveScoreSideResponse(
+                                                score.getSideNumber(),
+                                                score.getScore(),
+                                                identity == null
+                                                        ? "Time " + score.getSideNumber()
+                                                        : identity.getTeamName(),
+                                                identity == null ? null : identity.getImageUrl());
+                                    })
                                     .toList(),
                             false);
                 }));

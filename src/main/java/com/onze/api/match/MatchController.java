@@ -22,6 +22,7 @@ import com.onze.api.match.TeamModels.MatchTeamImageResponse;
 import com.onze.api.match.TeamModels.UpdateTeamAssignmentRequest;
 import com.onze.api.match.LiveMatchModels.LiveMatchStateResponse;
 import com.onze.api.match.LiveMatchModels.LiveMatchSummaryResponse;
+import com.onze.api.match.LiveMatchModels.StartLiveMatchRequest;
 import com.onze.api.match.LiveMatchModels.UpdateLiveScoreRequest;
 import com.onze.api.match.LiveMatchModels.CreateGoalEventRequest;
 import com.onze.api.match.LiveMatchModels.CreateGoalEventResponse;
@@ -77,8 +78,14 @@ public class MatchController {
     }
 
     @PutMapping("/api/matches/{matchId}/live/start")
-    public MatchResponse startLiveMatch(Authentication authentication, @PathVariable UUID matchId) {
-        liveMatchService.start(authentication.getName(), matchId);
+    public MatchResponse startLiveMatch(
+            Authentication authentication,
+            @PathVariable UUID matchId,
+            @Valid @RequestBody(required = false) StartLiveMatchRequest request) {
+        liveMatchService.start(
+                authentication.getName(),
+                matchId,
+                request == null || request.teams() == null ? List.of() : request.teams());
         return matchService.get(authentication.getName(), matchId);
     }
 

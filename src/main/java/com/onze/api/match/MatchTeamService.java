@@ -20,6 +20,7 @@ import com.onze.api.group.GroupMemberRepository;
 import com.onze.api.group.GroupService;
 import com.onze.api.group.PlayerPosition;
 import com.onze.api.match.TeamModels.MatchTeamsResponse;
+import com.onze.api.match.TeamModels.MatchTeamImageResponse;
 import com.onze.api.match.TeamModels.TeamAssignmentResponse;
 import com.onze.api.match.TeamModels.TeamResponse;
 import com.onze.api.technical.FutsalRole;
@@ -68,6 +69,7 @@ public class MatchTeamService {
     private final GroupMemberRepository memberRepository;
     private final GroupMemberSkillRatingRepository memberRatingRepository;
     private final UserRepository userRepository;
+    private final MatchTeamImageService teamIdentityService;
 
     public MatchTeamService(
             FootballMatchRepository matchRepository,
@@ -79,7 +81,8 @@ public class MatchTeamService {
             MatchTeamGenerationHistoryRepository generationHistoryRepository,
             GroupMemberRepository memberRepository,
             GroupMemberSkillRatingRepository memberRatingRepository,
-            UserRepository userRepository) {
+            UserRepository userRepository,
+            MatchTeamImageService teamIdentityService) {
         this.matchRepository = matchRepository;
         this.attendanceRepository = attendanceRepository;
         this.guestRepository = guestRepository;
@@ -90,6 +93,7 @@ public class MatchTeamService {
         this.memberRepository = memberRepository;
         this.memberRatingRepository = memberRatingRepository;
         this.userRepository = userRepository;
+        this.teamIdentityService = teamIdentityService;
     }
 
     @Transactional
@@ -589,6 +593,9 @@ public class MatchTeamService {
         Map<String, Participant> participantsByKey = participants.stream().collect(Collectors.toMap(
                 participant -> participant.type() + ":" + participant.id(), Function.identity()));
         int teamCount = match.getTeamCount() == null ? 1 : match.getTeamCount();
+        Map<Integer, MatchTeamImageResponse> identities = teamIdentityService.identities(match)
+                .stream()
+                .collect(Collectors.toMap(MatchTeamImageResponse::teamNumber, item -> item));
         List<TeamResponse> teams = new ArrayList<>();
         for (int teamNumber = 1; teamNumber <= teamCount; teamNumber++) {
             int currentTeam = teamNumber;
@@ -629,6 +636,12 @@ public class MatchTeamService {
                     .toList();
             teams.add(new TeamResponse(
                     teamNumber,
+                    identities.containsKey(teamNumber)
+                            ? identities.get(teamNumber).name()
+                            : "Time " + teamNumber,
+                    identities.containsKey(teamNumber)
+                            ? identities.get(teamNumber).imageUrl()
+                            : null,
                     technicalVisible ? strength : null,
                     technicalVisible ? real : null,
                     technicalVisible ? estimated : null,

@@ -68,6 +68,7 @@ class LiveMatchFeedServiceTest {
         when(score.getScore()).thenReturn(3);
         when(teamImage.getMatchId()).thenReturn(matchId);
         when(teamImage.getTeamNumber()).thenReturn(1);
+        when(teamImage.getTeamName()).thenReturn("Time Preto");
         when(teamImage.getImageUrl()).thenReturn("https://cdn.example/time-1.jpg");
         when(members.findAllByUserIdOrderByCreatedAtAsc(userId)).thenReturn(List.of(membership));
         when(matches.findAllByGroupIdInAndStatusInOrderByStartsAtAsc(
@@ -84,6 +85,7 @@ class LiveMatchFeedServiceTest {
         assertEquals(matchId, result.getFirst().matchId());
         assertEquals("Time de terça", result.getFirst().groupName());
         assertEquals(3, result.getFirst().scores().getFirst().score());
+        assertEquals("Time Preto", result.getFirst().scores().getFirst().name());
         assertEquals("https://cdn.example/time-1.jpg",
                 result.getFirst().scores().getFirst().imageUrl());
         assertEquals(7L, result.getFirst().version());
