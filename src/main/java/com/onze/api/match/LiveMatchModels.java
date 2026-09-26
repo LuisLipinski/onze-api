@@ -5,7 +5,10 @@ import java.util.List;
 import java.util.UUID;
 
 import jakarta.validation.constraints.Min;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 
 public final class LiveMatchModels {
     private LiveMatchModels() { }
@@ -13,6 +16,13 @@ public final class LiveMatchModels {
     public record UpdateLiveScoreRequest(
             @NotNull @Min(1) Integer sideNumber,
             @NotNull @Min(0) Integer score) { }
+
+    public record StartLiveMatchRequest(
+            @Size(max = 16) List<@Valid TeamIdentityNameRequest> teams) { }
+
+    public record TeamIdentityNameRequest(
+            @NotNull @Min(1) Integer teamNumber,
+            @NotBlank @Size(max = 80) String name) { }
 
     public record CreateGoalEventRequest(
             @NotNull UUID scorerAssignmentId,
@@ -23,9 +33,13 @@ public final class LiveMatchModels {
             @NotNull UUID playerAssignmentId,
             @NotNull MatchCardType cardType) { }
 
-    public record LiveScoreSideResponse(int sideNumber, int score, String imageUrl) {
+    public record LiveScoreSideResponse(
+            int sideNumber,
+            int score,
+            String name,
+            String imageUrl) {
         public LiveScoreSideResponse(int sideNumber, int score) {
-            this(sideNumber, score, null);
+            this(sideNumber, score, "Time " + sideNumber, null);
         }
     }
 

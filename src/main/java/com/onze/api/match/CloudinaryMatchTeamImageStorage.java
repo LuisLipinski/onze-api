@@ -30,13 +30,14 @@ public class CloudinaryMatchTeamImageStorage implements MatchTeamImageStorage {
     }
 
     @Override
-    public String upload(UUID matchId, int teamNumber, byte[] content) {
+    public String upload(UUID groupId, MatchType matchType, int teamNumber, byte[] content) {
         if (!configured) throw new TeamImageStorageNotConfiguredException();
         try {
             Map<?, ?> result = cloudinary.uploader().upload(
                     content,
                     ObjectUtils.asMap(
-                            "folder", "onze/matches/" + matchId + "/teams",
+                            "folder", "onze/groups/" + groupId + "/team-identities/"
+                                    + matchType.name().toLowerCase(java.util.Locale.ROOT),
                             "public_id", "team-" + teamNumber,
                             "overwrite", true,
                             "invalidate", true,

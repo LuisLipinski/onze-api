@@ -20,7 +20,7 @@ public final class TeamModels {
             @NotBlank @Size(max = 48) String assignedRole) {
     }
 
-    public record MatchTeamImageResponse(int teamNumber, String imageUrl) {
+    public record MatchTeamImageResponse(int teamNumber, String name, String imageUrl) {
     }
 
     public record TeamAssignmentResponse(
@@ -39,6 +39,8 @@ public final class TeamModels {
 
     public record TeamResponse(
             int teamNumber,
+            String name,
+            String imageUrl,
             Integer estimatedStrength,
             Integer realEvaluations,
             Integer estimatedEvaluations,

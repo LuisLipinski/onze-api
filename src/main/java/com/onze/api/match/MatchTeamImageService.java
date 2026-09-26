@@ -1,16 +1,23 @@
 package com.onze.api.match;
 
 import java.io.IOException;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import com.onze.api.group.GroupAdminPermission;
+import com.onze.api.group.Group;
 import com.onze.api.group.GroupMember;
 import com.onze.api.group.GroupMemberRepository;
+import com.onze.api.group.GroupRepository;
 import com.onze.api.group.GroupService.GroupAccessDeniedException;
+import com.onze.api.group.GroupService.GroupNotFoundException;
 import com.onze.api.group.GroupService.GroupUserNotFoundException;
 import com.onze.api.match.MatchService.MatchNotFoundException;
+import com.onze.api.match.LiveMatchModels.TeamIdentityNameRequest;
 import com.onze.api.match.TeamModels.MatchTeamImageResponse;
 
 import org.springframework.context.ApplicationEventPublisher;
@@ -24,6 +31,8 @@ public class MatchTeamImageService {
 
     private final FootballMatchRepository matchRepository;
     private final GroupMemberRepository memberRepository;
+    private final GroupRepository groupRepository;
+    private final GroupTeamIdentityRepository groupIdentityRepository;
     private final MatchTeamImageRepository imageRepository;
     private final MatchTeamImageStorage imageStorage;
     private final ApplicationEventPublisher eventPublisher;
@@ -31,11 +40,15 @@ public class MatchTeamImageService {
     public MatchTeamImageService(
             FootballMatchRepository matchRepository,
             GroupMemberRepository memberRepository,
+            GroupRepository groupRepository,
+            GroupTeamIdentityRepository groupIdentityRepository,
             MatchTeamImageRepository imageRepository,
             MatchTeamImageStorage imageStorage,
             ApplicationEventPublisher eventPublisher) {
         this.matchRepository = matchRepository;
         this.memberRepository = memberRepository;
+        this.groupRepository = groupRepository;
+        this.groupIdentityRepository = groupIdentityRepository;
         this.imageRepository = imageRepository;
         this.imageStorage = imageStorage;
         this.eventPublisher = eventPublisher;
@@ -46,9 +59,7 @@ public class MatchTeamImageService {
         FootballMatch match = matchRepository.findById(matchId)
                 .orElseThrow(MatchNotFoundException::new);
         requireMembership(authenticatedUserId, match.getGroupId(), false);
-        return imageRepository.findAllByMatchIdOrderByTeamNumberAsc(matchId).stream()
-                .map(this::response)
-                .toList();
+        return identities(match);
     }
 
     @Transactional
@@ -69,15 +80,30 @@ public class MatchTeamImageService {
         validate(image);
 
         try {
-            String imageUrl = imageStorage.upload(matchId, teamNumber, image.getBytes());
-            MatchTeamImage stored = imageRepository.findByMatchIdAndTeamNumber(matchId, teamNumber)
-                    .map(existing -> {
-                        existing.updateImageUrl(imageUrl);
-                        return existing;
-                    })
-                    .orElseGet(() -> new MatchTeamImage(matchId, teamNumber, imageUrl));
-            MatchTeamImage saved = imageRepository.save(stored);
+            Group group = groupRepository.findById(match.getGroupId())
+                    .orElseThrow(GroupNotFoundException::new);
+            String imageUrl = imageStorage.upload(
+                    match.getGroupId(), match.getMatchType(), teamNumber, image.getBytes());
+            GroupTeamIdentity groupIdentity = groupIdentityRepository
+                    .findByGroupIdAndMatchTypeAndTeamNumber(
+                            match.getGroupId(), match.getMatchType(), teamNumber)
+                    .orElseGet(() -> new GroupTeamIdentity(
+                            match.getGroupId(),
+                            match.getMatchType(),
+                            teamNumber,
+                            defaultName(match, group, teamNumber),
+                            null));
+            groupIdentity.updateImageUrl(imageUrl);
+            GroupTeamIdentity savedDefault = groupIdentityRepository.save(groupIdentity);
             if (match.getStatus() == MatchStatus.IN_PROGRESS) {
+                MatchTeamImage stored = imageRepository.findByMatchIdAndTeamNumber(matchId, teamNumber)
+                        .orElseGet(() -> new MatchTeamImage(
+                                matchId,
+                                teamNumber,
+                                savedDefault.getTeamName(),
+                                imageUrl));
+                stored.updateIdentity(savedDefault.getTeamName(), imageUrl);
+                imageRepository.save(stored);
                 match.liveStateChanged();
                 eventPublisher.publishEvent(new LiveMatchChangedEvent(
                         matchId,
@@ -85,9 +111,102 @@ public class MatchTeamImageService {
                         match.getLiveVersion(),
                         LiveMatchChangeType.TEAM_IMAGE_UPDATED));
             }
-            return response(saved);
+            return new MatchTeamImageResponse(
+                    teamNumber,
+                    savedDefault.getTeamName(),
+                    imageUrl);
         } catch (IOException exception) {
             throw new TeamImageUploadFailedException(exception);
+        }
+    }
+
+    @Transactional(readOnly = true)
+    public List<MatchTeamImageResponse> identities(FootballMatch match) {
+        Group group = groupRepository.findById(match.getGroupId())
+                .orElseThrow(GroupNotFoundException::new);
+        Map<Integer, GroupTeamIdentity> defaults = groupIdentityRepository
+                .findAllByGroupIdAndMatchTypeOrderByTeamNumberAsc(
+                        match.getGroupId(), match.getMatchType())
+                .stream()
+                .collect(Collectors.toMap(GroupTeamIdentity::getTeamNumber, item -> item));
+        Map<Integer, MatchTeamImage> snapshots = match.getStatus() == MatchStatus.SCHEDULED
+                ? Map.of()
+                : imageRepository.findAllByMatchIdOrderByTeamNumberAsc(match.getId()).stream()
+                        .collect(Collectors.toMap(MatchTeamImage::getTeamNumber, item -> item));
+
+        return java.util.stream.IntStream.rangeClosed(1, sideCount(match))
+                .mapToObj(teamNumber -> {
+                    MatchTeamImage snapshot = snapshots.get(teamNumber);
+                    if (snapshot != null) return response(snapshot);
+                    GroupTeamIdentity stored = defaults.get(teamNumber);
+                    return new MatchTeamImageResponse(
+                            teamNumber,
+                            stored == null
+                                    ? defaultName(match, group, teamNumber)
+                                    : stored.getTeamName(),
+                            stored != null && stored.getImageUrl() != null
+                                    ? stored.getImageUrl()
+                                    : group.getPhotoUrl());
+                })
+                .toList();
+    }
+
+    @Transactional
+    public void snapshotForStart(
+            FootballMatch match,
+            List<TeamIdentityNameRequest> requestedNames) {
+        Group group = groupRepository.findById(match.getGroupId())
+                .orElseThrow(GroupNotFoundException::new);
+        int sides = sideCount(match);
+        Map<Integer, String> names = new HashMap<>();
+        if (requestedNames != null) {
+            for (TeamIdentityNameRequest requested : requestedNames) {
+                if (requested == null
+                        || requested.teamNumber() == null
+                        || requested.teamNumber() < 1
+                        || requested.teamNumber() > sides
+                        || requested.name() == null
+                        || requested.name().trim().isEmpty()
+                        || requested.name().trim().length() > 80
+                        || names.put(requested.teamNumber(), requested.name().trim()) != null) {
+                    throw new InvalidTeamIdentityException();
+                }
+            }
+        }
+
+        Map<Integer, GroupTeamIdentity> defaults = groupIdentityRepository
+                .findAllByGroupIdAndMatchTypeOrderByTeamNumberAsc(
+                        match.getGroupId(), match.getMatchType())
+                .stream()
+                .collect(Collectors.toMap(GroupTeamIdentity::getTeamNumber, item -> item));
+
+        for (int teamNumber = 1; teamNumber <= sides; teamNumber++) {
+            int currentTeamNumber = teamNumber;
+            GroupTeamIdentity storedDefault = defaults.get(teamNumber);
+            if (storedDefault == null) {
+                storedDefault = new GroupTeamIdentity(
+                        match.getGroupId(),
+                        match.getMatchType(),
+                        teamNumber,
+                        defaultName(match, group, teamNumber),
+                        null);
+            }
+            String requestedName = names.get(teamNumber);
+            if (requestedName != null) storedDefault.updateName(requestedName);
+            GroupTeamIdentity savedDefault = groupIdentityRepository.save(storedDefault);
+            String effectiveImage = savedDefault.getImageUrl() != null
+                    ? savedDefault.getImageUrl()
+                    : group.getPhotoUrl();
+
+            MatchTeamImage snapshot = imageRepository
+                    .findByMatchIdAndTeamNumber(match.getId(), teamNumber)
+                    .orElseGet(() -> new MatchTeamImage(
+                            match.getId(),
+                            currentTeamNumber,
+                            savedDefault.getTeamName(),
+                            effectiveImage));
+            snapshot.updateIdentity(savedDefault.getTeamName(), effectiveImage);
+            imageRepository.save(snapshot);
         }
     }
 
@@ -117,7 +236,17 @@ public class MatchTeamImageService {
     }
 
     private MatchTeamImageResponse response(MatchTeamImage image) {
-        return new MatchTeamImageResponse(image.getTeamNumber(), image.getImageUrl());
+        return new MatchTeamImageResponse(
+                image.getTeamNumber(),
+                image.getTeamName(),
+                image.getImageUrl());
+    }
+
+    private String defaultName(FootballMatch match, Group group, int teamNumber) {
+        if (match.getMatchType() == MatchType.VERSUS_EXTERNAL) {
+            return teamNumber == 1 ? group.getName() : "Adversário";
+        }
+        return "Time " + teamNumber;
     }
 
     private int sideCount(FootballMatch match) {
@@ -125,6 +254,7 @@ public class MatchTeamImageService {
     }
 
     public static final class InvalidTeamImageException extends RuntimeException { }
+    public static final class InvalidTeamIdentityException extends RuntimeException { }
     public static final class TeamImageLockedException extends RuntimeException { }
     public static final class TeamImageStorageNotConfiguredException extends RuntimeException { }
     public static final class TeamImageUploadFailedException extends RuntimeException {

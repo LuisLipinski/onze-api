@@ -17,6 +17,7 @@ import com.onze.api.match.MatchService.MatchNotFoundException;
 import com.onze.api.match.LiveMatchModels.LiveMatchStateResponse;
 import com.onze.api.match.LiveMatchModels.LiveMatchSnapshotResponse;
 import com.onze.api.match.LiveMatchModels.LiveScoreSideResponse;
+import com.onze.api.match.LiveMatchModels.TeamIdentityNameRequest;
 import com.onze.api.match.LiveMatchModels.CreateGoalEventResponse;
 import com.onze.api.match.LiveMatchModels.GoalEventResponse;
 import com.onze.api.match.LiveMatchModels.CardEventResponse;
@@ -34,6 +35,7 @@ public class LiveMatchService {
     private final GroupMemberRepository memberRepository;
     private final LiveMatchScoreRepository scoreRepository;
     private final MatchTeamImageRepository teamImageRepository;
+    private final MatchTeamImageService teamIdentityService;
     private final MatchTeamAssignmentRepository assignmentRepository;
     private final MatchGoalEventRepository goalEventRepository;
     private final MatchCardEventRepository cardEventRepository;
@@ -46,6 +48,7 @@ public class LiveMatchService {
 
     public LiveMatchService(FootballMatchRepository matchRepository, GroupMemberRepository memberRepository,
             LiveMatchScoreRepository scoreRepository, MatchTeamImageRepository teamImageRepository,
+            MatchTeamImageService teamIdentityService,
             MatchTeamAssignmentRepository assignmentRepository,
             MatchGoalEventRepository goalEventRepository, MatchCardEventRepository cardEventRepository,
             UserRepository userRepository,
@@ -58,6 +61,7 @@ public class LiveMatchService {
         this.memberRepository = memberRepository;
         this.scoreRepository = scoreRepository;
         this.teamImageRepository = teamImageRepository;
+        this.teamIdentityService = teamIdentityService;
         this.assignmentRepository = assignmentRepository;
         this.goalEventRepository = goalEventRepository;
         this.cardEventRepository = cardEventRepository;
@@ -71,8 +75,17 @@ public class LiveMatchService {
 
     @Transactional
     public void start(String authenticatedUserId, UUID matchId) {
+        start(authenticatedUserId, matchId, List.of());
+    }
+
+    @Transactional
+    public void start(
+            String authenticatedUserId,
+            UUID matchId,
+            List<TeamIdentityNameRequest> teamNames) {
         FootballMatch match = managedMatch(authenticatedUserId, matchId);
         if (match.getStatus() != MatchStatus.SCHEDULED) throw new InvalidLiveMatchTransitionException();
+        teamIdentityService.snapshotForStart(match, teamNames);
         match.start(Instant.now(clock));
         initializeScoreboard(match, matchId);
         enqueueLiveNotification(matchId, match, MatchNotificationType.LIVE_MATCH_STARTED);
@@ -354,21 +367,32 @@ public class LiveMatchService {
     }
 
     private LiveMatchSnapshotResponse snapshot(UUID matchId, FootballMatch match) {
-        Map<Integer, String> imagesByTeam = teamImageRepository
+        Map<Integer, MatchTeamImage> identitiesByTeam = teamImageRepository
                 .findAllByMatchIdOrderByTeamNumberAsc(matchId)
                 .stream()
                 .collect(java.util.stream.Collectors.toMap(
                         MatchTeamImage::getTeamNumber,
-                        MatchTeamImage::getImageUrl));
+                        item -> item));
         List<LiveScoreSideResponse> scores = scoreRepository.findAllByMatchIdOrderBySideNumberAsc(matchId)
-                .stream().map(item -> new LiveScoreSideResponse(
-                        item.getSideNumber(),
-                        item.getScore(),
-                        imagesByTeam.get(item.getSideNumber())))
+                .stream().map(item -> {
+                    MatchTeamImage identity = identitiesByTeam.get(item.getSideNumber());
+                    return new LiveScoreSideResponse(
+                            item.getSideNumber(),
+                            item.getScore(),
+                            identity == null ? "Time " + item.getSideNumber() : identity.getTeamName(),
+                            identity == null ? null : identity.getImageUrl());
+                })
                 .toList();
         if (scores.isEmpty() && match.getStatus() != MatchStatus.SCHEDULED) {
             scores = java.util.stream.IntStream.rangeClosed(1, sideCount(match))
-                    .mapToObj(side -> new LiveScoreSideResponse(side, 0, imagesByTeam.get(side)))
+                    .mapToObj(side -> {
+                        MatchTeamImage identity = identitiesByTeam.get(side);
+                        return new LiveScoreSideResponse(
+                                side,
+                                0,
+                                identity == null ? "Time " + side : identity.getTeamName(),
+                                identity == null ? null : identity.getImageUrl());
+                    })
                     .toList();
         }
         List<GoalEventResponse> goalEvents = goalEventRepository

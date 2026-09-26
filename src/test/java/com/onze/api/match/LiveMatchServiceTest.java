@@ -42,6 +42,7 @@ class LiveMatchServiceTest {
     private GroupMemberRepository members;
     private LiveMatchScoreRepository scores;
     private MatchTeamImageRepository teamImages;
+    private MatchTeamImageService teamIdentityService;
     private MatchTeamAssignmentRepository assignments;
     private MatchGoalEventRepository goals;
     private MatchCardEventRepository cards;
@@ -62,6 +63,7 @@ class LiveMatchServiceTest {
         members = mock(GroupMemberRepository.class);
         scores = mock(LiveMatchScoreRepository.class);
         teamImages = mock(MatchTeamImageRepository.class);
+        teamIdentityService = mock(MatchTeamImageService.class);
         assignments = mock(MatchTeamAssignmentRepository.class);
         goals = mock(MatchGoalEventRepository.class);
         cards = mock(MatchCardEventRepository.class);
@@ -70,7 +72,8 @@ class LiveMatchServiceTest {
         rentalGoalkeepers = mock(MatchRentalGoalkeeperRepository.class);
         notifications = mock(MatchNotificationQueue.class);
         events = mock(ApplicationEventPublisher.class);
-        service = new LiveMatchService(matches, members, scores, teamImages, assignments, goals, cards,
+        service = new LiveMatchService(matches, members, scores, teamImages, teamIdentityService,
+                assignments, goals, cards,
                 users, guests, rentalGoalkeepers, notifications, events,
                 Clock.fixed(NOW, ZoneOffset.UTC));
         matchId = UUID.randomUUID();
@@ -96,6 +99,7 @@ class LiveMatchServiceTest {
         assertEquals(NOW, match.getStartedAt());
         assertEquals(1L, match.getLiveVersion());
         verify(scores, times(2)).save(org.mockito.ArgumentMatchers.any(LiveMatchScore.class));
+        verify(teamIdentityService).snapshotForStart(eq(match), eq(List.of()));
         verify(notifications).enqueue(eq(matchId), isNull(),
                 eq(MatchNotificationType.LIVE_MATCH_STARTED), anyString(), eq(NOW));
 
