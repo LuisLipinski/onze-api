@@ -181,6 +181,7 @@ public class MatchTeamImageService {
                 .collect(Collectors.toMap(GroupTeamIdentity::getTeamNumber, item -> item));
 
         for (int teamNumber = 1; teamNumber <= sides; teamNumber++) {
+            int currentTeamNumber = teamNumber;
             GroupTeamIdentity storedDefault = defaults.get(teamNumber);
             if (storedDefault == null) {
                 storedDefault = new GroupTeamIdentity(
@@ -201,7 +202,7 @@ public class MatchTeamImageService {
                     .findByMatchIdAndTeamNumber(match.getId(), teamNumber)
                     .orElseGet(() -> new MatchTeamImage(
                             match.getId(),
-                            teamNumber,
+                            currentTeamNumber,
                             savedDefault.getTeamName(),
                             effectiveImage));
             snapshot.updateIdentity(savedDefault.getTeamName(), effectiveImage);
