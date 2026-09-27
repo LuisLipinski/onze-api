@@ -15,6 +15,7 @@ import com.onze.api.group.GroupRepository;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
@@ -37,21 +38,39 @@ public class ExpoPushNotificationSender {
     private final RestClient restClient;
     private final boolean enabled;
 
+    @Autowired
     public ExpoPushNotificationSender(
             GroupRepository groupRepository,
             GroupMemberRepository groupMemberRepository,
             MatchAttendanceRepository attendanceRepository,
             MatchCapacityService capacityService,
             PushDeviceRepository pushDeviceRepository,
-            RestClient.Builder restClientBuilder,
             @Value("${notifications.expo.endpoint}") String endpoint,
             @Value("${notifications.expo.enabled:true}") boolean enabled) {
+        this(
+                groupRepository,
+                groupMemberRepository,
+                attendanceRepository,
+                capacityService,
+                pushDeviceRepository,
+                RestClient.builder().baseUrl(endpoint).build(),
+                enabled);
+    }
+
+    ExpoPushNotificationSender(
+            GroupRepository groupRepository,
+            GroupMemberRepository groupMemberRepository,
+            MatchAttendanceRepository attendanceRepository,
+            MatchCapacityService capacityService,
+            PushDeviceRepository pushDeviceRepository,
+            RestClient restClient,
+            boolean enabled) {
         this.groupRepository = groupRepository;
         this.groupMemberRepository = groupMemberRepository;
         this.attendanceRepository = attendanceRepository;
         this.capacityService = capacityService;
         this.pushDeviceRepository = pushDeviceRepository;
-        this.restClient = restClientBuilder.baseUrl(endpoint).build();
+        this.restClient = restClient;
         this.enabled = enabled;
     }
 

@@ -59,8 +59,7 @@ class ExpoPushNotificationSenderTest {
                 attendanceRepository,
                 capacityService,
                 pushDeviceRepository,
-                RestClient.builder(),
-                "https://example.invalid/push",
+                RestClient.create("https://example.invalid/push"),
                 false);
         match = mock(FootballMatch.class);
         group = mock(Group.class);
@@ -111,7 +110,8 @@ class ExpoPushNotificationSenderTest {
 
     @Test
     void logsSuccessfulDeliveryAndRejectedDeviceCleanup(CapturedOutput output) {
-        RestClient.Builder builder = RestClient.builder();
+        RestClient.Builder builder = RestClient.builder()
+                .baseUrl("https://example.invalid/push");
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
         sender = new ExpoPushNotificationSender(
                 groupRepository,
@@ -119,8 +119,7 @@ class ExpoPushNotificationSenderTest {
                 attendanceRepository,
                 capacityService,
                 pushDeviceRepository,
-                builder,
-                "https://example.invalid/push",
+                builder.build(),
                 true);
         UUID matchId = UUID.randomUUID();
         UUID groupId = UUID.randomUUID();
