@@ -4,12 +4,15 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class MatchNotificationProcessor {
 
+    private static final Logger LOGGER = LoggerFactory.getLogger(MatchNotificationProcessor.class);
     private static final List<MatchNotificationType> LIVE_MATCH_NOTIFICATION_TYPES = List.of(
             MatchNotificationType.LIVE_MATCH_STARTED,
             MatchNotificationType.LIVE_MATCH_GOAL,
@@ -80,11 +83,39 @@ public class MatchNotificationProcessor {
                 job.markSent(now);
                 processed++;
             } catch (RuntimeException exception) {
-                job.markFailedAttempt(now, exception.getMessage());
+                String reason = failureReason(exception);
+                job.markFailedAttempt(now, reason);
+                if (job.getStatus() == MatchNotificationStatus.FAILED) {
+                    LOGGER.error(
+                            "Expo push notification permanently failed: matchId={}, recipientUserId={}, "
+                                    + "notificationType={}, attempts={}, reason={}",
+                            job.getMatchId(),
+                            job.getRecipientUserId(),
+                            job.getNotificationType(),
+                            job.getAttempts(),
+                            reason,
+                            exception);
+                } else {
+                    LOGGER.warn(
+                            "Expo push notification attempt failed: matchId={}, recipientUserId={}, "
+                                    + "notificationType={}, attempt={}, reason={}",
+                            job.getMatchId(),
+                            job.getRecipientUserId(),
+                            job.getNotificationType(),
+                            job.getAttempts(),
+                            reason);
+                }
             }
         }
 
         return processed;
+    }
+
+    private String failureReason(RuntimeException exception) {
+        String message = exception.getMessage();
+        return message == null || message.isBlank()
+                ? exception.getClass().getSimpleName()
+                : message;
     }
 
     private boolean shouldSkip(MatchNotificationJob job, FootballMatch match, Instant now) {

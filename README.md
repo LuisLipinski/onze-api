@@ -24,7 +24,7 @@ A base funcional mais recente foi introduzida pelo commit `13cbc1a`; commits pos
 - Docker e Render
 - Expo Push Service para notificações
 
-**Ainda não estão implementados:** OpenAPI/Swagger, WebSocket, jogo ao vivo, lista de espera, formação de times, estatísticas e assinatura Free/Premium.
+**Ainda não estão implementados:** OpenAPI/Swagger, lista de espera, estatísticas avançadas e assinatura Free/Premium. A atualização do jogo ao vivo usa SSE.
 
 ## Linguagem do produto
 
@@ -123,7 +123,23 @@ A base funcional mais recente foi introduzida pelo commit `13cbc1a`; commits pos
 - Eventos: jogo criado, presença liberada, lembretes, remoção por prazo, pagamento informado/confirmado, acerto, crédito, reposição, jogo no dia seguinte, time fechado e cancelamento.
 - Lembretes são avaliados diariamente a partir das 09:00 no fuso do jogo.
 - Jobs inválidos após mudança de presença, pagamento ou estado são ignorados.
-- Recibos do Expo/FCM e invalidação automática de tokens rejeitados ainda não estão implementados.
+- Cada lote aceito pelo Expo registra em `INFO` as quantidades enviadas e desativadas, sem expor o token.
+- Uma tentativa com erro registra `WARN`; a desistência após a quinta tentativa registra `ERROR` com jogo, destinatário, tipo e motivo.
+- Tokens rejeitados de forma síncrona como `DeviceNotRegistered` são desativados e registrados em `INFO`.
+- A consulta assíncrona de recibos do Expo/FCM ainda não está implementada.
+
+## Jogo ao vivo e SSE
+
+- O feed geral mantém somente as permissões dos grupos que o usuário pode acompanhar.
+- Uma conexão aberta para um jogo específico mantém apenas a permissão do grupo daquele jogo e valida a participação antes de ser aceita.
+- Conexões específicas são indexadas por `matchId`; um gol, cartão ou placar percorre somente o feed geral e as conexões do jogo alterado.
+- O heartbeat continua percorrendo todas as conexões ativas porque cada cliente precisa receber o keepalive.
+- Abertura e encerramento de conexão registram em `INFO` a contagem total e a contagem do escopo, permitindo acompanhar o uso no Render.
+
+## Estatísticas básicas
+
+- Os totais e rankings são derivados de todo o histórico de jogos encerrados, sem contadores paralelos.
+- O histórico retornado ainda não possui paginação. Uma evolução futura deve paginar somente os itens históricos sem limitar os dados usados nos totais e rankings.
 
 ## Endpoints atuais
 
@@ -149,6 +165,8 @@ A base funcional mais recente foi introduzida pelo commit `13cbc1a`; commits pos
 | `POST` | `/api/groups/join` | Entrar pelo código |
 | `GET` | `/join/{code}` | Abrir página pública do convite |
 | `GET` | `/api/groups/{groupId}/members` | Listar membros |
+| `GET` | `/api/groups/{groupId}/statistics` | Consultar resumo, rankings e histórico de jogos encerrados |
+| `GET` | `/api/groups/{groupId}/statistics/players/{userId}` | Consultar estatísticas e histórico de um jogador |
 | `GET` / `PUT` | `/api/groups/{groupId}/members/me/sports-profile` | Consultar ou editar o próprio perfil esportivo |
 | `GET` / `PUT` | `/api/groups/{groupId}/members/{memberId}/sports-profile` | Consultar ou editar perfil como administrador autorizado |
 | `PUT` | `/api/groups/{groupId}/members/{memberId}/promote` | Promover membro |
@@ -195,7 +213,7 @@ A base funcional mais recente foi introduzida pelo commit `13cbc1a`; commits pos
 
 ## Qualidade e execução
 
-- A suíte atual possui 53 testes JUnit.
+- A suíte JUnit é executada integralmente pelo Maven; a contagem efetiva e eventuais testes ignorados ficam registrados no sumário da CI.
 - Integrações usam PostgreSQL 18 por Testcontainers e executam as migrações Flyway.
 - `API CI` executa `mvn verify`.
 - `Docker CI` constrói a imagem de produção.

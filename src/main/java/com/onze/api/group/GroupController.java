@@ -19,6 +19,9 @@ import com.onze.api.group.GroupModels.UpdateOwnSportsProfileRequest;
 import com.onze.api.technical.TechnicalProfileModels.TechnicalProfileResponse;
 import com.onze.api.technical.TechnicalProfileModels.UpdateTechnicalProfileRequest;
 import com.onze.api.technical.TechnicalProfileService;
+import com.onze.api.statistics.GroupStatisticsModels.GroupStatisticsResponse;
+import com.onze.api.statistics.GroupStatisticsModels.PlayerStatisticsResponse;
+import com.onze.api.statistics.GroupStatisticsService;
 
 import jakarta.validation.Valid;
 
@@ -45,18 +48,21 @@ public class GroupController {
     private final GroupAdminService groupAdminService;
     private final GroupSportsProfileService groupSportsProfileService;
     private final TechnicalProfileService technicalProfileService;
+    private final GroupStatisticsService groupStatisticsService;
 
     public GroupController(
             GroupService groupService,
             GroupInviteService groupInviteService,
             GroupAdminService groupAdminService,
             GroupSportsProfileService groupSportsProfileService,
-            TechnicalProfileService technicalProfileService) {
+            TechnicalProfileService technicalProfileService,
+            GroupStatisticsService groupStatisticsService) {
         this.groupService = groupService;
         this.groupInviteService = groupInviteService;
         this.groupAdminService = groupAdminService;
         this.groupSportsProfileService = groupSportsProfileService;
         this.technicalProfileService = technicalProfileService;
+        this.groupStatisticsService = groupStatisticsService;
     }
 
     @PostMapping
@@ -109,6 +115,21 @@ public class GroupController {
             Authentication authentication,
             @PathVariable UUID groupId) {
         return groupAdminService.listMembers(authentication.getName(), groupId);
+    }
+
+    @GetMapping("/{groupId}/statistics")
+    public GroupStatisticsResponse getStatistics(
+            Authentication authentication,
+            @PathVariable UUID groupId) {
+        return groupStatisticsService.getGroup(authentication.getName(), groupId);
+    }
+
+    @GetMapping("/{groupId}/statistics/players/{userId}")
+    public PlayerStatisticsResponse getPlayerStatistics(
+            Authentication authentication,
+            @PathVariable UUID groupId,
+            @PathVariable UUID userId) {
+        return groupStatisticsService.getPlayer(authentication.getName(), groupId, userId);
     }
 
     @GetMapping("/{groupId}/members/me/sports-profile")

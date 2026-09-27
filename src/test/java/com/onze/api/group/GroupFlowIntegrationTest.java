@@ -266,6 +266,41 @@ class GroupFlowIntegrationTest {
                 .andExpect(jsonPath("$.code").value("GROUP_ACCESS_DENIED"));
     }
 
+    @Test
+    void shouldExposeEmptyStatisticsToGroupMembersAndBlockOutsiders() throws Exception {
+        AuthResponse creator = register("statistics-creator@example.com", "Jogadora Principal");
+        AuthResponse outsider = register("statistics-outsider@example.com", "Pessoa de Fora");
+        GroupResponse group = createGroup(creator, "Pelada com estatísticas");
+
+        mockMvc.perform(get("/api/groups/{groupId}/statistics", group.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(creator)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.groupId").value(group.id().toString()))
+                .andExpect(jsonPath("$.finishedMatches").value(0))
+                .andExpect(jsonPath("$.registeredGoals").value(0))
+                .andExpect(jsonPath("$.playersWithMatches").value(0))
+                .andExpect(jsonPath("$.currentPlayer.userId").value(creator.user().id().toString()))
+                .andExpect(jsonPath("$.currentPlayer.displayName").value("Jogadora Principal"))
+                .andExpect(jsonPath("$.currentPlayer.totals.gamesPlayed").value(0))
+                .andExpect(jsonPath("$.rankings.goals[0].rank").value(1))
+                .andExpect(jsonPath("$.matchHistory").isEmpty());
+
+        mockMvc.perform(get(
+                        "/api/groups/{groupId}/statistics/players/{userId}",
+                        group.id(),
+                        creator.user().id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(creator)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.player.currentUser").value(true))
+                .andExpect(jsonPath("$.player.currentMember").value(true))
+                .andExpect(jsonPath("$.matchHistory").isEmpty());
+
+        mockMvc.perform(get("/api/groups/{groupId}/statistics", group.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(outsider)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("GROUP_ACCESS_DENIED"));
+    }
+
     private GroupResponse createGroup(AuthResponse creator, String name) throws Exception {
         var result = mockMvc.perform(post("/api/groups")
                         .header(HttpHeaders.AUTHORIZATION, bearer(creator))
