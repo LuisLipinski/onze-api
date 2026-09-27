@@ -32,6 +32,15 @@ public class User {
     @Column(name = "email_verified", nullable = false)
     private boolean emailVerified;
 
+    @Column(name = "failed_login_attempts", nullable = false)
+    private int failedLoginAttempts;
+
+    @Column(name = "login_attempt_window_started_at")
+    private Instant loginAttemptWindowStartedAt;
+
+    @Column(name = "login_blocked_until")
+    private Instant loginBlockedUntil;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -80,6 +89,18 @@ public class User {
         return emailVerified;
     }
 
+    public int getFailedLoginAttempts() {
+        return failedLoginAttempts;
+    }
+
+    public Instant getLoginAttemptWindowStartedAt() {
+        return loginAttemptWindowStartedAt;
+    }
+
+    public Instant getLoginBlockedUntil() {
+        return loginBlockedUntil;
+    }
+
     public Instant getCreatedAt() {
         return createdAt;
     }
@@ -90,5 +111,20 @@ public class User {
 
     public void changePasswordHash(String passwordHash) {
         this.passwordHash = passwordHash;
+    }
+
+    public void updateLoginProtection(
+            int failedLoginAttempts,
+            Instant loginAttemptWindowStartedAt,
+            Instant loginBlockedUntil) {
+        this.failedLoginAttempts = failedLoginAttempts;
+        this.loginAttemptWindowStartedAt = loginAttemptWindowStartedAt;
+        this.loginBlockedUntil = loginBlockedUntil;
+    }
+
+    public void clearLoginProtection() {
+        this.failedLoginAttempts = 0;
+        this.loginAttemptWindowStartedAt = null;
+        this.loginBlockedUntil = null;
     }
 }

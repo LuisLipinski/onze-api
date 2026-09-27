@@ -218,6 +218,4 @@ public final class MatchModels {
             String token) {
     }
 
-    public record ErrorResponse(String code, String message) {
-    }
 }

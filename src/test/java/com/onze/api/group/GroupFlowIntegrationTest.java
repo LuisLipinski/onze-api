@@ -235,10 +235,12 @@ class GroupFlowIntegrationTest {
         mockMvc.perform(post("/api/groups")
                         .header(HttpHeaders.AUTHORIZATION, bearer(creator))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
+                .content("""
                                 {"name": "   "}
                                 """))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
+                .andExpect(jsonPath("$.message").value("Verifique os dados informados."));
 
         assertThat(groupRepository.count()).isZero();
     }

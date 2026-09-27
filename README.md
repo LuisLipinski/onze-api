@@ -30,6 +30,8 @@ A base funcional mais recente foi introduzida pelo commit `13cbc1a`; commits pos
 
 - Respostas, erros e notificações destinadas ao usuário usam **jogo** ou **jogos**, em alinhamento com o aplicativo.
 - Identificadores técnicos existentes, como `Match`, rotas `/matches` e nomes de banco, permanecem inalterados.
+- Mensagens escritas nas exceções de domínio são exclusivamente internas, para log e depuração. Nenhum endpoint deve devolver `exception.getMessage()` ao cliente.
+- Erros destinados ao cliente usam `ApiErrorResponse` e texto em português definido por um `@ExceptionHandler`. Falhas inesperadas são registradas no servidor e retornam somente uma mensagem genérica, sem detalhes internos.
 
 ## Conta e autenticação
 
@@ -39,6 +41,7 @@ A base funcional mais recente foi introduzida pelo commit `13cbc1a`; commits pos
 - Recuperação de senha por código numérico de seis dígitos.
 - Código válido por 15 minutos, reenvio limitado a uma solicitação por minuto e bloqueio após cinco tentativas inválidas.
 - Senha entre 8 e 72 caracteres e armazenamento com BCrypt.
+- O login limita tentativas por conta em uma janela de 15 minutos. A partir da quinta falha, aplica bloqueio progressivo de 1 a 15 minutos; um login válido ou a troca de senha limpa o bloqueio.
 - JWT stateless com duração padrão de duas horas.
 - Não existem refresh token, revogação server-side de sessão ou endpoint de logout; o aplicativo encerra a sessão removendo o token local.
 - O campo `emailVerified` existe no modelo, mas o fluxo de verificação de e-mail ainda não está implementado nem é exigido no login.
@@ -187,6 +190,8 @@ A base funcional mais recente foi introduzida pelo commit `13cbc1a`; commits pos
 | V11 | Prazos de inscrição e pagamento |
 | V12 | Reposições após saída paga |
 | V13 | Perfil esportivo por participação no grupo |
+| V14–V27 | Formação de times, convidados, goleiros, jogo ao vivo e identidades persistentes dos times |
+| V28 | Proteção persistente contra tentativas repetidas de login |
 
 ## Qualidade e execução
 

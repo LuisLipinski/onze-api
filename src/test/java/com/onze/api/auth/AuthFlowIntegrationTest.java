@@ -9,10 +9,13 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RestController;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
@@ -31,6 +34,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "security.jwt.issuer=onze-api-integration-test"
 })
 @AutoConfigureMockMvc
+@Import(AuthFlowIntegrationTest.UnexpectedErrorController.class)
 class AuthFlowIntegrationTest {
 
     @Container
@@ -165,6 +169,86 @@ class AuthFlowIntegrationTest {
     }
 
     @Test
+    void shouldPersistProgressiveLoginProtectionAfterRepeatedFailures() throws Exception {
+        mockMvc.perform(post("/api/auth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "email": "limited@example.com",
+                                  "password": "StrongPass123!",
+                                  "displayName": "Jogador"
+                                }
+                                """))
+                .andExpect(status().isCreated());
+
+        String invalidLogin = """
+                {
+                  "email": "LIMITED@EXAMPLE.COM",
+                  "password": "WrongPass123!"
+                }
+                """;
+        for (int attempt = 1; attempt < 5; attempt++) {
+            mockMvc.perform(post("/api/auth/login")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(invalidLogin))
+                    .andExpect(status().isUnauthorized())
+                    .andExpect(jsonPath("$.code").value("INVALID_CREDENTIALS"));
+        }
+
+        mockMvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(invalidLogin))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header()
+                        .string(HttpHeaders.RETRY_AFTER, "60"))
+                .andExpect(jsonPath("$.code").value("TOO_MANY_LOGIN_ATTEMPTS"))
+                .andExpect(jsonPath("$.message").value(
+                        "Muitas tentativas de acesso. Aguarde alguns minutos e tente novamente."));
+
+        var user = userRepository.findByEmailIgnoreCase("limited@example.com").orElseThrow();
+        assertThat(user.getFailedLoginAttempts()).isEqualTo(5);
+        assertThat(user.getLoginBlockedUntil()).isNotNull();
+
+        mockMvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "email": "limited@example.com",
+                                  "password": "StrongPass123!"
+                                }
+                                """))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(jsonPath("$.code").value("TOO_MANY_LOGIN_ATTEMPTS"));
+    }
+
+    @Test
+    void shouldReturnGenericPortugueseBodyForUnexpectedErrors() throws Exception {
+        var registerResult = mockMvc.perform(post("/api/auth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "email": "error-test@example.com",
+                                  "password": "StrongPass123!",
+                                  "displayName": "Teste de erro"
+                                }
+                                """))
+                .andExpect(status().isCreated())
+                .andReturn();
+        AuthResponse auth = jsonMapper.readValue(
+                registerResult.getResponse().getContentAsString(),
+                AuthResponse.class);
+
+        mockMvc.perform(get("/api/test/unexpected-error")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + auth.accessToken()))
+                .andExpect(status().isInternalServerError())
+                .andExpect(jsonPath("$.code").value("INTERNAL_ERROR"))
+                .andExpect(jsonPath("$.message").value(
+                        "Não foi possível concluir a operação. Tente novamente."))
+                .andExpect(jsonPath("$.detail").doesNotExist())
+                .andExpect(jsonPath("$.exception").doesNotExist());
+    }
+
+    @Test
     void shouldReturnGenericMessageForUnknownPasswordResetEmail() throws Exception {
         mockMvc.perform(post("/api/auth/password-reset/request")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -234,5 +318,14 @@ class AuthFlowIntegrationTest {
     void shouldProtectCurrentUserEndpointWithoutBearerToken() throws Exception {
         mockMvc.perform(get("/api/auth/me"))
                 .andExpect(status().isUnauthorized());
+    }
+
+    @RestController
+    static class UnexpectedErrorController {
+
+        @GetMapping("/api/test/unexpected-error")
+        void fail() {
+            throw new IllegalStateException("sensitive internal detail");
+        }
     }
 }

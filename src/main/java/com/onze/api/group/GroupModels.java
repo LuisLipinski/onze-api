@@ -117,6 +117,4 @@ public final class GroupModels {
             @NotNull UUID replacementMemberId) {
     }
 
-    public record ErrorResponse(String code, String message) {
-    }
 }

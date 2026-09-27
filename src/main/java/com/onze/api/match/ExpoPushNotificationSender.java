@@ -85,7 +85,7 @@ public class ExpoPushNotificationSender {
         }
     }
 
-    private NotificationCopy copyFor(
+    NotificationCopy copyFor(
             FootballMatch match,
             Group group,
             MatchNotificationType notificationType,
@@ -112,7 +112,7 @@ public class ExpoPushNotificationSender {
                     "Sua vaga em " + group.getName() + " está reservada. O pagamento de "
                             + remainingAmount + " continua pendente.");
             case PAYMENT_DEADLINE_REMOVAL -> new NotificationCopy(
-                    "Vaga liberada por falta de pagamento",
+                    "Vaga liberada por falta de pagamento ⏰",
                     "O prazo de pagamento do jogo de " + group.getName()
                             + " terminou e seu nome foi removido da lista.");
             case PAYMENT_REPORTED -> new NotificationCopy(
@@ -171,7 +171,7 @@ public class ExpoPushNotificationSender {
         };
     }
 
-    private NotificationCopy settlementResolvedCopy(
+    NotificationCopy settlementResolvedCopy(
             FootballMatch match,
             Group group,
             UUID recipientUserId) {
@@ -182,12 +182,12 @@ public class ExpoPushNotificationSender {
                         .orElse(null);
         if (status == null) {
             return new NotificationCopy(
-                    "Acerto financeiro atualizado",
+                    "Acerto financeiro atualizado 💳",
                     "Consulte o jogo de " + group.getName() + " para ver o resultado.");
         }
         return switch (status) {
             case NOT_RECEIVED -> new NotificationCopy(
-                    "Cobrança encerrada",
+                    "Cobrança encerrada ✅",
                     "O administrador informou que nenhum pagamento foi localizado para "
                             + group.getName() + ".");
             case REFUNDED -> new NotificationCopy(
@@ -197,11 +197,11 @@ public class ExpoPushNotificationSender {
                     "Crédito registrado ✅",
                     "Seu saldo será aplicado automaticamente ao próximo jogo de " + group.getName() + ".");
             case RETAINED -> new NotificationCopy(
-                    "Pagamento mantido",
+                    "Pagamento mantido ✅",
                     "O administrador registrou que o pagamento do jogo de " + group.getName()
                             + " será mantido.");
             default -> new NotificationCopy(
-                    "Acerto financeiro atualizado",
+                    "Acerto financeiro atualizado 💳",
                     "Consulte o jogo de " + group.getName() + " para ver o resultado.");
         };
     }
@@ -331,6 +331,6 @@ public class ExpoPushNotificationSender {
         return notificationType.name().startsWith("LIVE_MATCH_");
     }
 
-    private record NotificationCopy(String title, String body) {
+    record NotificationCopy(String title, String body) {
     }
 }
