@@ -305,14 +305,14 @@ public class DevTestDataService {
     private FootballMatch requireMatch(UUID matchId) {
         return matchRepository.findById(matchId)
                 .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.NOT_FOUND, "Partida não encontrada."));
+                        HttpStatus.NOT_FOUND, "Jogo não encontrado."));
     }
 
     private FootballMatch requireScheduledMatch(UUID matchId) {
         FootballMatch match = requireMatch(matchId);
         if (match.getStatus() != MatchStatus.SCHEDULED) {
             throw new ResponseStatusException(
-                    HttpStatus.BAD_REQUEST, "A partida não está agendada.");
+                    HttpStatus.BAD_REQUEST, "O jogo não está agendado.");
         }
         return match;
     }
