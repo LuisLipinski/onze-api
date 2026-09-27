@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyCollection;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -78,15 +79,16 @@ class GroupStatisticsServiceTest {
         carolId = UUID.randomUUID();
         danaId = UUID.randomUUID();
         when(groups.existsById(groupId)).thenReturn(true);
-        when(members.findByGroupIdAndUserId(groupId, aliceId))
-                .thenReturn(Optional.of(member(aliceId)));
-        when(members.findAllByGroupIdOrderByCreatedAtAsc(groupId))
-                .thenReturn(List.of(member(aliceId), member(bobId), member(carolId), member(danaId)));
-        when(users.findAllById(any())).thenReturn(List.of(
+        doReturn(Optional.of(member(aliceId)))
+                .when(members).findByGroupIdAndUserId(groupId, aliceId);
+        doReturn(List.of(member(aliceId), member(bobId), member(carolId), member(danaId)))
+                .when(members).findAllByGroupIdOrderByCreatedAtAsc(groupId);
+        doReturn(List.of(
                 user(aliceId, "Alice"),
                 user(bobId, "Bruno"),
                 user(carolId, "Carla"),
-                user(danaId, "Davi")));
+                user(danaId, "Davi")))
+                .when(users).findAllById(any());
     }
 
     @Test
@@ -105,30 +107,34 @@ class GroupStatisticsServiceTest {
                 2);
         when(matches.findAllByGroupIdAndStatusOrderByFinishedAtDescStartsAtDesc(
                 groupId, MatchStatus.FINISHED)).thenReturn(List.of(newest, oldest));
-        when(assignments.findAllByMatchIdInAndParticipantTypeOrderByMatchIdAscTeamNumberAscCreatedAtAsc(
-                anyCollection(), any())).thenReturn(List.of(
+        doReturn(List.of(
                         assignment(newestMatchId, aliceId, 1),
                         assignment(newestMatchId, bobId, 2),
                         assignment(oldestMatchId, aliceId, 1),
                         assignment(oldestMatchId, bobId, 1),
-                        assignment(oldestMatchId, carolId, 2)));
-        when(scores.findAllByMatchIdInOrderByMatchIdAscSideNumberAsc(anyCollection())).thenReturn(List.of(
+                        assignment(oldestMatchId, carolId, 2)))
+                .when(assignments)
+                .findAllByMatchIdInAndParticipantTypeOrderByMatchIdAscTeamNumberAscCreatedAtAsc(
+                        anyCollection(), any());
+        doReturn(List.of(
                 score(newestMatchId, 1, 2),
                 score(newestMatchId, 2, 2),
                 score(oldestMatchId, 1, 3),
-                score(oldestMatchId, 2, 1)));
-        when(goals.findAllByMatchIdInOrderByMatchIdAscElapsedSecondsAscCreatedAtAsc(anyCollection()))
-                .thenReturn(List.of(
+                score(oldestMatchId, 2, 1)))
+                .when(scores).findAllByMatchIdInOrderByMatchIdAscSideNumberAsc(anyCollection());
+        doReturn(List.of(
                         goal(newestMatchId, bobId, aliceId),
                         goal(oldestMatchId, aliceId, bobId),
                         goal(oldestMatchId, aliceId, null),
-                        guestGoal(oldestMatchId)));
-        when(teamImages.findAllByMatchIdInOrderByMatchIdAscTeamNumberAsc(anyCollection()))
-                .thenReturn(List.of(
+                        guestGoal(oldestMatchId)))
+                .when(goals)
+                .findAllByMatchIdInOrderByMatchIdAscElapsedSecondsAscCreatedAtAsc(anyCollection());
+        doReturn(List.of(
                         identity(newestMatchId, 1, "Verde"),
                         identity(newestMatchId, 2, "Branco"),
                         identity(oldestMatchId, 1, "Leões"),
-                        identity(oldestMatchId, 2, "Águias")));
+                        identity(oldestMatchId, 2, "Águias")))
+                .when(teamImages).findAllByMatchIdInOrderByMatchIdAscTeamNumberAsc(anyCollection());
 
         var response = service.getGroup(aliceId.toString(), groupId);
 
@@ -171,15 +177,18 @@ class GroupStatisticsServiceTest {
                 3);
         when(matches.findAllByGroupIdAndStatusOrderByFinishedAtDescStartsAtDesc(
                 groupId, MatchStatus.FINISHED)).thenReturn(List.of(match));
-        when(assignments.findAllByMatchIdInAndParticipantTypeOrderByMatchIdAscTeamNumberAscCreatedAtAsc(
-                anyCollection(), any())).thenReturn(List.of(
+        doReturn(List.of(
                         assignment(matchId, aliceId, 1),
                         assignment(matchId, bobId, 2),
-                        assignment(matchId, carolId, 3)));
-        when(scores.findAllByMatchIdInOrderByMatchIdAscSideNumberAsc(anyCollection())).thenReturn(List.of(
+                        assignment(matchId, carolId, 3)))
+                .when(assignments)
+                .findAllByMatchIdInAndParticipantTypeOrderByMatchIdAscTeamNumberAscCreatedAtAsc(
+                        anyCollection(), any());
+        doReturn(List.of(
                 score(matchId, 1, 2),
                 score(matchId, 2, 2),
-                score(matchId, 3, 1)));
+                score(matchId, 3, 1)))
+                .when(scores).findAllByMatchIdInOrderByMatchIdAscSideNumberAsc(anyCollection());
         when(goals.findAllByMatchIdInOrderByMatchIdAscElapsedSecondsAscCreatedAtAsc(anyCollection()))
                 .thenReturn(List.of());
         when(teamImages.findAllByMatchIdInOrderByMatchIdAscTeamNumberAsc(anyCollection()))
@@ -217,19 +226,21 @@ class GroupStatisticsServiceTest {
                 Instant.parse("2026-09-25T22:00:00Z"));
         when(matches.findAllByGroupIdAndStatusOrderByFinishedAtDescStartsAtDesc(
                 groupId, MatchStatus.FINISHED)).thenReturn(List.of(match));
-        when(attendances.findAllByMatchIdInAndStatusOrderByMatchIdAscCreatedAtAsc(
-                anyCollection(), any())).thenReturn(List.of(
+        doReturn(List.of(
                         attendance(matchId, aliceId),
-                        attendance(matchId, bobId)));
-        when(scores.findAllByMatchIdInOrderByMatchIdAscSideNumberAsc(anyCollection())).thenReturn(List.of(
+                        attendance(matchId, bobId)))
+                .when(attendances)
+                .findAllByMatchIdInAndStatusOrderByMatchIdAscCreatedAtAsc(anyCollection(), any());
+        doReturn(List.of(
                 score(matchId, 1, 2),
-                score(matchId, 2, 1)));
+                score(matchId, 2, 1)))
+                .when(scores).findAllByMatchIdInOrderByMatchIdAscSideNumberAsc(anyCollection());
         when(goals.findAllByMatchIdInOrderByMatchIdAscElapsedSecondsAscCreatedAtAsc(anyCollection()))
                 .thenReturn(List.of());
-        when(teamImages.findAllByMatchIdInOrderByMatchIdAscTeamNumberAsc(anyCollection()))
-                .thenReturn(List.of(
+        doReturn(List.of(
                         identity(matchId, 1, "Onze FC"),
-                        identity(matchId, 2, "Adversário")));
+                        identity(matchId, 2, "Adversário")))
+                .when(teamImages).findAllByMatchIdInOrderByMatchIdAscTeamNumberAsc(anyCollection());
 
         var response = service.getGroup(aliceId.toString(), groupId);
 
@@ -256,26 +267,31 @@ class GroupStatisticsServiceTest {
     void keepsHistoricalPlayersMarkedAsFormerMembers() {
         UUID formerId = UUID.randomUUID();
         UUID matchId = UUID.randomUUID();
-        when(matches.findAllByGroupIdAndStatusOrderByFinishedAtDescStartsAtDesc(
-                groupId, MatchStatus.FINISHED)).thenReturn(List.of(match(
+        doReturn(List.of(match(
                         matchId,
                         Instant.parse("2026-09-01T20:00:00Z"),
                         Instant.parse("2026-09-01T22:00:00Z"),
-                        2)));
-        when(assignments.findAllByMatchIdInAndParticipantTypeOrderByMatchIdAscTeamNumberAscCreatedAtAsc(
-                anyCollection(), any())).thenReturn(List.of(assignment(matchId, formerId, 1)));
-        when(scores.findAllByMatchIdInOrderByMatchIdAscSideNumberAsc(anyCollection()))
-                .thenReturn(List.of(score(matchId, 1, 1), score(matchId, 2, 0)));
+                        2)))
+                .when(matches)
+                .findAllByGroupIdAndStatusOrderByFinishedAtDescStartsAtDesc(
+                        groupId, MatchStatus.FINISHED);
+        doReturn(List.of(assignment(matchId, formerId, 1)))
+                .when(assignments)
+                .findAllByMatchIdInAndParticipantTypeOrderByMatchIdAscTeamNumberAscCreatedAtAsc(
+                        anyCollection(), any());
+        doReturn(List.of(score(matchId, 1, 1), score(matchId, 2, 0)))
+                .when(scores).findAllByMatchIdInOrderByMatchIdAscSideNumberAsc(anyCollection());
         when(goals.findAllByMatchIdInOrderByMatchIdAscElapsedSecondsAscCreatedAtAsc(anyCollection()))
                 .thenReturn(List.of());
         when(teamImages.findAllByMatchIdInOrderByMatchIdAscTeamNumberAsc(anyCollection()))
                 .thenReturn(List.of());
-        when(users.findAllById(any())).thenReturn(List.of(
+        doReturn(List.of(
                 user(aliceId, "Alice"),
                 user(bobId, "Bruno"),
                 user(carolId, "Carla"),
                 user(danaId, "Davi"),
-                user(formerId, "Ex-jogador")));
+                user(formerId, "Ex-jogador")))
+                .when(users).findAllById(any());
 
         var response = service.getGroup(aliceId.toString(), groupId);
         var former = statisticsFor(response, formerId);
