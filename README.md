@@ -24,7 +24,7 @@ A base funcional mais recente foi introduzida pelo commit `13cbc1a`; commits pos
 - Docker e Render
 - Expo Push Service para notificações
 
-**Ainda não estão implementados:** OpenAPI/Swagger, WebSocket, jogo ao vivo, lista de espera, formação de times, estatísticas e assinatura Free/Premium.
+**Ainda não estão implementados:** OpenAPI/Swagger, lista de espera, estatísticas avançadas e assinatura Free/Premium. A atualização do jogo ao vivo usa SSE.
 
 ## Linguagem do produto
 
@@ -149,6 +149,8 @@ A base funcional mais recente foi introduzida pelo commit `13cbc1a`; commits pos
 | `POST` | `/api/groups/join` | Entrar pelo código |
 | `GET` | `/join/{code}` | Abrir página pública do convite |
 | `GET` | `/api/groups/{groupId}/members` | Listar membros |
+| `GET` | `/api/groups/{groupId}/statistics` | Consultar resumo, rankings e histórico de jogos encerrados |
+| `GET` | `/api/groups/{groupId}/statistics/players/{userId}` | Consultar estatísticas e histórico de um jogador |
 | `GET` / `PUT` | `/api/groups/{groupId}/members/me/sports-profile` | Consultar ou editar o próprio perfil esportivo |
 | `GET` / `PUT` | `/api/groups/{groupId}/members/{memberId}/sports-profile` | Consultar ou editar perfil como administrador autorizado |
 | `PUT` | `/api/groups/{groupId}/members/{memberId}/promote` | Promover membro |

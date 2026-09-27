@@ -15,6 +15,10 @@ public interface MatchTeamAssignmentRepository extends JpaRepository<MatchTeamAs
     Optional<MatchTeamAssignment> findByIdAndMatchId(UUID id, UUID matchId);
     long countByMatchId(UUID matchId);
 
+    List<MatchTeamAssignment> findAllByMatchIdInAndParticipantTypeOrderByMatchIdAscTeamNumberAscCreatedAtAsc(
+            Collection<UUID> matchIds,
+            TeamParticipantType participantType);
+
     @Modifying(flushAutomatically = true)
     @Query("delete from MatchTeamAssignment assignment where assignment.matchId = :matchId")
     void deleteAllByMatchId(@Param("matchId") UUID matchId);

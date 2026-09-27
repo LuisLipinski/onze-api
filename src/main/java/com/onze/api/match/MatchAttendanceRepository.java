@@ -8,6 +8,9 @@ import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface MatchAttendanceRepository extends JpaRepository<MatchAttendance, UUID> {
+    List<MatchAttendance> findAllByMatchIdInAndStatusOrderByMatchIdAscCreatedAtAsc(
+            Collection<UUID> matchIds,
+            AttendanceStatus status);
 
     List<MatchAttendance> findAllByMatchIdOrderByCreatedAtAsc(UUID matchId);
 

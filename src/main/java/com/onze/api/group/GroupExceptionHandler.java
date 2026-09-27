@@ -17,6 +17,7 @@ import com.onze.api.group.GroupService.PhotoStorageNotConfiguredException;
 import com.onze.api.group.GroupService.PhotoUploadFailedException;
 import com.onze.api.technical.TechnicalRatings.InvalidTechnicalRatingException;
 import com.onze.api.web.ApiErrorResponse;
+import com.onze.api.statistics.GroupStatisticsService.StatisticsPlayerNotFoundException;
 
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
@@ -39,6 +40,14 @@ public class GroupExceptionHandler {
     ResponseEntity<ApiErrorResponse> memberNotFound() {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
                 .body(new ApiErrorResponse("GROUP_MEMBER_NOT_FOUND", "Jogador não encontrado neste grupo."));
+    }
+
+    @ExceptionHandler(StatisticsPlayerNotFoundException.class)
+    ResponseEntity<ApiErrorResponse> statisticsPlayerNotFound() {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(new ApiErrorResponse(
+                        "STATISTICS_PLAYER_NOT_FOUND",
+                        "Este jogador não possui histórico neste grupo."));
     }
 
     @ExceptionHandler(GroupAccessDeniedException.class)
