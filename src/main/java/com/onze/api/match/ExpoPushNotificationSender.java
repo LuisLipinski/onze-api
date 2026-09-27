@@ -13,6 +13,8 @@ import com.onze.api.group.Group;
 import com.onze.api.group.GroupMemberRepository;
 import com.onze.api.group.GroupRepository;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
@@ -21,6 +23,7 @@ import org.springframework.web.client.RestClient;
 public class ExpoPushNotificationSender {
 
     private static final int EXPO_BATCH_SIZE = 100;
+    private static final Logger LOGGER = LoggerFactory.getLogger(ExpoPushNotificationSender.class);
     private static final Locale PORTUGUESE_BRAZIL = Locale.forLanguageTag("pt-BR");
     private static final DateTimeFormatter MATCH_DATE_FORMATTER = DateTimeFormatter.ofPattern(
             "EEE, dd/MM 'às' HH:mm",
@@ -40,6 +43,7 @@ public class ExpoPushNotificationSender {
             MatchAttendanceRepository attendanceRepository,
             MatchCapacityService capacityService,
             PushDeviceRepository pushDeviceRepository,
+            RestClient.Builder restClientBuilder,
             @Value("${notifications.expo.endpoint}") String endpoint,
             @Value("${notifications.expo.enabled:true}") boolean enabled) {
         this.groupRepository = groupRepository;
@@ -47,7 +51,7 @@ public class ExpoPushNotificationSender {
         this.attendanceRepository = attendanceRepository;
         this.capacityService = capacityService;
         this.pushDeviceRepository = pushDeviceRepository;
-        this.restClient = RestClient.builder().baseUrl(endpoint).build();
+        this.restClient = restClientBuilder.baseUrl(endpoint).build();
         this.enabled = enabled;
     }
 
@@ -77,12 +81,23 @@ public class ExpoPushNotificationSender {
         }
 
         NotificationCopy copy = copyFor(match, group, notificationType, recipientUserId);
+        int acceptedDeviceCount = 0;
+        int deactivatedDeviceCount = 0;
         for (int start = 0; start < devices.size(); start += EXPO_BATCH_SIZE) {
             List<PushDevice> batch = devices.subList(
                     start,
                     Math.min(start + EXPO_BATCH_SIZE, devices.size()));
-            sendBatch(batch, match, notificationType, copy);
+            BatchDeliveryResult result = sendBatch(batch, match, notificationType, copy);
+            acceptedDeviceCount += result.acceptedDeviceCount();
+            deactivatedDeviceCount += result.deactivatedDeviceCount();
         }
+        LOGGER.info(
+                "Expo push batch completed: matchId={}, notificationType={}, acceptedDevices={}, "
+                        + "deactivatedDevices={}",
+                match.getId(),
+                notificationType,
+                acceptedDeviceCount,
+                deactivatedDeviceCount);
     }
 
     NotificationCopy copyFor(
@@ -274,7 +289,7 @@ public class ExpoPushNotificationSender {
     }
 
     @SuppressWarnings("unchecked")
-    private void sendBatch(
+    private BatchDeliveryResult sendBatch(
             List<PushDevice> devices,
             FootballMatch match,
             MatchNotificationType notificationType,
@@ -303,11 +318,17 @@ public class ExpoPushNotificationSender {
         if (response == null || !(response.get("data") instanceof List<?> tickets)) {
             throw new IllegalStateException("Expo returned an invalid push ticket response");
         }
+        if (tickets.size() != devices.size()) {
+            throw new IllegalStateException("Expo returned an unexpected number of push tickets");
+        }
 
         String retryableError = null;
+        int acceptedDeviceCount = 0;
+        int deactivatedDeviceCount = 0;
         for (int index = 0; index < tickets.size() && index < devices.size(); index++) {
             Object value = tickets.get(index);
             if (!(value instanceof Map<?, ?> ticket) || !"error".equals(ticket.get("status"))) {
+                acceptedDeviceCount++;
                 continue;
             }
 
@@ -316,7 +337,14 @@ public class ExpoPushNotificationSender {
                     ? String.valueOf(details.get("error"))
                     : "UNKNOWN";
             if ("DeviceNotRegistered".equals(errorCode)) {
-                devices.get(index).deactivate();
+                PushDevice device = devices.get(index);
+                device.deactivate();
+                deactivatedDeviceCount++;
+                LOGGER.info(
+                        "Deactivated rejected Expo push device: matchId={}, userId={}, notificationType={}",
+                        match.getId(),
+                        device.getUserId(),
+                        notificationType);
             } else {
                 retryableError = errorCode + ": " + String.valueOf(ticket.get("message"));
             }
@@ -325,6 +353,7 @@ public class ExpoPushNotificationSender {
         if (retryableError != null) {
             throw new IllegalStateException("Expo push failed: " + retryableError);
         }
+        return new BatchDeliveryResult(acceptedDeviceCount, deactivatedDeviceCount);
     }
 
     private boolean isLiveMatchNotification(MatchNotificationType notificationType) {
@@ -332,5 +361,8 @@ public class ExpoPushNotificationSender {
     }
 
     record NotificationCopy(String title, String body) {
+    }
+
+    private record BatchDeliveryResult(int acceptedDeviceCount, int deactivatedDeviceCount) {
     }
 }
