@@ -3,6 +3,8 @@ package com.onze.api.auth;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -33,9 +35,16 @@ class AuthServiceTest {
     @Mock
     private TokenService tokenService;
 
+    @Mock
+    private LoginProtectionService loginProtectionService;
+
     @Test
     void registersUserWithNormalizedEmailAndEncodedPassword() {
-        AuthService service = new AuthService(userRepository, passwordEncoder, tokenService);
+        AuthService service = new AuthService(
+                userRepository,
+                passwordEncoder,
+                tokenService,
+                loginProtectionService);
         RegisterRequest request = new RegisterRequest(" User@Example.com ", "strongPass1", " Luis ");
 
         when(userRepository.existsByEmailIgnoreCase("user@example.com")).thenReturn(false);
@@ -53,7 +62,11 @@ class AuthServiceTest {
 
     @Test
     void rejectsDuplicatedEmail() {
-        AuthService service = new AuthService(userRepository, passwordEncoder, tokenService);
+        AuthService service = new AuthService(
+                userRepository,
+                passwordEncoder,
+                tokenService,
+                loginProtectionService);
         RegisterRequest request = new RegisterRequest("user@example.com", "strongPass1", "Luis");
 
         when(userRepository.existsByEmailIgnoreCase("user@example.com")).thenReturn(true);
@@ -63,28 +76,57 @@ class AuthServiceTest {
 
     @Test
     void logsInWithValidCredentials() {
-        AuthService service = new AuthService(userRepository, passwordEncoder, tokenService);
+        AuthService service = new AuthService(
+                userRepository,
+                passwordEncoder,
+                tokenService,
+                loginProtectionService);
         User user = new User("user@example.com", "encoded-password", "Luis");
 
-        when(userRepository.findByEmailIgnoreCase("user@example.com")).thenReturn(Optional.of(user));
+        when(userRepository.findByEmailForLogin("user@example.com")).thenReturn(Optional.of(user));
         when(passwordEncoder.matches("strongPass1", "encoded-password")).thenReturn(true);
         when(tokenService.issueToken(user)).thenReturn(new TokenService.IssuedToken("jwt", 7200));
 
         var response = service.login(new LoginRequest("user@example.com", "strongPass1"));
 
         assertEquals("jwt", response.accessToken());
+        verify(loginProtectionService).clear(user);
     }
 
     @Test
     void rejectsInvalidPassword() {
-        AuthService service = new AuthService(userRepository, passwordEncoder, tokenService);
+        AuthService service = new AuthService(
+                userRepository,
+                passwordEncoder,
+                tokenService,
+                loginProtectionService);
         User user = new User("user@example.com", "encoded-password", "Luis");
 
-        when(userRepository.findByEmailIgnoreCase("user@example.com")).thenReturn(Optional.of(user));
+        when(userRepository.findByEmailForLogin("user@example.com")).thenReturn(Optional.of(user));
         when(passwordEncoder.matches("wrong-password", "encoded-password")).thenReturn(false);
 
         assertThrows(
                 InvalidCredentialsException.class,
                 () -> service.login(new LoginRequest("user@example.com", "wrong-password")));
+        verify(loginProtectionService).registerFailedAttempt(user);
+    }
+
+    @Test
+    void performsPasswordHashWorkForUnknownEmail() {
+        AuthService service = new AuthService(
+                userRepository,
+                passwordEncoder,
+                tokenService,
+                loginProtectionService);
+
+        when(userRepository.findByEmailForLogin("missing@example.com")).thenReturn(Optional.empty());
+
+        assertThrows(
+                InvalidCredentialsException.class,
+                () -> service.login(new LoginRequest(" Missing@Example.com ", "wrong-password")));
+
+        verify(passwordEncoder).matches(
+                eq("wrong-password"),
+                argThat(hash -> hash != null && hash.startsWith("$2a$10$")));
     }
 }

@@ -60,6 +60,4 @@ public final class AuthModels {
     public record MessageResponse(String message) {
     }
 
-    public record ErrorResponse(String code, String message) {
-    }
 }

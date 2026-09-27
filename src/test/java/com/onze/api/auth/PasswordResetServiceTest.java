@@ -41,6 +41,9 @@ class PasswordResetServiceTest {
     private PasswordResetEmailSender emailSender;
 
     @Mock
+    private LoginProtectionService loginProtectionService;
+
+    @Mock
     private User user;
 
     private PasswordResetService service;
@@ -52,7 +55,8 @@ class PasswordResetServiceTest {
                 userRepository,
                 resetCodeRepository,
                 passwordEncoder,
-                emailSender);
+                emailSender,
+                loginProtectionService);
         userId = UUID.randomUUID();
     }
 
@@ -115,7 +119,7 @@ class PasswordResetServiceTest {
                 now.plusSeconds(900),
                 now.minusSeconds(60));
 
-        when(userRepository.findByEmailIgnoreCase("user@example.com")).thenReturn(Optional.of(user));
+        when(userRepository.findByEmailForLogin("user@example.com")).thenReturn(Optional.of(user));
         when(user.getId()).thenReturn(userId);
         when(resetCodeRepository.findTopByUserIdAndConsumedAtIsNullOrderByCreatedAtDesc(userId))
                 .thenReturn(Optional.of(reset));
@@ -129,6 +133,7 @@ class PasswordResetServiceTest {
                 "NewStrongPass123!"));
 
         verify(user).changePasswordHash("new-password-hash");
+        verify(loginProtectionService).clear(user);
         verify(userRepository).save(user);
         assertNotNull(reset.getConsumedAt());
     }
@@ -146,7 +151,7 @@ class PasswordResetServiceTest {
         reset.registerFailedAttempt(now.minusSeconds(2));
         reset.registerFailedAttempt(now.minusSeconds(1));
 
-        when(userRepository.findByEmailIgnoreCase("user@example.com")).thenReturn(Optional.of(user));
+        when(userRepository.findByEmailForLogin("user@example.com")).thenReturn(Optional.of(user));
         when(user.getId()).thenReturn(userId);
         when(resetCodeRepository.findTopByUserIdAndConsumedAtIsNullOrderByCreatedAtDesc(userId))
                 .thenReturn(Optional.of(reset));
@@ -173,7 +178,7 @@ class PasswordResetServiceTest {
                 now.minusSeconds(1),
                 now.minusSeconds(901));
 
-        when(userRepository.findByEmailIgnoreCase("user@example.com")).thenReturn(Optional.of(user));
+        when(userRepository.findByEmailForLogin("user@example.com")).thenReturn(Optional.of(user));
         when(user.getId()).thenReturn(userId);
         when(resetCodeRepository.findTopByUserIdAndConsumedAtIsNullOrderByCreatedAtDesc(userId))
                 .thenReturn(Optional.of(reset));

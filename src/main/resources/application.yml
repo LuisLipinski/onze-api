@@ -34,6 +34,11 @@ security:
     issuer: ${JWT_ISSUER:onze-api}
     secret: ${JWT_SECRET}
     access-token-ttl: ${JWT_ACCESS_TOKEN_TTL:PT2H}
+  login:
+    max-attempts: ${LOGIN_MAX_ATTEMPTS:5}
+    observation-window: ${LOGIN_ATTEMPT_WINDOW:PT15M}
+    initial-block-duration: ${LOGIN_INITIAL_BLOCK_DURATION:PT1M}
+    max-block-duration: ${LOGIN_MAX_BLOCK_DURATION:PT15M}
 
 email:
   resend:

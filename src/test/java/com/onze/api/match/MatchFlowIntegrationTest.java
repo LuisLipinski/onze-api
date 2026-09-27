@@ -104,6 +104,22 @@ class MatchFlowIntegrationTest {
     }
 
     @Test
+    void shouldReturnStandardValidationErrorForInvalidMatchRequest() throws Exception {
+        AuthResponse creator = register("match-validation@example.com", "Principal");
+        GroupResponse group = createGroup(creator, "Pelada validada");
+        LocalDate date = LocalDate.now(SAO_PAULO).plusDays(3);
+
+        mockMvc.perform(post("/api/groups/{groupId}/matches", group.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(creator))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(matchBody(date, "NONE", 10)
+                                .replace("\"venue\": \"Arena Onze\"", "\"venue\": \"   \"")))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
+                .andExpect(jsonPath("$.message").value("Verifique os dados informados."));
+    }
+
+    @Test
     void shouldCreateOneOffMatchLetMembersConfirmAndEnforcePlayerLimit() throws Exception {
         AuthResponse creator = register("match-primary@example.com", "Principal");
         AuthResponse firstMember = register("match-first@example.com", "Primeiro");

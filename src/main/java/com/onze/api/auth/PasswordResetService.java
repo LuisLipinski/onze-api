@@ -27,17 +27,20 @@ public class PasswordResetService {
     private final PasswordResetCodeRepository resetCodeRepository;
     private final PasswordEncoder passwordEncoder;
     private final PasswordResetEmailSender emailSender;
+    private final LoginProtectionService loginProtectionService;
     private final SecureRandom secureRandom = new SecureRandom();
 
     public PasswordResetService(
             UserRepository userRepository,
             PasswordResetCodeRepository resetCodeRepository,
             PasswordEncoder passwordEncoder,
-            PasswordResetEmailSender emailSender) {
+            PasswordResetEmailSender emailSender,
+            LoginProtectionService loginProtectionService) {
         this.userRepository = userRepository;
         this.resetCodeRepository = resetCodeRepository;
         this.passwordEncoder = passwordEncoder;
         this.emailSender = emailSender;
+        this.loginProtectionService = loginProtectionService;
     }
 
     @Transactional
@@ -75,7 +78,7 @@ public class PasswordResetService {
     @Transactional(noRollbackFor = InvalidPasswordResetCodeException.class)
     public void confirmReset(PasswordResetConfirmRequest request) {
         String email = normalizeEmail(request.email());
-        User user = userRepository.findByEmailIgnoreCase(email)
+        User user = userRepository.findByEmailForLogin(email)
                 .orElseThrow(InvalidPasswordResetCodeException::new);
 
         PasswordResetCode resetCode = resetCodeRepository
@@ -96,6 +99,7 @@ public class PasswordResetService {
         }
 
         user.changePasswordHash(passwordEncoder.encode(request.newPassword()));
+        loginProtectionService.clear(user);
         userRepository.save(user);
         resetCode.consume(now);
         resetCodeRepository.save(resetCode);
