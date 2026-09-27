@@ -146,15 +146,15 @@ public class ExpoPushNotificationSender {
                             + " jogadores confirmados.");
             case MATCH_CANCELLED -> new NotificationCopy(
                     "Jogo cancelado ⚠️",
-                    group.getName() + ": a partida de " + formattedDate + " foi cancelada.");
+                    group.getName() + ": o jogo de " + formattedDate + " foi cancelado.");
             case SERIES_CANCELLED -> new NotificationCopy(
                     "Jogos semanais encerrados ⚠️",
                     "Os próximos jogos semanais de " + group.getName() + " foram encerrados.");
             case LIVE_MATCH_STARTED -> new NotificationCopy(
-                    "Partida iniciada ⚽",
-                    group.getName() + " começou a partida. Toque para acompanhar ao vivo.");
+                    "Jogo iniciado ⚽",
+                    group.getName() + " começou o jogo. Toque para acompanhar ao vivo.");
             case LIVE_MATCH_GOAL -> new NotificationCopy(
-                    "Gol na partida! ⚽",
+                    "Gol no jogo! ⚽",
                     "O placar de " + group.getName() + " foi atualizado. Toque para acompanhar ao vivo.");
             case LIVE_MATCH_YELLOW_CARD -> new NotificationCopy(
                     "Cartão amarelo 🟨",
@@ -166,8 +166,8 @@ public class ExpoPushNotificationSender {
                     "Cartão vermelho 🟥",
                     "Houve uma expulsão em " + group.getName() + ". Toque para acompanhar ao vivo.");
             case LIVE_MATCH_FINISHED -> new NotificationCopy(
-                    "Partida encerrada 🏁",
-                    "A partida de " + group.getName() + " terminou. Toque para conferir o resultado.");
+                    "Jogo encerrado 🏁",
+                    "O jogo de " + group.getName() + " terminou. Toque para conferir o resultado.");
         };
     }
 
@@ -195,7 +195,7 @@ public class ExpoPushNotificationSender {
                     "O reembolso do jogo de " + group.getName() + " foi registrado.");
             case CREDITED -> new NotificationCopy(
                     "Crédito registrado ✅",
-                    "Seu saldo será aplicado automaticamente à próxima partida de " + group.getName() + ".");
+                    "Seu saldo será aplicado automaticamente ao próximo jogo de " + group.getName() + ".");
             case RETAINED -> new NotificationCopy(
                     "Pagamento mantido",
                     "O administrador registrou que o pagamento do jogo de " + group.getName()
@@ -227,8 +227,8 @@ public class ExpoPushNotificationSender {
         return new NotificationCopy(
                 "Crédito reservado para o próximo jogo 💳",
                 creditAmount == null
-                        ? "Seu crédito foi reservado para a próxima partida de " + group.getName() + "."
-                        : "Seu crédito foi reservado para a partida de " + group.getName()
+                        ? "Seu crédito foi reservado para o próximo jogo de " + group.getName() + "."
+                        : "Seu crédito foi reservado para o jogo de " + group.getName()
                                 + " no valor de " + creditAmount + ". Confirme sua presença para utilizá-lo.");
     }
 

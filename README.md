@@ -8,7 +8,7 @@ Backend do **Onze — Organizador de Pelada**.
 
 | Branch | Estado |
 |---|---|
-| `development` | Integração atual do backend e fonte do deploy no Render. Contém autenticação, grupos, partidas, pagamentos, créditos, prazos, notificações e reposições. |
+| `development` | Integração atual do backend e fonte do deploy no Render. Contém autenticação, grupos, jogos, pagamentos, créditos, prazos, notificações e reposições. |
 | `master` | Branch de release estável; recebe somente versões validadas em `development` e autorizadas explicitamente. |
 
 A base funcional mais recente foi introduzida pelo commit `13cbc1a`; commits posteriores à base podem conter somente documentação. A `master` não deve receber promoção sem autorização explícita.
@@ -25,6 +25,11 @@ A base funcional mais recente foi introduzida pelo commit `13cbc1a`; commits pos
 - Expo Push Service para notificações
 
 **Ainda não estão implementados:** OpenAPI/Swagger, WebSocket, jogo ao vivo, lista de espera, formação de times, estatísticas e assinatura Free/Premium.
+
+## Linguagem do produto
+
+- Respostas, erros e notificações destinadas ao usuário usam **jogo** ou **jogos**, em alinhamento com o aplicativo.
+- Identificadores técnicos existentes, como `Match`, rotas `/matches` e nomes de banco, permanecem inalterados.
 
 ## Conta e autenticação
 
@@ -54,7 +59,7 @@ A base funcional mais recente foi introduzida pelo commit `13cbc1a`; commits pos
 - Cada grupo possui exatamente um Administrador Principal.
 - Um `ADMIN` novo começa sem permissões automáticas.
 - O Principal seleciona individualmente as permissões do administrador.
-- Promoção exige `PROMOTE_MEMBERS`; convites exigem `ADD_MEMBERS`; remoção exige `REMOVE_MEMBERS`; edição exige `EDIT_GROUP`; partidas e financeiro administrativo exigem `SCHEDULE_GAMES`; perfis esportivos de terceiros exigem `EDIT_PLAYER_PROFILES`.
+- Promoção exige `PROMOTE_MEMBERS`; convites exigem `ADD_MEMBERS`; remoção exige `REMOVE_MEMBERS`; edição exige `EDIT_GROUP`; jogos e financeiro administrativo exigem `SCHEDULE_GAMES`; perfis esportivos de terceiros exigem `EDIT_PLAYER_PROFILES`.
 - Somente o Principal pode editar permissões, rebaixar administradores e transferir o cargo principal.
 - O substituto do Principal precisa já ser `ADMIN`.
 - Após a transferência, o antigo Principal permanece como `ADMIN` **sem permissões automáticas**.
@@ -69,26 +74,26 @@ A base funcional mais recente foi introduzida pelo commit `13cbc1a`; commits pos
 - O jogador edita as próprias posições, opção de goleiro e pé dominante; o nível técnico de 1 a 5 é definido pelo Principal ou por um administrador com `EDIT_PLAYER_PROFILES`.
 - Perfis antigos começam sem dados inferidos. Um perfil é considerado completo quando possui ao menos uma posição de linha ou goleiro e um pé dominante.
 
-## Partidas e presença
+## Jogos e presença
 
-- Partida avulsa ou série semanal com ocorrências independentes.
+- Jogo avulso ou série semanal com ocorrências independentes.
 - Data, horário, fuso IANA, local, limite de 2 a 100 jogadores e observações.
-- Estados de partida atuais: `SCHEDULED` e `CANCELLED`.
+- Estados de jogo atuais: `SCHEDULED` e `CANCELLED`.
 - Estados de presença: `PENDING`, `GOING` e `NOT_GOING`.
 - No aplicativo o jogador escolhe apenas **Vou jogar** ou **Não vou**; a opção **Talvez** não existe atualmente.
 - Somente `GOING` ocupa vaga.
-- Ao completar as vagas, o backend gera o evento de **Time fechado**. Se a partida deixar de estar completa e voltar a completar, um novo evento pode ser gerado.
+- Ao completar as vagas, o backend gera o evento de **Time fechado**. Se o jogo deixar de estar completo e voltar a completar, um novo evento pode ser gerado.
 - Na série semanal, a presença da próxima rodada é aberta às 09:00 do dia seguinte à ocorrência anterior.
 - É possível cancelar uma ocorrência ou encerrar toda a série antes do início.
 - Lista de espera e promoção automática continuam planejadas.
 
 ## Prazos
 
-- Toda entidade de partida armazena prazo de inscrição; a tela mobile exige o preenchimento explícito.
+- Toda entidade de jogo armazena prazo de inscrição; a tela mobile exige o preenchimento explícito.
 - Como proteção de compatibilidade, a API usa o início do jogo como prazo quando data e hora não são enviadas.
-- O prazo informado precisa estar no futuro e antes do início da partida.
+- O prazo informado precisa estar no futuro e antes do início do jogo.
 - Depois do prazo de inscrição, o membro não entra por conta própria.
-- Em partida cobrada, a entidade também armazena prazo de pagamento; o prazo não pode ser anterior ao de inscrição nem alcançar o início do jogo.
+- Em jogo cobrado, a entidade também armazena prazo de pagamento; o prazo não pode ser anterior ao de inscrição nem alcançar o início do jogo.
 - Depois do prazo de pagamento, somente presença `GOING` com pagamento `PENDING` é removida automaticamente.
 - Pagamento `REPORTED` ou `PAID` não é removido automaticamente pelo prazo.
 - Uma reposição adicionada pelo administrador após o prazo pode informar pagamento normalmente.
@@ -99,13 +104,13 @@ A base funcional mais recente foi introduzida pelo commit `13cbc1a`; commits pos
 - O jogador informa **Já paguei** e o administrador com `SCHEDULE_GAMES` confirma.
 - Estados de pagamento: `PENDING`, `REPORTED`, `PAID` e `CANCELLED`.
 - Acertos: `REVIEW_REQUIRED`, `PENDING`, `NOT_RECEIVED`, `REFUNDED`, `CREDITED` e `RETAINED`.
-- Crédito disponível pode ser reservado e aplicado na próxima partida elegível do grupo.
+- Crédito disponível pode ser reservado e aplicado no próximo jogo elegível do grupo.
 - Acertos podem ser resolvidos individualmente ou em lote.
 - Se um jogador com pagamento informado ou confirmado sair, a vaga é liberada e o acerto fica bloqueado até ser preenchida.
 - Enquanto aguarda reposição, `REFUNDED`, `CREDITED` e `RETAINED` ficam bloqueados; `NOT_RECEIVED` continua permitido quando o pagamento apenas foi informado.
 - O jogador que saiu não retorna sozinho. Um administrador autorizado pode recolocá-lo ou selecionar outro membro.
 - Uma entrada elegível antes do prazo também pode preencher automaticamente a vaga mais antiga aguardando reposição.
-- Cancelar a partida remove a exigência de reposição para resolver os acertos.
+- Cancelar o jogo remove a exigência de reposição para resolver os acertos.
 - Jogadores veem somente seus próprios dados financeiros; Principal e `ADMIN` com `SCHEDULE_GAMES` veem e gerenciam os dados de todos.
 
 ## Notificações
@@ -113,7 +118,7 @@ A base funcional mais recente foi introduzida pelo commit `13cbc1a`; commits pos
 - Cadastro e remoção de Expo Push Token por dispositivo.
 - Jobs persistidos, deduplicados e processados em segundo plano.
 - Eventos: jogo criado, presença liberada, lembretes, remoção por prazo, pagamento informado/confirmado, acerto, crédito, reposição, jogo no dia seguinte, time fechado e cancelamento.
-- Lembretes são avaliados diariamente a partir das 09:00 no fuso da partida.
+- Lembretes são avaliados diariamente a partir das 09:00 no fuso do jogo.
 - Jobs inválidos após mudança de presença, pagamento ou estado são ignorados.
 - Recibos do Expo/FCM e invalidação automática de tokens rejeitados ainda não estão implementados.
 
@@ -150,11 +155,11 @@ A base funcional mais recente foi introduzida pelo commit `13cbc1a`; commits pos
 | `PUT` | `/api/groups/{groupId}/primary-admin` | Transferir cargo principal |
 | `DELETE` | `/api/groups/{groupId}/members/me` | Sair do grupo |
 
-### Partidas, financeiro e dispositivos
+### Jogos, financeiro e dispositivos
 
 | Método | Endpoint | Finalidade |
 |---|---|---|
-| `POST` | `/api/groups/{groupId}/matches` | Criar partida ou série |
+| `POST` | `/api/groups/{groupId}/matches` | Criar jogo ou série |
 | `GET` | `/api/matches/upcoming` | Listar próximos jogos do usuário |
 | `GET` | `/api/groups/{groupId}/matches` | Listar jogos do grupo |
 | `GET` | `/api/matches/{matchId}` | Consultar detalhe e permissões efetivas |
@@ -175,7 +180,7 @@ A base funcional mais recente foi introduzida pelo commit `13cbc1a`; commits pos
 |---|---|
 | V1–V2 | Usuários e recuperação de senha |
 | V3–V6 | Grupos, convites, Administrador Principal e permissões |
-| V7 | Partidas e dispositivos de push |
+| V7 | Jogos e dispositivos de push |
 | V8 | Pagamentos e eventos de notificação |
 | V9 | Acertos após saída ou cancelamento |
 | V10 | Carteira de créditos |

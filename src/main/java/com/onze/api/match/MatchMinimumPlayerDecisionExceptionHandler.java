@@ -17,7 +17,7 @@ public class MatchMinimumPlayerDecisionExceptionHandler {
     public ResponseEntity<ErrorResponse> decisionNotRequired() {
         return ResponseEntity.status(HttpStatus.CONFLICT).body(new ErrorResponse(
                 "MINIMUM_PLAYER_DECISION_NOT_REQUIRED",
-                "Esta partida não está aguardando uma decisão por falta do mínimo de jogadores."));
+                "Este jogo não está aguardando uma decisão por falta do mínimo de jogadores."));
     }
 
     @ExceptionHandler(PaymentDeadlineReviewRequiredException.class)
@@ -31,6 +31,6 @@ public class MatchMinimumPlayerDecisionExceptionHandler {
     public ResponseEntity<ErrorResponse> invalidDeadlineExtension() {
         return ResponseEntity.badRequest().body(new ErrorResponse(
                 "INVALID_SIGNUP_DEADLINE_EXTENSION",
-                "Informe novos prazos válidos, futuros e anteriores ao início da partida."));
+                "Informe novos prazos válidos, futuros e anteriores ao início do jogo."));
     }
 }

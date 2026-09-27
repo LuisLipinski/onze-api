@@ -63,13 +63,13 @@ public class MatchExceptionHandler {
     @ExceptionHandler(InvalidLiveMatchTransitionException.class)
     ResponseEntity<ErrorResponse> invalidLiveTransition() {
         return ResponseEntity.status(HttpStatus.CONFLICT)
-                .body(new ErrorResponse("INVALID_LIVE_MATCH_TRANSITION", "A partida não está no estado correto para esta ação."));
+                .body(new ErrorResponse("INVALID_LIVE_MATCH_TRANSITION", "O jogo não está no estado correto para esta ação."));
     }
 
     @ExceptionHandler(InvalidLiveMatchScoreException.class)
     ResponseEntity<ErrorResponse> invalidLiveScore() {
         return ResponseEntity.badRequest()
-                .body(new ErrorResponse("INVALID_LIVE_MATCH_SCORE", "O placar informado não é válido para esta partida."));
+                .body(new ErrorResponse("INVALID_LIVE_MATCH_SCORE", "O placar informado não é válido para este jogo."));
     }
 
     @ExceptionHandler(InvalidGoalEventException.class)
@@ -89,7 +89,7 @@ public class MatchExceptionHandler {
         return ResponseEntity.badRequest()
                 .body(new ErrorResponse(
                         "INVALID_TEAM_IMAGE",
-                        "Escolha uma imagem válida de até 5 MB para um time desta partida."));
+                        "Escolha uma imagem válida de até 5 MB para um time deste jogo."));
     }
 
     @ExceptionHandler(InvalidTeamIdentityException.class)
@@ -97,7 +97,7 @@ public class MatchExceptionHandler {
         return ResponseEntity.badRequest()
                 .body(new ErrorResponse(
                         "INVALID_TEAM_IDENTITY",
-                        "Informe um nome válido para cada time desta partida."));
+                        "Informe um nome válido para cada time deste jogo."));
     }
 
     @ExceptionHandler(TeamImageLockedException.class)
@@ -105,7 +105,7 @@ public class MatchExceptionHandler {
         return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(new ErrorResponse(
                         "TEAM_IMAGE_LOCKED",
-                        "As imagens dos times não podem ser alteradas após o encerramento da partida."));
+                        "As imagens dos times não podem ser alteradas após o encerramento do jogo."));
     }
 
     @ExceptionHandler(TeamImageStorageNotConfiguredException.class)
@@ -171,7 +171,7 @@ public class MatchExceptionHandler {
         return ResponseEntity.badRequest()
                 .body(new ErrorResponse(
                         "INVALID_PAYMENT_CONFIGURATION",
-                        "Informe um valor e uma chave PIX válidos para esta partida."));
+                        "Informe um valor e uma chave PIX válidos para este jogo."));
     }
 
     @ExceptionHandler(InvalidRentalGoalkeeperNameException.class)
@@ -225,7 +225,7 @@ public class MatchExceptionHandler {
     @ExceptionHandler(GuestNotFoundException.class)
     ResponseEntity<ErrorResponse> guestNotFound() {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                .body(new ErrorResponse("GUEST_NOT_FOUND", "Convidado não encontrado nesta partida."));
+                .body(new ErrorResponse("GUEST_NOT_FOUND", "Convidado não encontrado neste jogo."));
     }
 
     @ExceptionHandler(InternalMatchRequiredException.class)
@@ -233,7 +233,7 @@ public class MatchExceptionHandler {
         return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(new ErrorResponse(
                         "INTERNAL_MATCH_REQUIRED",
-                        "A formação automática de times está disponível para partidas entre membros."));
+                        "A formação automática de times está disponível para jogos entre membros."));
     }
 
     @ExceptionHandler(MinimumPlayersNotReachedException.class)
@@ -259,7 +259,7 @@ public class MatchExceptionHandler {
         return ResponseEntity.badRequest()
                 .body(new ErrorResponse(
                         "INVALID_TEAM_ASSIGNMENT",
-                        "Informe um time e uma função válidos para a modalidade da partida."));
+                        "Informe um time e uma função válidos para a modalidade do jogo."));
     }
 
     @ExceptionHandler(TeamAssignmentNotFoundException.class)
@@ -267,7 +267,7 @@ public class MatchExceptionHandler {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
                 .body(new ErrorResponse(
                         "TEAM_ASSIGNMENT_NOT_FOUND",
-                        "Escalação não encontrada nesta partida."));
+                        "Escalação não encontrada neste jogo."));
     }
 
     @ExceptionHandler(IneligibleGoalkeeperException.class)
@@ -323,7 +323,7 @@ public class MatchExceptionHandler {
         return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(new ErrorResponse(
                         "REPLACEMENT_PLAYER_UNAVAILABLE",
-                        "Escolha um membro que ainda não esteja confirmado nem aguardando outro acerto nesta partida."));
+                        "Escolha um membro que ainda não esteja confirmado nem aguardando outro acerto neste jogo."));
     }
 
     @ExceptionHandler(ReplacementRequiredForSettlementException.class)
@@ -357,7 +357,7 @@ public class MatchExceptionHandler {
         return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(new ErrorResponse(
                         "GOALKEEPER_REQUIRES_ATTENDANCE",
-                        "Somente um jogador confirmado pode ser definido como goleiro desta partida."));
+                        "Somente um jogador confirmado pode ser definido como goleiro deste jogo."));
     }
 
     @ExceptionHandler(GoalkeeperCandidateRequiredException.class)
@@ -373,7 +373,7 @@ public class MatchExceptionHandler {
         return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(new ErrorResponse(
                         "PRIMARY_GOALKEEPER_CANNOT_BE_UNASSIGNED",
-                        "Um jogador confirmado com goleiro como posição principal permanece goleiro nesta partida."));
+                        "Um jogador confirmado com goleiro como posição principal permanece goleiro neste jogo."));
     }
 
     @ExceptionHandler(GoalkeeperPaymentExemptException.class)
@@ -381,7 +381,7 @@ public class MatchExceptionHandler {
         return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(new ErrorResponse(
                         "GOALKEEPER_PAYMENT_EXEMPT",
-                        "Este goleiro está isento do pagamento nesta partida."));
+                        "Este goleiro está isento do pagamento neste jogo."));
     }
 
     @ExceptionHandler(GoalkeeperPaymentAlreadyRecordedException.class)
@@ -397,7 +397,7 @@ public class MatchExceptionHandler {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
                 .body(new ErrorResponse(
                         "RENTAL_GOALKEEPER_NOT_FOUND",
-                        "Goleiro de aluguel não encontrado nesta partida."));
+                        "Goleiro de aluguel não encontrado neste jogo."));
     }
 
     @ExceptionHandler(PaymentNotRequiredException.class)
@@ -405,7 +405,7 @@ public class MatchExceptionHandler {
         return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(new ErrorResponse(
                         "PAYMENT_NOT_REQUIRED",
-                        "Esta partida não possui cobrança configurada."));
+                        "Este jogo não possui cobrança configurada."));
     }
 
     @ExceptionHandler(PaymentRequiresAttendanceException.class)
