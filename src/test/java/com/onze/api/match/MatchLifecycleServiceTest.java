@@ -25,20 +25,20 @@ class MatchLifecycleServiceTest {
         Instant now = Instant.parse("2026-09-01T12:00:00Z");
         Clock clock = Clock.fixed(now, ZoneOffset.UTC);
         FootballMatchRepository matchRepository = mock(FootballMatchRepository.class);
-        MatchSeriesRepository seriesRepository = mock(MatchSeriesRepository.class);
         MatchAttendanceRepository attendanceRepository = mock(MatchAttendanceRepository.class);
         GroupMemberRepository groupMemberRepository = mock(GroupMemberRepository.class);
         MatchNotificationQueue notificationQueue = mock(MatchNotificationQueue.class);
         PlayerCreditService playerCreditService = mock(PlayerCreditService.class);
         MatchGoalkeeperService goalkeeperService = mock(MatchGoalkeeperService.class);
+        WeeklyMatchWindowService weeklyMatchWindowService = mock(WeeklyMatchWindowService.class);
         MatchLifecycleService service = new MatchLifecycleService(
                 matchRepository,
-                seriesRepository,
                 attendanceRepository,
                 groupMemberRepository,
                 notificationQueue,
                 playerCreditService,
                 goalkeeperService,
+                weeklyMatchWindowService,
                 clock);
 
         UUID matchId = UUID.randomUUID();
@@ -93,20 +93,20 @@ class MatchLifecycleServiceTest {
         Instant now = Instant.parse("2026-09-01T12:00:00Z");
         Clock clock = Clock.fixed(now, ZoneOffset.UTC);
         FootballMatchRepository matchRepository = mock(FootballMatchRepository.class);
-        MatchSeriesRepository seriesRepository = mock(MatchSeriesRepository.class);
         MatchAttendanceRepository attendanceRepository = mock(MatchAttendanceRepository.class);
         GroupMemberRepository groupMemberRepository = mock(GroupMemberRepository.class);
         MatchNotificationQueue notificationQueue = mock(MatchNotificationQueue.class);
         PlayerCreditService playerCreditService = mock(PlayerCreditService.class);
         MatchGoalkeeperService goalkeeperService = mock(MatchGoalkeeperService.class);
+        WeeklyMatchWindowService weeklyMatchWindowService = mock(WeeklyMatchWindowService.class);
         MatchLifecycleService service = new MatchLifecycleService(
                 matchRepository,
-                seriesRepository,
                 attendanceRepository,
                 groupMemberRepository,
                 notificationQueue,
                 playerCreditService,
                 goalkeeperService,
+                weeklyMatchWindowService,
                 clock);
 
         UUID matchId = UUID.randomUUID();
@@ -151,20 +151,20 @@ class MatchLifecycleServiceTest {
         Instant now = Instant.parse("2026-09-01T12:00:00Z");
         Clock clock = Clock.fixed(now, ZoneOffset.UTC);
         FootballMatchRepository matchRepository = mock(FootballMatchRepository.class);
-        MatchSeriesRepository seriesRepository = mock(MatchSeriesRepository.class);
         MatchAttendanceRepository attendanceRepository = mock(MatchAttendanceRepository.class);
         GroupMemberRepository groupMemberRepository = mock(GroupMemberRepository.class);
         MatchNotificationQueue notificationQueue = mock(MatchNotificationQueue.class);
         PlayerCreditService playerCreditService = mock(PlayerCreditService.class);
         MatchGoalkeeperService goalkeeperService = mock(MatchGoalkeeperService.class);
+        WeeklyMatchWindowService weeklyMatchWindowService = mock(WeeklyMatchWindowService.class);
         MatchLifecycleService service = new MatchLifecycleService(
                 matchRepository,
-                seriesRepository,
                 attendanceRepository,
                 groupMemberRepository,
                 notificationQueue,
                 playerCreditService,
                 goalkeeperService,
+                weeklyMatchWindowService,
                 clock);
 
         UUID matchId = UUID.randomUUID();

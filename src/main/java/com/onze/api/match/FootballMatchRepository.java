@@ -56,6 +56,13 @@ public interface FootballMatchRepository extends JpaRepository<FootballMatch, UU
 
     Optional<FootballMatch> findFirstBySeriesIdOrderByOccurrenceNumberDesc(UUID seriesId);
 
+    long countBySeriesIdAndStatusAndStartsAtAfter(
+            UUID seriesId,
+            MatchStatus status,
+            Instant startsAt);
+
+    long countBySeriesIdAndStatus(UUID seriesId, MatchStatus status);
+
     List<FootballMatch> findAllBySeriesIdAndStatusAndStartsAtAfter(
             UUID seriesId,
             MatchStatus status,

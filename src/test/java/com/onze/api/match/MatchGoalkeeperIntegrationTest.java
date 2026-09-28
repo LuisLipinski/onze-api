@@ -125,7 +125,7 @@ class MatchGoalkeeperIntegrationTest {
         MatchResponse[] matches = listGroupMatches(creator, group.id());
         assertThat(matches)
                 .filteredOn(match -> match.recurrence() == MatchRecurrence.WEEKLY)
-                .hasSize(2)
+                .hasSize(4)
                 .allMatch(match -> !match.goalkeeperPays());
     }
 
@@ -498,7 +498,7 @@ class MatchGoalkeeperIntegrationTest {
                 .filter(match -> weekly.seriesId().equals(match.seriesId()))
                 .toList();
         assertThat(weeklyMatches)
-                .hasSize(2)
+                .hasSize(4)
                 .allMatch(match -> match.matchType() == MatchType.INTERNAL)
                 .allMatch(match -> Integer.valueOf(3).equals(match.teamCount()))
                 .allMatch(match -> match.requiredGoalkeepers() == 4);

@@ -232,7 +232,7 @@ class MatchFlowIntegrationTest {
                 MatchResponse.class);
 
         MatchResponse[] initialMatches = listGroupMatches(admin, group.id());
-        assertThat(initialMatches).hasSize(2);
+        assertThat(initialMatches).hasSize(4);
         MatchResponse second = initialMatches[1];
         assertThat(second.attendanceOpen()).isFalse();
         assertThat(second.attendanceOpensAt().atZone(SAO_PAULO).toLocalTime().getHour()).isEqualTo(9);
@@ -251,14 +251,16 @@ class MatchFlowIntegrationTest {
                 .andExpect(jsonPath("$.attendanceOpen").value(true));
 
         MatchResponse[] afterOpening = listGroupMatches(admin, group.id());
-        assertThat(afterOpening).hasSize(3);
-        assertThat(matchRepository.count()).isEqualTo(3);
+        assertThat(afterOpening).hasSize(4);
+        assertThat(matchRepository.count()).isEqualTo(4);
         assertThat(notificationJobRepository.count()).isEqualTo(2);
 
         MatchResponse third = afterOpening[2];
         mockMvc.perform(delete("/api/matches/{matchId}", second.id())
                         .header(HttpHeaders.AUTHORIZATION, bearer(admin)))
                 .andExpect(status().isNoContent());
+        assertThat(listGroupMatches(admin, group.id())).hasSize(4);
+        assertThat(matchRepository.count()).isEqualTo(5);
         assertThat(notificationJobRepository.findAll())
                 .extracting(MatchNotificationJob::getNotificationType)
                 .contains(MatchNotificationType.MATCH_CANCELLED);
@@ -278,6 +280,65 @@ class MatchFlowIntegrationTest {
         assertThat(notificationJobRepository.findAll())
                 .extracting(MatchNotificationJob::getNotificationType)
                 .contains(MatchNotificationType.SERIES_CANCELLED);
+    }
+
+    @Test
+    void shouldKeepFourWeeklyMatchesOnHomeAndGroupAfterFinishingTheNearestOne() throws Exception {
+        AuthResponse creator = register("weekly-window@example.com", "Principal Janela Semanal");
+        GroupResponse group = createGroup(creator, "Pelada com quatro jogos");
+        LocalDate date = LocalDate.now(SAO_PAULO).plusDays(4);
+
+        var createResult = mockMvc.perform(post("/api/groups/{groupId}/matches", group.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(creator))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(matchBody(date, "WEEKLY", 18)))
+                .andExpect(status().isCreated())
+                .andReturn();
+        MatchResponse first = jsonMapper.readValue(
+                createResult.getResponse().getContentAsString(),
+                MatchResponse.class);
+
+        MatchResponse[] initialGroupMatches = listGroupMatches(creator, group.id());
+        MatchResponse[] initialHomeMatches = listUpcomingMatches(creator);
+        assertThat(initialGroupMatches).hasSize(4);
+        assertThat(initialHomeMatches).hasSize(4);
+        assertThat(initialHomeMatches)
+                .extracting(MatchResponse::id)
+                .containsExactlyElementsOf(
+                        java.util.Arrays.stream(initialGroupMatches).map(MatchResponse::id).toList());
+        assertThat(matchRepository.count()).isEqualTo(4);
+
+        mockMvc.perform(put("/api/matches/{matchId}/live/start", first.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(creator)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("IN_PROGRESS"));
+
+        MatchResponse[] whileInProgress = listUpcomingMatches(creator);
+        assertThat(whileInProgress).hasSize(4);
+        assertThat(whileInProgress)
+                .extracting(MatchResponse::id)
+                .contains(first.id());
+        assertThat(matchRepository.count()).isEqualTo(4);
+
+        mockMvc.perform(put("/api/matches/{matchId}/live/finish", first.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(creator)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("FINISHED"));
+
+        MatchResponse[] nextGroupMatches = listGroupMatches(creator, group.id());
+        MatchResponse[] nextHomeMatches = listUpcomingMatches(creator);
+        assertThat(nextGroupMatches).hasSize(4);
+        assertThat(nextHomeMatches).hasSize(4);
+        assertThat(nextGroupMatches)
+                .extracting(MatchResponse::id)
+                .doesNotContain(first.id());
+        assertThat(nextHomeMatches)
+                .extracting(MatchResponse::id)
+                .containsExactlyElementsOf(
+                        java.util.Arrays.stream(nextGroupMatches).map(MatchResponse::id).toList());
+        assertThat(nextGroupMatches[3].startsAt())
+                .isEqualTo(initialGroupMatches[3].startsAt().plusSeconds(7 * 24 * 60 * 60));
+        assertThat(matchRepository.count()).isEqualTo(5);
     }
 
     @Test
@@ -914,6 +975,14 @@ class MatchFlowIntegrationTest {
 
     private MatchResponse[] listGroupMatches(AuthResponse user, java.util.UUID groupId) throws Exception {
         var result = mockMvc.perform(get("/api/groups/{groupId}/matches", groupId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(user)))
+                .andExpect(status().isOk())
+                .andReturn();
+        return jsonMapper.readValue(result.getResponse().getContentAsString(), MatchResponse[].class);
+    }
+
+    private MatchResponse[] listUpcomingMatches(AuthResponse user) throws Exception {
+        var result = mockMvc.perform(get("/api/matches/upcoming")
                         .header(HttpHeaders.AUTHORIZATION, bearer(user)))
                 .andExpect(status().isOk())
                 .andReturn();

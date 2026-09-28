@@ -50,6 +50,7 @@ class LiveMatchServiceTest {
     private MatchGuestRepository guests;
     private MatchRentalGoalkeeperRepository rentalGoalkeepers;
     private MatchNotificationQueue notifications;
+    private WeeklyMatchWindowService weeklyMatchWindowService;
     private ApplicationEventPublisher events;
     private LiveMatchService service;
     private UUID matchId;
@@ -71,10 +72,11 @@ class LiveMatchServiceTest {
         guests = mock(MatchGuestRepository.class);
         rentalGoalkeepers = mock(MatchRentalGoalkeeperRepository.class);
         notifications = mock(MatchNotificationQueue.class);
+        weeklyMatchWindowService = mock(WeeklyMatchWindowService.class);
         events = mock(ApplicationEventPublisher.class);
         service = new LiveMatchService(matches, members, scores, teamImages, teamIdentityService,
                 assignments, goals, cards,
-                users, guests, rentalGoalkeepers, notifications, events,
+                users, guests, rentalGoalkeepers, notifications, weeklyMatchWindowService, events,
                 Clock.fixed(NOW, ZoneOffset.UTC));
         matchId = UUID.randomUUID();
         groupId = UUID.randomUUID();
@@ -109,6 +111,7 @@ class LiveMatchServiceTest {
         assertEquals(2L, match.getLiveVersion());
         verify(notifications).enqueue(eq(matchId), isNull(),
                 eq(MatchNotificationType.LIVE_MATCH_FINISHED), anyString(), eq(NOW));
+        verify(weeklyMatchWindowService).ensureForMatch(match, NOW);
     }
 
     @Test
