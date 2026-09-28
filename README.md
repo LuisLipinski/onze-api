@@ -86,6 +86,7 @@ A base funcional mais recente foi introduzida pelo commit `13cbc1a`; commits pos
 - No aplicativo o jogador escolhe apenas **Vou jogar** ou **Não vou**; a opção **Talvez** não existe atualmente.
 - Somente `GOING` ocupa vaga.
 - Ao completar as vagas, o backend gera o evento de **Time fechado**. Se o jogo deixar de estar completo e voltar a completar, um novo evento pode ser gerado.
+- Cada série semanal mantém uma janela móvel de quatro jogos ativos para a Home e para a tela do grupo. Ao finalizar ou cancelar o mais próximo, a API cria a ocorrência seguinte depois da quarta; séries ativas antigas são completadas automaticamente ao serem processadas.
 - Na série semanal, a presença da próxima rodada é aberta às 09:00 do dia seguinte à ocorrência anterior.
 - É possível cancelar uma ocorrência ou encerrar toda a série antes do início.
 - Lista de espera e promoção automática continuam planejadas.

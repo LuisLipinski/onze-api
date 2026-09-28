@@ -55,6 +55,7 @@ public class MatchService {
     private final MatchGoalkeeperService goalkeeperService;
     private final MatchNotificationQueue notificationQueue;
     private final PlayerCreditService playerCreditService;
+    private final WeeklyMatchWindowService weeklyMatchWindowService;
     private final GroupRepository groupRepository;
     private final GroupMemberRepository groupMemberRepository;
     private final UserRepository userRepository;
@@ -72,6 +73,7 @@ public class MatchService {
             MatchGoalkeeperService goalkeeperService,
             MatchNotificationQueue notificationQueue,
             PlayerCreditService playerCreditService,
+            WeeklyMatchWindowService weeklyMatchWindowService,
             GroupRepository groupRepository,
             GroupMemberRepository groupMemberRepository,
             UserRepository userRepository,
@@ -87,6 +89,7 @@ public class MatchService {
         this.goalkeeperService = goalkeeperService;
         this.notificationQueue = notificationQueue;
         this.playerCreditService = playerCreditService;
+        this.weeklyMatchWindowService = weeklyMatchWindowService;
         this.groupRepository = groupRepository;
         this.groupMemberRepository = groupMemberRepository;
         this.userRepository = userRepository;
@@ -167,7 +170,7 @@ public class MatchService {
                     deadlines.signupDeadline(),
                     deadlines.paymentDeadline(),
                     userId));
-            matchRepository.save(MatchRecurrenceSupport.nextOccurrence(match, series));
+            weeklyMatchWindowService.ensureForSeries(series.getId(), now);
         } else {
             match = matchRepository.save(new FootballMatch(
                     groupId,
@@ -920,7 +923,7 @@ public class MatchService {
         }
 
         match.cancel();
-        generateNextAfterCancelledLastOccurrence(match);
+        weeklyMatchWindowService.ensureForMatch(match, now);
         prepareCancelledMatches(List.of(match), now);
         notificationQueue.enqueue(
                 match.getId(),
@@ -998,22 +1001,6 @@ public class MatchService {
         UUID groupId = matches.get(0).getGroupId();
         for (UUID userId : usersWithReleasedCredit) {
             playerCreditService.reserveForNextMatch(groupId, userId, now);
-        }
-    }
-
-    private void generateNextAfterCancelledLastOccurrence(FootballMatch cancelled) {
-        if (cancelled.getSeriesId() == null) {
-            return;
-        }
-        MatchSeries series = seriesRepository.findById(cancelled.getSeriesId()).orElse(null);
-        if (series == null || !series.isActive()) {
-            return;
-        }
-        FootballMatch latest = matchRepository
-                .findFirstBySeriesIdOrderByOccurrenceNumberDesc(series.getId())
-                .orElse(cancelled);
-        if (latest.getId().equals(cancelled.getId())) {
-            matchRepository.save(MatchRecurrenceSupport.nextOccurrence(cancelled, series));
         }
     }
 

@@ -43,6 +43,7 @@ public class LiveMatchService {
     private final MatchGuestRepository guestRepository;
     private final MatchRentalGoalkeeperRepository rentalGoalkeeperRepository;
     private final MatchNotificationQueue notificationQueue;
+    private final WeeklyMatchWindowService weeklyMatchWindowService;
     private final ApplicationEventPublisher eventPublisher;
     private final Clock clock;
 
@@ -55,6 +56,7 @@ public class LiveMatchService {
             MatchGuestRepository guestRepository,
             MatchRentalGoalkeeperRepository rentalGoalkeeperRepository,
             MatchNotificationQueue notificationQueue,
+            WeeklyMatchWindowService weeklyMatchWindowService,
             ApplicationEventPublisher eventPublisher,
             Clock clock) {
         this.matchRepository = matchRepository;
@@ -69,6 +71,7 @@ public class LiveMatchService {
         this.guestRepository = guestRepository;
         this.rentalGoalkeeperRepository = rentalGoalkeeperRepository;
         this.notificationQueue = notificationQueue;
+        this.weeklyMatchWindowService = weeklyMatchWindowService;
         this.eventPublisher = eventPublisher;
         this.clock = clock;
     }
@@ -96,7 +99,9 @@ public class LiveMatchService {
     public void finish(String authenticatedUserId, UUID matchId) {
         FootballMatch match = managedMatch(authenticatedUserId, matchId);
         if (match.getStatus() != MatchStatus.IN_PROGRESS) throw new InvalidLiveMatchTransitionException();
-        match.finish(Instant.now(clock));
+        Instant now = Instant.now(clock);
+        match.finish(now);
+        weeklyMatchWindowService.ensureForMatch(match, now);
         enqueueLiveNotification(matchId, match, MatchNotificationType.LIVE_MATCH_FINISHED);
         publish(matchId, match, LiveMatchChangeType.MATCH_FINISHED);
     }
@@ -285,6 +290,7 @@ public class LiveMatchService {
             Instant deadline = match.getStartedAt().plus(MAX_MATCH_DURATION);
             if (!now.isBefore(deadline)) {
                 match.finish(deadline);
+                weeklyMatchWindowService.ensureForMatch(match, now);
                 return true;
             }
         }

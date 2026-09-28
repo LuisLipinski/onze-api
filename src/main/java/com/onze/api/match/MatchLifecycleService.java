@@ -24,36 +24,37 @@ public class MatchLifecycleService {
     private static final LocalTime DAILY_REMINDER_TIME = LocalTime.of(9, 0);
 
     private final FootballMatchRepository matchRepository;
-    private final MatchSeriesRepository seriesRepository;
     private final MatchAttendanceRepository attendanceRepository;
     private final GroupMemberRepository groupMemberRepository;
     private final MatchNotificationQueue notificationQueue;
     private final PlayerCreditService playerCreditService;
     private final MatchGoalkeeperService goalkeeperService;
+    private final WeeklyMatchWindowService weeklyMatchWindowService;
     private final Clock clock;
 
     public MatchLifecycleService(
             FootballMatchRepository matchRepository,
-            MatchSeriesRepository seriesRepository,
             MatchAttendanceRepository attendanceRepository,
             GroupMemberRepository groupMemberRepository,
             MatchNotificationQueue notificationQueue,
             PlayerCreditService playerCreditService,
             MatchGoalkeeperService goalkeeperService,
+            WeeklyMatchWindowService weeklyMatchWindowService,
             Clock clock) {
         this.matchRepository = matchRepository;
-        this.seriesRepository = seriesRepository;
         this.attendanceRepository = attendanceRepository;
         this.groupMemberRepository = groupMemberRepository;
         this.notificationQueue = notificationQueue;
         this.playerCreditService = playerCreditService;
         this.goalkeeperService = goalkeeperService;
+        this.weeklyMatchWindowService = weeklyMatchWindowService;
         this.clock = clock;
     }
 
     @Transactional
     public int openDueAttendances() {
         Instant now = clock.instant();
+        weeklyMatchWindowService.ensureAllActiveSeries(now);
         enforceExpiredDeadlines(now);
         releaseExpiredCreditReservations(now);
         int opened = 0;
@@ -86,7 +87,6 @@ public class MatchLifecycleService {
                             "match:" + match.getId() + ":attendance-opened",
                             now);
                 }
-                generateNextOccurrenceIfNeeded(match);
                 opened++;
                 openedThisRound++;
             }
@@ -260,27 +260,6 @@ public class MatchLifecycleService {
         }
 
         return scheduled;
-    }
-
-    private void generateNextOccurrenceIfNeeded(FootballMatch match) {
-        if (match.getSeriesId() == null) {
-            return;
-        }
-
-        MatchSeries series = seriesRepository.findById(match.getSeriesId()).orElse(null);
-        if (series == null || !series.isActive()) {
-            return;
-        }
-
-        FootballMatch latest = matchRepository
-                .findFirstBySeriesIdOrderByOccurrenceNumberDesc(series.getId())
-                .orElse(match);
-        if (!latest.getId().equals(match.getId())) {
-            return;
-        }
-
-        matchRepository.save(MatchRecurrenceSupport.nextOccurrence(match, series));
-        playerCreditService.reserveAvailableCreditsForGroup(match.getGroupId(), clock.instant());
     }
 
     private void releaseExpiredCreditReservations(Instant now) {
