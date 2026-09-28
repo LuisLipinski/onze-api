@@ -135,6 +135,8 @@ public class LiveMatchStreamService {
                 summary.teamCount(),
                 summary.version(),
                 summary.scores(),
+                summary.phase(),
+                summary.currentPeriod(),
                 canManage);
         return new LiveMatchStreamEventResponse(
                 event.type(),

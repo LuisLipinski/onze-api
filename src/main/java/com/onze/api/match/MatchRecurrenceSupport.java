@@ -32,7 +32,7 @@ final class MatchRecurrenceSupport {
                         .plusWeeks(1)
                         .toInstant();
 
-        return new FootballMatch(
+        FootballMatch next = new FootballMatch(
                 series.getGroupId(),
                 series.getId(),
                 previous.getOccurrenceNumber() + 1,
@@ -54,5 +54,14 @@ final class MatchRecurrenceSupport {
                 nextSignupDeadline,
                 nextPaymentDeadline,
                 series.getCreatedBy());
+        next.configureTiming(new MatchTimingPolicy.MatchTimingConfiguration(
+                series.isPeriodsEnabled(),
+                series.getRegulationPeriodCount(),
+                series.getRegulationPeriodMinutes(),
+                series.isOvertimeEnabled(),
+                series.getOvertimePeriodCount(),
+                series.getOvertimePeriodMinutes(),
+                series.isPenaltyShootoutEnabled()));
+        return next;
     }
 }

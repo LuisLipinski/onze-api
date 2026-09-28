@@ -30,6 +30,7 @@ import com.onze.api.match.MatchService.RentalGoalkeeperNotFoundException;
 import com.onze.api.match.MatchService.InvalidGuestException;
 import com.onze.api.match.MatchService.GuestNotFoundException;
 import com.onze.api.match.MatchFormatPolicy.InvalidMatchFormatException;
+import com.onze.api.match.MatchTimingPolicy.InvalidMatchTimingConfigurationException;
 import com.onze.api.match.MatchPlayerPolicy.InvalidMinimumPlayersException;
 import com.onze.api.technical.TechnicalRatings.InvalidTechnicalRatingException;
 import com.onze.api.match.MatchTeamService.InternalMatchRequiredException;
@@ -50,6 +51,9 @@ import com.onze.api.match.LiveMatchService.InvalidLiveMatchTransitionException;
 import com.onze.api.match.LiveMatchService.InvalidLiveMatchScoreException;
 import com.onze.api.match.LiveMatchService.InvalidGoalEventException;
 import com.onze.api.match.LiveMatchService.InvalidCardEventException;
+import com.onze.api.match.LiveMatchService.InvalidPeriodConfigurationException;
+import com.onze.api.match.LiveMatchService.MatchPeriodNotReadyException;
+import com.onze.api.match.LiveMatchService.InvalidPenaltyShootoutException;
 import com.onze.api.web.ApiErrorResponse;
 
 import org.springframework.core.Ordered;
@@ -85,6 +89,30 @@ public class MatchExceptionHandler {
     ResponseEntity<ApiErrorResponse> invalidCardEvent() {
         return ResponseEntity.badRequest()
                 .body(new ApiErrorResponse("INVALID_CARD_EVENT", "Confira o jogador e o time do cartão."));
+    }
+
+    @ExceptionHandler(InvalidPeriodConfigurationException.class)
+    ResponseEntity<ApiErrorResponse> invalidPeriodConfiguration() {
+        return ResponseEntity.badRequest()
+                .body(new ApiErrorResponse(
+                        "INVALID_PERIOD_CONFIGURATION",
+                        "Informe uma quantidade válida de minutos para os acréscimos."));
+    }
+
+    @ExceptionHandler(MatchPeriodNotReadyException.class)
+    ResponseEntity<ApiErrorResponse> matchPeriodNotReady() {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(new ApiErrorResponse(
+                        "MATCH_PERIOD_NOT_READY",
+                        "Este tempo só poderá ser encerrado depois do tempo normal e dos acréscimos definidos."));
+    }
+
+    @ExceptionHandler(InvalidPenaltyShootoutException.class)
+    ResponseEntity<ApiErrorResponse> invalidPenaltyShootout() {
+        return ResponseEntity.badRequest()
+                .body(new ApiErrorResponse(
+                        "INVALID_PENALTY_SHOOTOUT",
+                        "Confira a ordem dos batedores e a próxima cobrança da disputa por pênaltis."));
     }
 
     @ExceptionHandler(InvalidTeamImageException.class)
@@ -199,6 +227,14 @@ public class MatchExceptionHandler {
                 .body(new ApiErrorResponse(
                         "INVALID_MATCH_FORMAT",
                         "Entre membros exige ao menos 2 times e goleiros em quantidade igual ou maior; contra outro time exige ao menos 1 goleiro e não usa quantidade de times."));
+    }
+
+    @ExceptionHandler(InvalidMatchTimingConfigurationException.class)
+    ResponseEntity<ApiErrorResponse> invalidMatchTimingConfiguration() {
+        return ResponseEntity.badRequest()
+                .body(new ApiErrorResponse(
+                        "INVALID_MATCH_TIMING_CONFIGURATION",
+                        "Ative entre 1 e 4 tempos com duração válida. Prorrogação e pênaltis exigem exatamente dois times."));
     }
 
     @ExceptionHandler(InvalidMinimumPlayersException.class)

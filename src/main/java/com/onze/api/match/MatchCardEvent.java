@@ -28,13 +28,19 @@ public class MatchCardEvent {
     @Enumerated(EnumType.STRING)
     @Column(name = "card_type", nullable = false, length = 16) private MatchCardType cardType;
     @Column(name = "elapsed_seconds", nullable = false) private long elapsedSeconds;
+    @Enumerated(EnumType.STRING)
+    @Column(name = "period_type", length = 16) private MatchPeriodType periodType;
+    @Column(name = "period_number") private Integer periodNumber;
+    @Column(name = "period_elapsed_seconds") private Long periodElapsedSeconds;
     @Column(name = "created_by_user_id", nullable = false) private UUID createdByUserId;
     @Column(name = "created_at", nullable = false) private Instant createdAt;
 
     protected MatchCardEvent() { }
 
     public MatchCardEvent(UUID matchId, MatchTeamAssignment player, String playerDisplayName,
-            MatchCardType cardType, long elapsedSeconds, UUID createdByUserId, Instant createdAt) {
+            MatchCardType cardType, long elapsedSeconds, MatchPeriodType periodType,
+            Integer periodNumber, Long periodElapsedSeconds,
+            UUID createdByUserId, Instant createdAt) {
         this.matchId = matchId;
         this.sideNumber = player.getTeamNumber();
         this.playerAssignmentId = player.getId();
@@ -43,6 +49,9 @@ public class MatchCardEvent {
         this.playerDisplayName = playerDisplayName;
         this.cardType = cardType;
         this.elapsedSeconds = elapsedSeconds;
+        this.periodType = periodType;
+        this.periodNumber = periodNumber;
+        this.periodElapsedSeconds = periodElapsedSeconds;
         this.createdByUserId = createdByUserId;
         this.createdAt = createdAt;
     }
@@ -56,6 +65,9 @@ public class MatchCardEvent {
     public String getPlayerDisplayName() { return playerDisplayName; }
     public MatchCardType getCardType() { return cardType; }
     public long getElapsedSeconds() { return elapsedSeconds; }
+    public MatchPeriodType getPeriodType() { return periodType; }
+    public Integer getPeriodNumber() { return periodNumber; }
+    public Long getPeriodElapsedSeconds() { return periodElapsedSeconds; }
     public UUID getCreatedByUserId() { return createdByUserId; }
     public Instant getCreatedAt() { return createdAt; }
 }

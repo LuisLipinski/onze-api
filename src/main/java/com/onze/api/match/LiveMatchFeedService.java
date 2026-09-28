@@ -16,6 +16,7 @@ import com.onze.api.group.GroupRepository;
 import com.onze.api.group.GroupService.GroupUserNotFoundException;
 import com.onze.api.match.LiveMatchModels.LiveMatchSummaryResponse;
 import com.onze.api.match.LiveMatchModels.LiveScoreSideResponse;
+import com.onze.api.match.LiveMatchModels.MatchPeriodResponse;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -27,18 +28,24 @@ public class LiveMatchFeedService {
     private final GroupRepository groupRepository;
     private final LiveMatchScoreRepository scoreRepository;
     private final MatchTeamImageRepository teamImageRepository;
+    private final MatchPeriodRepository periodRepository;
+    private final MatchPenaltyShootoutRepository penaltyShootoutRepository;
 
     public LiveMatchFeedService(
             FootballMatchRepository matchRepository,
             GroupMemberRepository memberRepository,
             GroupRepository groupRepository,
             LiveMatchScoreRepository scoreRepository,
-            MatchTeamImageRepository teamImageRepository) {
+            MatchTeamImageRepository teamImageRepository,
+            MatchPeriodRepository periodRepository,
+            MatchPenaltyShootoutRepository penaltyShootoutRepository) {
         this.matchRepository = matchRepository;
         this.memberRepository = memberRepository;
         this.groupRepository = groupRepository;
         this.scoreRepository = scoreRepository;
         this.teamImageRepository = teamImageRepository;
+        this.periodRepository = periodRepository;
+        this.penaltyShootoutRepository = penaltyShootoutRepository;
     }
 
     @Transactional(readOnly = true)
@@ -143,7 +150,40 @@ public class LiveMatchFeedService {
                 match.getTeamCount(),
                 match.getLiveVersion(),
                 scores,
+                summaryPhase(match),
+                periodRepository.findFirstByMatchIdAndEndedAtIsNullOrderByStartedAtDesc(match.getId())
+                        .map(this::periodResponse)
+                        .orElse(null),
                 canManage);
+    }
+
+    private MatchPeriodResponse periodResponse(MatchPeriod period) {
+        return new MatchPeriodResponse(
+                period.getId(),
+                period.getPeriodType(),
+                period.getPeriodNumber(),
+                period.getDurationMinutes(),
+                period.getAddedTimeMinutes(),
+                period.getStartedAt(),
+                period.getEndedAt());
+    }
+
+    private LiveMatchPhase summaryPhase(FootballMatch match) {
+        if (match.getStatus() == MatchStatus.FINISHED) return LiveMatchPhase.FINISHED;
+        if (!match.isPeriodsEnabled()) return LiveMatchPhase.LEGACY;
+        if (penaltyShootoutRepository.findByMatchId(match.getId())
+                .filter(item -> item.getStatus() != PenaltyShootoutStatus.COMPLETED)
+                .isPresent()) {
+            return LiveMatchPhase.PENALTY_SHOOTOUT;
+        }
+        return periodRepository.findFirstByMatchIdAndEndedAtIsNullOrderByStartedAtDesc(match.getId())
+                .map(period -> period.getPeriodType() == MatchPeriodType.OVERTIME
+                        ? LiveMatchPhase.OVERTIME
+                        : LiveMatchPhase.REGULATION)
+                .orElseGet(() -> periodRepository.countByMatchIdAndPeriodType(
+                        match.getId(), MatchPeriodType.REGULATION) < match.getRegulationPeriodCount()
+                                ? LiveMatchPhase.REGULATION
+                                : LiveMatchPhase.OVERTIME);
     }
 
     private UUID parseUserId(String authenticatedUserId) {

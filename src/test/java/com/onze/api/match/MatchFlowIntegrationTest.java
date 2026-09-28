@@ -120,6 +120,124 @@ class MatchFlowIntegrationTest {
     }
 
     @Test
+    void shouldFinishLastPeriodOnlyAfterAddedTimeAndKeepShootoutSeparateFromGoals() throws Exception {
+        AuthResponse creator = register("timed-shootout@example.com", "Principal Tempos");
+        GroupResponse group = createGroup(creator, "Pelada com pênaltis");
+        var created = mockMvc.perform(post("/api/groups/{groupId}/matches", group.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(creator))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(timedMatchBody(LocalDate.now(SAO_PAULO).plusDays(3), false, true)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.periodCount").value(1))
+                .andExpect(jsonPath("$.penaltyShootoutEnabled").value(true))
+                .andReturn();
+        MatchResponse match = jsonMapper.readValue(
+                created.getResponse().getContentAsString(), MatchResponse.class);
+        mockMvc.perform(put("/api/matches/{matchId}/live/start", match.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(creator)))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(put("/api/matches/{matchId}/live/period/added-time", match.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(creator))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"minutes\":1}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.periods[0].addedTimeMinutes").value(1));
+        mockMvc.perform(put("/api/matches/{matchId}/live/period/finish", match.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(creator)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("MATCH_PERIOD_NOT_READY"));
+
+        jdbcTemplate.update(
+                "UPDATE match_periods SET started_at = NOW() - INTERVAL '3 minutes' WHERE match_id = ?",
+                match.id());
+        mockMvc.perform(put("/api/matches/{matchId}/live/period/finish", match.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(creator)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("IN_PROGRESS"))
+                .andExpect(jsonPath("$.phase").value("PENALTY_SHOOTOUT"))
+                .andExpect(jsonPath("$.scores[0].score").value(0));
+
+        StringBuilder lineup = new StringBuilder("{\"takers\":[");
+        for (int team = 1; team <= 2; team++) {
+            for (int order = 1; order <= 5; order++) {
+                if (lineup.charAt(lineup.length() - 1) != '[') lineup.append(',');
+                lineup.append("{\"teamNumber\":").append(team)
+                        .append(",\"kickOrder\":").append(order)
+                        .append(",\"displayName\":\"Jogador ").append(team)
+                        .append('-').append(order).append("\"}");
+            }
+        }
+        lineup.append("]}");
+        mockMvc.perform(put("/api/matches/{matchId}/live/penalties/lineup", match.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(creator))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(lineup.toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.penaltyShootout.status").value("IN_PROGRESS"));
+        for (int kick = 0; kick < 6; kick++) {
+            mockMvc.perform(post("/api/matches/{matchId}/live/penalties/attempts", match.id())
+                            .header(HttpHeaders.AUTHORIZATION, bearer(creator))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"scored\":" + (kick % 2 == 0) + "}"))
+                    .andExpect(status().isOk());
+        }
+        mockMvc.perform(get("/api/matches/{matchId}/live", match.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(creator)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("IN_PROGRESS"))
+                .andExpect(jsonPath("$.penaltyShootout.status").value("AWAITING_CONFIRMATION"))
+                .andExpect(jsonPath("$.penaltyShootout.winnerTeamNumber").value(1))
+                .andExpect(jsonPath("$.penaltyShootout.teamOneScore").value(3))
+                .andExpect(jsonPath("$.goalEvents.length()").value(0))
+                .andExpect(jsonPath("$.scores[0].score").value(0));
+        mockMvc.perform(put("/api/matches/{matchId}/live/penalties/confirm-winner", match.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(creator)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("FINISHED"))
+                .andExpect(jsonPath("$.penaltyShootout.status").value("COMPLETED"));
+    }
+
+    @Test
+    void shouldPlayOvertimeOnlyForATieAndFinishAfterItsLastPeriod() throws Exception {
+        AuthResponse creator = register("timed-overtime@example.com", "Principal Prorrogação");
+        GroupResponse group = createGroup(creator, "Pelada com prorrogação");
+        var created = mockMvc.perform(post("/api/groups/{groupId}/matches", group.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(creator))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(timedMatchBody(LocalDate.now(SAO_PAULO).plusDays(3), true, false)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.overtimePeriodCount").value(1))
+                .andReturn();
+        MatchResponse match = jsonMapper.readValue(
+                created.getResponse().getContentAsString(), MatchResponse.class);
+        mockMvc.perform(put("/api/matches/{matchId}/live/start", match.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(creator)))
+                .andExpect(status().isOk());
+        jdbcTemplate.update(
+                "UPDATE match_periods SET started_at = NOW() - INTERVAL '3 minutes' WHERE match_id = ?",
+                match.id());
+        mockMvc.perform(put("/api/matches/{matchId}/live/period/finish", match.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(creator)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("IN_PROGRESS"));
+        mockMvc.perform(put("/api/matches/{matchId}/live/period/start-next", match.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(creator)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.phase").value("OVERTIME"))
+                .andExpect(jsonPath("$.periods[1].periodType").value("OVERTIME"));
+        jdbcTemplate.update(
+                "UPDATE match_periods SET started_at = NOW() - INTERVAL '3 minutes' "
+                        + "WHERE match_id = ? AND period_type = 'OVERTIME'",
+                match.id());
+        mockMvc.perform(put("/api/matches/{matchId}/live/period/finish", match.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(creator)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("FINISHED"))
+                .andExpect(jsonPath("$.phase").value("FINISHED"));
+    }
+
+    @Test
     void shouldCreateOneOffMatchLetMembersConfirmAndEnforcePlayerLimit() throws Exception {
         AuthResponse creator = register("match-primary@example.com", "Principal");
         AuthResponse firstMember = register("match-first@example.com", "Primeiro");
@@ -1001,6 +1119,32 @@ class MatchFlowIntegrationTest {
                   "recurrence": "%s"
                 }
                 """.formatted(date, maxPlayers, recurrence);
+    }
+
+    private String timedMatchBody(LocalDate date, boolean overtime, boolean penalties) {
+        return """
+                {
+                  "date": "%s",
+                  "startTime": "20:30:00",
+                  "timeZone": "America/Sao_Paulo",
+                  "venue": "Arena Onze",
+                  "maxPlayers": 14,
+                  "matchType": "INTERNAL",
+                  "teamCount": 2,
+                  "requiredGoalkeepers": 2,
+                  "modality": "FUT7",
+                  "minimumPlayers": 2,
+                  "periodsEnabled": true,
+                  "periodCount": 1,
+                  "periodDurationMinutes": 1,
+                  "overtimeEnabled": %s,
+                  "overtimePeriodCount": %s,
+                  "overtimePeriodDurationMinutes": %s,
+                  "penaltyShootoutEnabled": %s,
+                  "recurrence": "NONE"
+                }
+                """.formatted(date, overtime, overtime ? "1" : "null",
+                        overtime ? "1" : "null", penalties);
     }
 
     private String paidMatchBody(LocalDate date, int maxPlayers) {

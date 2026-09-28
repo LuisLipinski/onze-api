@@ -28,6 +28,9 @@ import com.onze.api.match.LiveMatchModels.CreateGoalEventRequest;
 import com.onze.api.match.LiveMatchModels.CreateGoalEventResponse;
 import com.onze.api.match.LiveMatchModels.CreateCardEventRequest;
 import com.onze.api.match.LiveMatchModels.CreateCardEventResponse;
+import com.onze.api.match.LiveMatchModels.UpdatePeriodAddedTimeRequest;
+import com.onze.api.match.LiveMatchModels.SetPenaltyLineupRequest;
+import com.onze.api.match.LiveMatchModels.RecordPenaltyAttemptRequest;
 
 import jakarta.validation.Valid;
 
@@ -99,6 +102,58 @@ public class MatchController {
     public MatchResponse resetLiveMatch(Authentication authentication, @PathVariable UUID matchId) {
         liveMatchService.reset(authentication.getName(), matchId);
         return matchService.get(authentication.getName(), matchId);
+    }
+
+    @PutMapping("/api/matches/{matchId}/live/period/added-time")
+    public LiveMatchStateResponse updatePeriodAddedTime(
+            Authentication authentication,
+            @PathVariable UUID matchId,
+            @Valid @RequestBody UpdatePeriodAddedTimeRequest request) {
+        return liveMatchService.updatePeriodAddedTime(
+                authentication.getName(), matchId, request.minutes());
+    }
+
+    @PutMapping("/api/matches/{matchId}/live/period/finish")
+    public LiveMatchStateResponse finishCurrentPeriod(
+            Authentication authentication,
+            @PathVariable UUID matchId) {
+        return liveMatchService.finishCurrentPeriod(authentication.getName(), matchId);
+    }
+
+    @PutMapping("/api/matches/{matchId}/live/period/start-next")
+    public LiveMatchStateResponse startNextPeriod(
+            Authentication authentication,
+            @PathVariable UUID matchId) {
+        return liveMatchService.startNextPeriod(authentication.getName(), matchId);
+    }
+
+    @PutMapping("/api/matches/{matchId}/live/penalties/lineup")
+    public LiveMatchStateResponse setPenaltyLineup(
+            Authentication authentication,
+            @PathVariable UUID matchId,
+            @Valid @RequestBody SetPenaltyLineupRequest request) {
+        return liveMatchService.setPenaltyLineup(
+                authentication.getName(), matchId, request.takers());
+    }
+
+    @PostMapping("/api/matches/{matchId}/live/penalties/attempts")
+    public LiveMatchStateResponse recordPenaltyAttempt(
+            Authentication authentication,
+            @PathVariable UUID matchId,
+            @Valid @RequestBody RecordPenaltyAttemptRequest request) {
+        return liveMatchService.recordPenaltyAttempt(
+                authentication.getName(),
+                matchId,
+                request.scored(),
+                request.takerAssignmentId(),
+                request.takerDisplayName());
+    }
+
+    @PutMapping("/api/matches/{matchId}/live/penalties/confirm-winner")
+    public LiveMatchStateResponse confirmPenaltyWinner(
+            Authentication authentication,
+            @PathVariable UUID matchId) {
+        return liveMatchService.confirmPenaltyWinner(authentication.getName(), matchId);
     }
 
     @GetMapping("/api/matches/{matchId}/live")

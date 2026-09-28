@@ -124,6 +124,16 @@ public class MatchService {
                 request.maxPlayers(),
                 format.matchType(),
                 format.teamCount());
+        MatchTimingPolicy.MatchTimingConfiguration timing = MatchTimingPolicy.resolve(
+                request.periodsEnabled(),
+                request.periodCount(),
+                request.periodDurationMinutes(),
+                request.overtimeEnabled(),
+                request.overtimePeriodCount(),
+                request.overtimePeriodDurationMinutes(),
+                request.penaltyShootoutEnabled(),
+                format.matchType(),
+                format.teamCount());
         DeadlineConfiguration deadlines = resolveDeadlines(
                 request,
                 zoneId,
@@ -133,7 +143,7 @@ public class MatchService {
         FootballMatch match;
 
         if (request.recurrence() == MatchRecurrence.WEEKLY) {
-            MatchSeries series = seriesRepository.save(new MatchSeries(
+            MatchSeries series = new MatchSeries(
                     groupId,
                     userId,
                     zoneId.getId(),
@@ -147,8 +157,10 @@ public class MatchService {
                     payment.amount(),
                     payment.pixKey(),
                     goalkeeperPays,
-                    notes));
-            match = matchRepository.save(new FootballMatch(
+                    notes);
+            series.configureTiming(timing);
+            series = seriesRepository.save(series);
+            match = new FootballMatch(
                     groupId,
                     series.getId(),
                     1,
@@ -169,10 +181,12 @@ public class MatchService {
                     now,
                     deadlines.signupDeadline(),
                     deadlines.paymentDeadline(),
-                    userId));
+                    userId);
+            match.configureTiming(timing);
+            match = matchRepository.save(match);
             weeklyMatchWindowService.ensureForSeries(series.getId(), now);
         } else {
-            match = matchRepository.save(new FootballMatch(
+            match = new FootballMatch(
                     groupId,
                     null,
                     null,
@@ -193,7 +207,9 @@ public class MatchService {
                     now,
                     deadlines.signupDeadline(),
                     deadlines.paymentDeadline(),
-                    userId));
+                    userId);
+            match.configureTiming(timing);
+            match = matchRepository.save(match);
         }
 
         notificationQueue.enqueue(
@@ -1137,6 +1153,13 @@ public class MatchService {
                 match.getModality(),
                 match.getMinimumPlayers(),
                 match.getIdealPlayers(),
+                match.isPeriodsEnabled(),
+                match.getRegulationPeriodCount(),
+                match.getRegulationPeriodMinutes(),
+                match.isOvertimeEnabled(),
+                match.getOvertimePeriodCount(),
+                match.getOvertimePeriodMinutes(),
+                match.isPenaltyShootoutEnabled(),
                 Math.max(0, match.getMinimumPlayers() - goingCount),
                 goalkeeperSummary.currentGoalkeepers(),
                 goalkeeperSummary.missingGoalkeepers(),

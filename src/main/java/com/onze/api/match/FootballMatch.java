@@ -75,6 +75,27 @@ public class FootballMatch {
     @Column(name = "goalkeeper_pays", nullable = false)
     private boolean goalkeeperPays;
 
+    @Column(name = "periods_enabled", nullable = false)
+    private boolean periodsEnabled;
+
+    @Column(name = "regulation_period_count")
+    private Integer regulationPeriodCount;
+
+    @Column(name = "regulation_period_minutes")
+    private Integer regulationPeriodMinutes;
+
+    @Column(name = "overtime_enabled", nullable = false)
+    private boolean overtimeEnabled;
+
+    @Column(name = "overtime_period_count")
+    private Integer overtimePeriodCount;
+
+    @Column(name = "overtime_period_minutes")
+    private Integer overtimePeriodMinutes;
+
+    @Column(name = "penalty_shootout_enabled", nullable = false)
+    private boolean penaltyShootoutEnabled;
+
     @Column(length = 1000)
     private String notes;
 
@@ -257,6 +278,30 @@ public class FootballMatch {
 
     public boolean isGoalkeeperPays() {
         return goalkeeperPays;
+    }
+
+    public boolean isPeriodsEnabled() { return periodsEnabled; }
+
+    public Integer getRegulationPeriodCount() { return regulationPeriodCount; }
+
+    public Integer getRegulationPeriodMinutes() { return regulationPeriodMinutes; }
+
+    public boolean isOvertimeEnabled() { return overtimeEnabled; }
+
+    public Integer getOvertimePeriodCount() { return overtimePeriodCount; }
+
+    public Integer getOvertimePeriodMinutes() { return overtimePeriodMinutes; }
+
+    public boolean isPenaltyShootoutEnabled() { return penaltyShootoutEnabled; }
+
+    public void configureTiming(MatchTimingPolicy.MatchTimingConfiguration timing) {
+        periodsEnabled = timing.periodsEnabled();
+        regulationPeriodCount = timing.periodCount();
+        regulationPeriodMinutes = timing.periodDurationMinutes();
+        overtimeEnabled = timing.overtimeEnabled();
+        overtimePeriodCount = timing.overtimePeriodCount();
+        overtimePeriodMinutes = timing.overtimePeriodDurationMinutes();
+        penaltyShootoutEnabled = timing.penaltyShootoutEnabled();
     }
 
     public String getNotes() {
