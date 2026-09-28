@@ -210,9 +210,10 @@ class GroupStatisticsServiceTest {
     void penaltyWinnerCountsAsVictoryWithoutAddingShootoutGoalsToTeamOrPlayerTotals() {
         UUID matchId = UUID.randomUUID();
         Instant finishedAt = Instant.parse("2026-09-27T19:00:00Z");
+        FootballMatch finished = match(matchId, finishedAt.minusSeconds(3600), finishedAt, 2);
         when(matches.findAllByGroupIdAndStatusOrderByFinishedAtDescStartsAtDesc(
                 groupId, MatchStatus.FINISHED))
-                .thenReturn(List.of(match(matchId, finishedAt.minusSeconds(3600), finishedAt, 2)));
+                .thenReturn(List.of(finished));
         doReturn(List.of(assignment(matchId, aliceId, 1), assignment(matchId, bobId, 2)))
                 .when(assignments)
                 .findAllByMatchIdInAndParticipantTypeOrderByMatchIdAscTeamNumberAscCreatedAtAsc(
