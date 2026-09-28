@@ -57,6 +57,16 @@ public class MatchGoalEvent {
     @Column(name = "elapsed_seconds", nullable = false)
     private long elapsedSeconds;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "period_type", length = 16)
+    private MatchPeriodType periodType;
+
+    @Column(name = "period_number")
+    private Integer periodNumber;
+
+    @Column(name = "period_elapsed_seconds")
+    private Long periodElapsedSeconds;
+
     @Column(name = "created_by_user_id", nullable = false)
     private UUID createdByUserId;
 
@@ -67,7 +77,9 @@ public class MatchGoalEvent {
 
     public MatchGoalEvent(UUID matchId, MatchTeamAssignment scorer, String scorerDisplayName,
             MatchTeamAssignment assist, String assistDisplayName,
-            boolean penalty, long elapsedSeconds, UUID createdByUserId, Instant createdAt) {
+            boolean penalty, long elapsedSeconds, MatchPeriodType periodType,
+            Integer periodNumber, Long periodElapsedSeconds,
+            UUID createdByUserId, Instant createdAt) {
         this.matchId = matchId;
         this.sideNumber = scorer.getTeamNumber();
         this.scorerAssignmentId = scorer.getId();
@@ -82,6 +94,9 @@ public class MatchGoalEvent {
         }
         this.penalty = penalty;
         this.elapsedSeconds = elapsedSeconds;
+        this.periodType = periodType;
+        this.periodNumber = periodNumber;
+        this.periodElapsedSeconds = periodElapsedSeconds;
         this.createdByUserId = createdByUserId;
         this.createdAt = createdAt;
     }
@@ -99,6 +114,9 @@ public class MatchGoalEvent {
     public String getAssistDisplayName() { return assistDisplayName; }
     public boolean isPenalty() { return penalty; }
     public long getElapsedSeconds() { return elapsedSeconds; }
+    public MatchPeriodType getPeriodType() { return periodType; }
+    public Integer getPeriodNumber() { return periodNumber; }
+    public Long getPeriodElapsedSeconds() { return periodElapsedSeconds; }
     public UUID getCreatedByUserId() { return createdByUserId; }
     public Instant getCreatedAt() { return createdAt; }
 }

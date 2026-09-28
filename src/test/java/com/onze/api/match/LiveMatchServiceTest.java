@@ -46,6 +46,10 @@ class LiveMatchServiceTest {
     private MatchTeamAssignmentRepository assignments;
     private MatchGoalEventRepository goals;
     private MatchCardEventRepository cards;
+    private MatchPeriodRepository periods;
+    private MatchPenaltyShootoutRepository penaltyShootouts;
+    private MatchPenaltyTakerRepository penaltyTakers;
+    private MatchPenaltyAttemptRepository penaltyAttempts;
     private UserRepository users;
     private MatchGuestRepository guests;
     private MatchRentalGoalkeeperRepository rentalGoalkeepers;
@@ -68,6 +72,10 @@ class LiveMatchServiceTest {
         assignments = mock(MatchTeamAssignmentRepository.class);
         goals = mock(MatchGoalEventRepository.class);
         cards = mock(MatchCardEventRepository.class);
+        periods = mock(MatchPeriodRepository.class);
+        penaltyShootouts = mock(MatchPenaltyShootoutRepository.class);
+        penaltyTakers = mock(MatchPenaltyTakerRepository.class);
+        penaltyAttempts = mock(MatchPenaltyAttemptRepository.class);
         users = mock(UserRepository.class);
         guests = mock(MatchGuestRepository.class);
         rentalGoalkeepers = mock(MatchRentalGoalkeeperRepository.class);
@@ -75,7 +83,7 @@ class LiveMatchServiceTest {
         weeklyMatchWindowService = mock(WeeklyMatchWindowService.class);
         events = mock(ApplicationEventPublisher.class);
         service = new LiveMatchService(matches, members, scores, teamImages, teamIdentityService,
-                assignments, goals, cards,
+                assignments, goals, cards, periods, penaltyShootouts, penaltyTakers, penaltyAttempts,
                 users, guests, rentalGoalkeepers, notifications, weeklyMatchWindowService, events,
                 Clock.fixed(NOW, ZoneOffset.UTC));
         matchId = UUID.randomUUID();
@@ -92,6 +100,12 @@ class LiveMatchServiceTest {
         when(goals.save(any(MatchGoalEvent.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(goals.findAllByMatchIdOrderByElapsedSecondsDescCreatedAtDesc(matchId)).thenReturn(List.of());
         when(cards.findAllByMatchIdOrderByElapsedSecondsDescCreatedAtDesc(matchId)).thenReturn(List.of());
+        when(periods.findAllByMatchIdOrderByStartedAtAsc(matchId)).thenReturn(List.of());
+        when(periods.findFirstByMatchIdAndEndedAtIsNullOrderByStartedAtDesc(matchId))
+                .thenReturn(Optional.empty());
+        when(penaltyShootouts.findByMatchId(matchId)).thenReturn(Optional.empty());
+        when(penaltyTakers.findAllByMatchIdOrderByTeamNumberAscKickOrderAsc(matchId)).thenReturn(List.of());
+        when(penaltyAttempts.findAllByMatchIdOrderBySequenceNumberAsc(matchId)).thenReturn(List.of());
     }
 
     @Test

@@ -26,6 +26,8 @@ class LiveMatchFeedServiceTest {
     private GroupRepository groups;
     private LiveMatchScoreRepository scores;
     private MatchTeamImageRepository teamImages;
+    private MatchPeriodRepository periods;
+    private MatchPenaltyShootoutRepository penaltyShootouts;
     private LiveMatchFeedService service;
 
     @BeforeEach
@@ -35,7 +37,10 @@ class LiveMatchFeedServiceTest {
         groups = mock(GroupRepository.class);
         scores = mock(LiveMatchScoreRepository.class);
         teamImages = mock(MatchTeamImageRepository.class);
-        service = new LiveMatchFeedService(matches, members, groups, scores, teamImages);
+        periods = mock(MatchPeriodRepository.class);
+        penaltyShootouts = mock(MatchPenaltyShootoutRepository.class);
+        service = new LiveMatchFeedService(
+                matches, members, groups, scores, teamImages, periods, penaltyShootouts);
     }
 
     @Test

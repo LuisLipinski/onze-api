@@ -28,6 +28,8 @@ import com.onze.api.match.MatchAttendance;
 import com.onze.api.match.MatchAttendanceRepository;
 import com.onze.api.match.MatchGoalEvent;
 import com.onze.api.match.MatchGoalEventRepository;
+import com.onze.api.match.MatchPenaltyShootout;
+import com.onze.api.match.MatchPenaltyShootoutRepository;
 import com.onze.api.match.MatchStatus;
 import com.onze.api.match.MatchTeamAssignment;
 import com.onze.api.match.MatchTeamAssignmentRepository;
@@ -66,6 +68,7 @@ public class GroupStatisticsService {
     private final LiveMatchScoreRepository scoreRepository;
     private final MatchGoalEventRepository goalEventRepository;
     private final MatchTeamImageRepository teamImageRepository;
+    private final MatchPenaltyShootoutRepository penaltyShootoutRepository;
 
     public GroupStatisticsService(
             GroupRepository groupRepository,
@@ -76,7 +79,8 @@ public class GroupStatisticsService {
             MatchAttendanceRepository attendanceRepository,
             LiveMatchScoreRepository scoreRepository,
             MatchGoalEventRepository goalEventRepository,
-            MatchTeamImageRepository teamImageRepository) {
+            MatchTeamImageRepository teamImageRepository,
+            MatchPenaltyShootoutRepository penaltyShootoutRepository) {
         this.groupRepository = groupRepository;
         this.memberRepository = memberRepository;
         this.userRepository = userRepository;
@@ -86,6 +90,7 @@ public class GroupStatisticsService {
         this.scoreRepository = scoreRepository;
         this.goalEventRepository = goalEventRepository;
         this.teamImageRepository = teamImageRepository;
+        this.penaltyShootoutRepository = penaltyShootoutRepository;
     }
 
     @Transactional(readOnly = true)
@@ -173,6 +178,13 @@ public class GroupStatisticsService {
         List<MatchTeamImage> identities = matchIds.isEmpty()
                 ? List.of()
                 : teamImageRepository.findAllByMatchIdInOrderByMatchIdAscTeamNumberAsc(matchIds);
+        Map<UUID, Integer> penaltyWinners = matchIds.isEmpty()
+                ? Map.of()
+                : penaltyShootoutRepository.findAllByMatchIdIn(matchIds).stream()
+                        .filter(shootout -> shootout.getWinnerTeamNumber() != null)
+                        .collect(Collectors.toMap(
+                                MatchPenaltyShootout::getMatchId,
+                                MatchPenaltyShootout::getWinnerTeamNumber));
 
         Set<UUID> currentMemberIds = currentMembers.stream()
                 .map(GroupMember::getUserId)
@@ -241,7 +253,8 @@ public class GroupStatisticsService {
                 if (statistics == null) {
                     continue;
                 }
-                PlayerMatchResult result = resultForTeam(teams, participation.teamNumber());
+                PlayerMatchResult result = resultForTeam(
+                        teams, participation.teamNumber(), penaltyWinners.get(matchId));
                 int playerGoals = goalsByPlayer.getOrDefault(statistics.userId, 0);
                 int playerAssists = assistsByPlayer.getOrDefault(statistics.userId, 0);
                 statistics.addMatch(result);
@@ -341,7 +354,11 @@ public class GroupStatisticsService {
         return List.copyOf(result);
     }
 
-    private PlayerMatchResult resultForTeam(List<StatisticsTeamResponse> teams, int teamNumber) {
+    private PlayerMatchResult resultForTeam(
+            List<StatisticsTeamResponse> teams, int teamNumber, Integer penaltyWinner) {
+        if (penaltyWinner != null) {
+            return penaltyWinner == teamNumber ? PlayerMatchResult.WIN : PlayerMatchResult.LOSS;
+        }
         int teamScore = teams.stream()
                 .filter(team -> team.teamNumber() == teamNumber)
                 .mapToInt(StatisticsTeamResponse::score)

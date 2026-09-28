@@ -137,6 +137,14 @@ A base funcional mais recente foi introduzida pelo commit `13cbc1a`; commits pos
 - O heartbeat continua percorrendo todas as conexões ativas porque cada cliente precisa receber o keepalive.
 - Abertura e encerramento de conexão registram em `INFO` a contagem total e a contagem do escopo, permitindo acompanhar o uso no Render.
 
+### Tempos, prorrogação e pênaltis
+
+- Um jogo novo pode controlar de 1 a 4 tempos normais de duração igual. Jogos antigos continuam com o cronômetro original.
+- Cada tempo aceita acréscimos de 0 a 180 minutos. O administrador encerra o tempo após a duração e os acréscimos; os intervalos param o relógio até iniciar o próximo.
+- Com exatamente dois times, prorrogação opcional (1 a 4 tempos) começa apenas se o placar normal terminar empatado. Os pênaltis são opcionais e podem ser ativados mesmo sem prorrogação.
+- Na disputa, o administrador define cinco batedores por time e registra cobranças alternadas. Após a quinta rodada, escolhe o próximo batedor a cada rodada até haver vencedor. A confirmação do vencedor encerra o jogo.
+- As cobranças e o vencedor ficam em tabelas próprias: não alteram o placar de gols, os gols de jogadores ou as métricas de gols dos times. A vitória nos pênaltis conta como vitória nas estatísticas.
+
 ## Estatísticas básicas
 
 - Os totais e rankings são derivados de todo o histórico de jogos encerrados, sem contadores paralelos.
@@ -194,6 +202,12 @@ A base funcional mais recente foi introduzida pelo commit `13cbc1a`; commits pos
 | `GET` | `/api/groups/{groupId}/credits` | Consultar créditos |
 | `DELETE` | `/api/matches/{matchId}` | Cancelar ocorrência |
 | `DELETE` | `/api/match-series/{seriesId}` | Encerrar série |
+| `PUT` | `/api/matches/{matchId}/live/period/added-time` | Definir acréscimos do tempo atual |
+| `PUT` | `/api/matches/{matchId}/live/period/finish` | Encerrar tempo após o relógio previsto; concluir jogo ou preparar etapa seguinte |
+| `PUT` | `/api/matches/{matchId}/live/period/start-next` | Iniciar o próximo tempo normal ou de prorrogação |
+| `PUT` | `/api/matches/{matchId}/live/penalties/lineup` | Definir os primeiros cinco batedores por time |
+| `POST` | `/api/matches/{matchId}/live/penalties/attempts` | Registrar gol ou erro da próxima cobrança |
+| `PUT` | `/api/matches/{matchId}/live/penalties/confirm-winner` | Confirmar vencedor e encerrar jogo |
 | `PUT` / `DELETE` | `/api/devices/push-token` | Registrar ou remover token de push |
 
 ## Migrações Flyway
@@ -211,6 +225,7 @@ A base funcional mais recente foi introduzida pelo commit `13cbc1a`; commits pos
 | V13 | Perfil esportivo por participação no grupo |
 | V14–V27 | Formação de times, convidados, goleiros, jogo ao vivo e identidades persistentes dos times |
 | V28 | Proteção persistente contra tentativas repetidas de login |
+| V29 | Tempos, acréscimos, prorrogação e disputa por pênaltis |
 
 ## Qualidade e execução
 

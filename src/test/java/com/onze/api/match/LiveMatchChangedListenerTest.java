@@ -45,7 +45,10 @@ class LiveMatchChangedListenerTest {
                 4L,
                 List.of(),
                 List.of(),
-                List.of());
+                List.of(),
+                LiveMatchPhase.LEGACY,
+                List.of(),
+                null);
         var summary = new LiveMatchSummaryResponse(
                 matchId,
                 groupId,
@@ -59,6 +62,8 @@ class LiveMatchChangedListenerTest {
                 2,
                 4L,
                 List.of(),
+                LiveMatchPhase.LEGACY,
+                null,
                 false);
         when(liveMatchService.getSnapshot(matchId)).thenReturn(Optional.of(snapshot));
         when(feedService.getSummary(matchId)).thenReturn(Optional.of(summary));

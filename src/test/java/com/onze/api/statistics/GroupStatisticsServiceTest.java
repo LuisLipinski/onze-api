@@ -28,6 +28,8 @@ import com.onze.api.match.MatchAttendance;
 import com.onze.api.match.MatchAttendanceRepository;
 import com.onze.api.match.MatchGoalEvent;
 import com.onze.api.match.MatchGoalEventRepository;
+import com.onze.api.match.MatchPenaltyShootout;
+import com.onze.api.match.MatchPenaltyShootoutRepository;
 import com.onze.api.match.MatchStatus;
 import com.onze.api.match.MatchTeamAssignment;
 import com.onze.api.match.MatchTeamAssignmentRepository;
@@ -52,6 +54,7 @@ class GroupStatisticsServiceTest {
     private LiveMatchScoreRepository scores;
     private MatchGoalEventRepository goals;
     private MatchTeamImageRepository teamImages;
+    private MatchPenaltyShootoutRepository penaltyShootouts;
     private GroupStatisticsService service;
     private UUID groupId;
     private UUID aliceId;
@@ -70,8 +73,10 @@ class GroupStatisticsServiceTest {
         scores = mock(LiveMatchScoreRepository.class);
         goals = mock(MatchGoalEventRepository.class);
         teamImages = mock(MatchTeamImageRepository.class);
+        penaltyShootouts = mock(MatchPenaltyShootoutRepository.class);
         service = new GroupStatisticsService(
-                groups, members, users, matches, assignments, attendances, scores, goals, teamImages);
+                groups, members, users, matches, assignments, attendances, scores, goals,
+                teamImages, penaltyShootouts);
 
         groupId = UUID.randomUUID();
         aliceId = UUID.randomUUID();
@@ -202,6 +207,38 @@ class GroupStatisticsServiceTest {
     }
 
     @Test
+    void penaltyWinnerCountsAsVictoryWithoutAddingShootoutGoalsToTeamOrPlayerTotals() {
+        UUID matchId = UUID.randomUUID();
+        Instant finishedAt = Instant.parse("2026-09-27T19:00:00Z");
+        FootballMatch finished = match(matchId, finishedAt.minusSeconds(3600), finishedAt, 2);
+        when(matches.findAllByGroupIdAndStatusOrderByFinishedAtDescStartsAtDesc(
+                groupId, MatchStatus.FINISHED))
+                .thenReturn(List.of(finished));
+        doReturn(List.of(assignment(matchId, aliceId, 1), assignment(matchId, bobId, 2)))
+                .when(assignments)
+                .findAllByMatchIdInAndParticipantTypeOrderByMatchIdAscTeamNumberAscCreatedAtAsc(
+                        anyCollection(), any());
+        doReturn(List.of(score(matchId, 1, 1), score(matchId, 2, 1)))
+                .when(scores).findAllByMatchIdInOrderByMatchIdAscSideNumberAsc(anyCollection());
+        MatchPenaltyShootout shootout = new MatchPenaltyShootout(matchId);
+        shootout.start(finishedAt.minusSeconds(60));
+        shootout.decide(2, finishedAt.minusSeconds(10));
+        shootout.complete(finishedAt);
+        when(penaltyShootouts.findAllByMatchIdIn(anyCollection())).thenReturn(List.of(shootout));
+
+        var response = service.getGroup(aliceId.toString(), groupId);
+
+        assertEquals(0, response.registeredGoals());
+        assertEquals(List.of(1, 1), response.matchHistory().getFirst().teams().stream()
+                .map(team -> team.score()).toList());
+        assertEquals(1, statisticsFor(response, aliceId).totals().losses());
+        assertEquals(1, statisticsFor(response, bobId).totals().wins());
+        assertEquals(0, statisticsFor(response, bobId).totals().goals());
+        assertEquals(PlayerMatchResult.WIN,
+                service.getPlayer(aliceId.toString(), groupId, bobId).matchHistory().getFirst().result());
+    }
+
+    @Test
     void returnsZeroStatisticsForCurrentMembersWhenTheGroupHasNoFinishedMatches() {
         when(matches.findAllByGroupIdAndStatusOrderByFinishedAtDescStartsAtDesc(
                 groupId, MatchStatus.FINISHED)).thenReturn(List.of());
@@ -214,7 +251,7 @@ class GroupStatisticsServiceTest {
         assertEquals(4, response.players().size());
         assertEquals(0, response.currentPlayer().totals().gamesPlayed());
         assertTrue(response.matchHistory().isEmpty());
-        verifyNoInteractions(assignments, attendances, scores, goals, teamImages);
+        verifyNoInteractions(assignments, attendances, scores, goals, teamImages, penaltyShootouts);
     }
 
     @Test
