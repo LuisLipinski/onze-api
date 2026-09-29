@@ -76,6 +76,47 @@ class MatchTeamReserveServiceTest {
     }
 
     @Test
+    void shouldReserveExtraGoalkeeperEvenWhenFut7HasOnlySevenPlayers() {
+        TeamAssignmentResponse rental = rentalGoalkeeper("Goleiro de aluguel", 25);
+        TeamAssignmentResponse extra = assignment("Segundo goleiro", "GOALKEEPER", 40);
+        MatchTeamsResponse response = teams(
+                MatchModality.FUT7,
+                List.of(
+                        rental,
+                        extra,
+                        assignment("Defesa D", "RIGHT_DEFENDER", 30),
+                        assignment("Defesa E", "LEFT_DEFENDER", 30),
+                        assignment("Meia D", "RIGHT_MIDFIELDER", 30),
+                        assignment("Meia E", "LEFT_MIDFIELDER", 30),
+                        assignment("Ataque", "CENTER_FORWARD", 30)));
+
+        assertThat(MatchTeamReserveService.automaticReserveIds(response))
+                .containsExactly(extra.id());
+    }
+
+    @Test
+    void shouldReserveExtraGoalkeeperAndOutfieldOverflow() {
+        TeamAssignmentResponse extra = assignment("Goleiro reserva", "GOALKEEPER", 20);
+        TeamAssignmentResponse weakDefender = assignment("Defensor reserva", "RIGHT_DEFENDER", 10);
+        MatchTeamsResponse response = teams(
+                MatchModality.FUT7,
+                List.of(
+                        assignment("Goleiro titular", "GOALKEEPER", 40),
+                        extra,
+                        weakDefender,
+                        assignment("Defesa E", "LEFT_DEFENDER", 30),
+                        assignment("Meia D", "RIGHT_MIDFIELDER", 30),
+                        assignment("Meia C", "CENTRAL_MIDFIELDER", 30),
+                        assignment("Meia E", "LEFT_MIDFIELDER", 30),
+                        assignment("Ataque", "CENTER_FORWARD", 30),
+                        assignment("Ataque 2", "CENTER_FORWARD", 25)));
+
+        assertThat(MatchTeamReserveService.automaticReserveIds(response))
+                .contains(extra.id())
+                .hasSize(2);
+    }
+
+    @Test
     void shouldNotCreateReserveWhenFutsalFormationHasExactlyFivePlayers() {
         MatchTeamsResponse response = teams(
                 MatchModality.FUTSAL,
@@ -119,5 +160,14 @@ class MatchTeamReserveServiceTest {
                 TeamPositionOrigin.PRIMARY,
                 TeamAssignmentReason.PRIMARY_POSITION,
                 false);
+    }
+
+    private TeamAssignmentResponse rentalGoalkeeper(String name, int overall) {
+        TeamAssignmentResponse original = assignment(name, "GOALKEEPER", overall);
+        return new TeamAssignmentResponse(
+                original.id(), TeamParticipantType.RENTAL_GOALKEEPER,
+                original.participantId(), name, "GOALKEEPER", overall,
+                0, ScoreSource.ESTIMATED, TeamPositionOrigin.GOALKEEPER,
+                TeamAssignmentReason.GOALKEEPER_REQUIRED, false);
     }
 }

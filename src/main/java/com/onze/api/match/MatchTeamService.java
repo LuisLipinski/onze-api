@@ -65,6 +65,7 @@ public class MatchTeamService {
     private final MatchGuestSkillRatingRepository guestRatingRepository;
     private final MatchRentalGoalkeeperRepository rentalRepository;
     private final MatchTeamAssignmentRepository assignmentRepository;
+    private final MatchTeamReserveRepository reserveRepository;
     private final MatchTeamGenerationHistoryRepository generationHistoryRepository;
     private final GroupMemberRepository memberRepository;
     private final GroupMemberSkillRatingRepository memberRatingRepository;
@@ -78,6 +79,7 @@ public class MatchTeamService {
             MatchGuestSkillRatingRepository guestRatingRepository,
             MatchRentalGoalkeeperRepository rentalRepository,
             MatchTeamAssignmentRepository assignmentRepository,
+            MatchTeamReserveRepository reserveRepository,
             MatchTeamGenerationHistoryRepository generationHistoryRepository,
             GroupMemberRepository memberRepository,
             GroupMemberSkillRatingRepository memberRatingRepository,
@@ -89,6 +91,7 @@ public class MatchTeamService {
         this.guestRatingRepository = guestRatingRepository;
         this.rentalRepository = rentalRepository;
         this.assignmentRepository = assignmentRepository;
+        this.reserveRepository = reserveRepository;
         this.generationHistoryRepository = generationHistoryRepository;
         this.memberRepository = memberRepository;
         this.memberRatingRepository = memberRatingRepository;
@@ -126,14 +129,21 @@ public class MatchTeamService {
             drafts.add(new TeamDraft(number));
         }
 
-        List<Participant> remaining = new ArrayList<>(participants);
-        List<Participant> goalkeeperParticipants = remaining.stream()
+        List<Participant> goalkeeperParticipants = participants.stream()
                 .filter(Participant::goalkeeper)
                 .sorted(goalkeeperOrder(match, averages))
                 .toList();
-        remaining.removeAll(goalkeeperParticipants);
+        List<Participant> starters = goalkeeperParticipants.subList(0, match.getTeamCount());
+        List<Participant> goalkeeperOnlyReserves = goalkeeperParticipants.stream()
+                .skip(match.getTeamCount())
+                .filter(participant -> !hasOutfieldPosition(
+                        participant.type(), participant.primaryPosition(), participant.secondaryPosition()))
+                .toList();
+        List<Participant> remaining = new ArrayList<>(participants);
+        remaining.removeAll(starters);
+        remaining.removeAll(goalkeeperOnlyReserves);
         List<MatchTeamAssignment> generated = new ArrayList<>();
-        for (Participant goalkeeper : goalkeeperParticipants) {
+        for (Participant goalkeeper : starters) {
             TeamDraft team = drafts.stream().min(teamOrder()).orElseThrow();
             ResolvedScore resolved = score(goalkeeper, GOALKEEPER, match, averages);
             generated.add(assignment(
@@ -165,18 +175,31 @@ public class MatchTeamService {
             round++;
         }
 
+        for (Participant goalkeeper : goalkeeperOnlyReserves) {
+            TeamDraft team = drafts.stream().min(teamOrder()).orElseThrow();
+            ResolvedScore resolved = score(goalkeeper, GOALKEEPER, match, averages);
+            generated.add(assignment(
+                    match, team, goalkeeper, GOALKEEPER, resolved,
+                    TeamPositionOrigin.GOALKEEPER,
+                    TeamAssignmentReason.GOALKEEPER_REQUIRED));
+        }
+
         TeamDiversityOptimizer.Result diversity = rebalanceGeneratedTeams(
                 match, participants, generated, averages);
         assignmentRepository.deleteAllByMatchId(matchId);
         assignmentRepository.saveAll(generated);
         rememberGeneration(match, generated);
-        return response(
+        MatchTeamsResponse result = response(
                 match,
                 actor,
                 participants,
                 generated,
                 averages,
                 diversity.forcedRepeat() ? FORCED_REPEAT_NOTICE : null);
+        reserveRepository.saveAll(MatchTeamReserveService.automaticReserveIds(result).stream()
+                .map(assignmentId -> new MatchTeamReserve(assignmentId, matchId))
+                .toList());
+        return result;
     }
 
     @Transactional(readOnly = true)
@@ -219,6 +242,17 @@ public class MatchTeamService {
                 .orElseThrow(TeamAssignmentNotFoundException::new);
         if (GOALKEEPER.equals(normalizedRole) && !participant.goalkeeper()) {
             throw new IneligibleGoalkeeperException();
+        }
+        Set<UUID> reserveIds = reserveRepository.findAllByMatchIdOrderByCreatedAtAsc(matchId)
+                .stream().map(MatchTeamReserve::getAssignmentId).collect(Collectors.toSet());
+        if (GOALKEEPER.equals(normalizedRole) && !reserveIds.contains(assignmentId)
+                && assignmentRepository.findAllByMatchIdOrderByTeamNumberAscCreatedAtAsc(matchId)
+                        .stream()
+                        .anyMatch(other -> !other.getId().equals(assignmentId)
+                                && other.getTeamNumber() == teamNumber
+                                && GOALKEEPER.equals(other.getAssignedRole())
+                                && !reserveIds.contains(other.getId()))) {
+            throw new MultipleActiveGoalkeepersException();
         }
         assignment.changeByAdministrator(teamNumber, normalizedRole);
         List<Participant> participants = participants(match);
@@ -418,6 +452,16 @@ public class MatchTeamService {
             return 3;
         }
         return 4;
+    }
+
+    static boolean hasOutfieldPosition(
+            TeamParticipantType type,
+            PlayerPosition primaryPosition,
+            PlayerPosition secondaryPosition) {
+        return type != TeamParticipantType.RENTAL_GOALKEEPER
+                && ((primaryPosition != null && primaryPosition != PlayerPosition.GOALKEEPER)
+                        || (secondaryPosition != null
+                                && secondaryPosition != PlayerPosition.GOALKEEPER));
     }
 
     private Comparator<TeamDraft> teamOrder() {
@@ -858,6 +902,10 @@ public class MatchTeamService {
     }
 
     public static final class IneligibleGoalkeeperException extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+    }
+
+    public static final class MultipleActiveGoalkeepersException extends RuntimeException {
         private static final long serialVersionUID = 1L;
     }
 }

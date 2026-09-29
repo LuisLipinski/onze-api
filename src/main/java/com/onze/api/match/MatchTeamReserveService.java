@@ -140,12 +140,12 @@ public class MatchTeamReserveService {
         int capacity = fieldCapacity(teams.modality());
 
         for (TeamResponse team : teams.teams()) {
-            int reserveCount = Math.max(0, team.assignments().size() - capacity);
+            List<TeamAssignmentResponse> selected = new ArrayList<>();
+            selectExtraGoalkeepers(team.assignments(), selected);
+            int reserveCount = Math.max(team.assignments().size() - capacity, selected.size());
             if (reserveCount == 0) {
                 continue;
             }
-
-            List<TeamAssignmentResponse> selected = new ArrayList<>();
             selectExactRoleSurplus(
                     team.assignments(), roleCapacities(teams.modality()), reserveCount, selected);
             selectSectorSurplus(
@@ -157,6 +157,19 @@ public class MatchTeamReserveService {
                     .forEach(result::add);
         }
         return result;
+    }
+
+    private static void selectExtraGoalkeepers(
+            List<TeamAssignmentResponse> assignments,
+            List<TeamAssignmentResponse> selected) {
+        assignments.stream()
+                .filter(assignment -> "GOALKEEPER".equals(assignment.assignedRole()))
+                .sorted(Comparator
+                        .comparingInt((TeamAssignmentResponse assignment) ->
+                                assignment.participantType() == TeamParticipantType.RENTAL_GOALKEEPER ? 0 : 1)
+                        .thenComparing(WEAKEST_FIRST.reversed()))
+                .skip(1)
+                .forEach(selected::add);
     }
 
     private static void selectExactRoleSurplus(
@@ -171,6 +184,9 @@ public class MatchTeamReserveService {
                         Collectors.toCollection(ArrayList::new)));
         List<TeamAssignmentResponse> candidates = new ArrayList<>();
         for (Map.Entry<String, List<TeamAssignmentResponse>> entry : byRole.entrySet()) {
+            if ("GOALKEEPER".equals(entry.getKey())) {
+                continue;
+            }
             Integer roleCapacity = capacities.get(entry.getKey());
             if (roleCapacity == null) {
                 continue;
@@ -256,6 +272,18 @@ public class MatchTeamReserveService {
                 .collect(Collectors.toSet());
         if (!validAssignmentIds.containsAll(reserveAssignmentIds)) {
             throw new MatchTeamService.InvalidTeamAssignmentException();
+        }
+        for (int teamNumber = 1; teamNumber <= assignments.stream()
+                .mapToInt(MatchTeamAssignment::getTeamNumber).max().orElse(0); teamNumber++) {
+            int currentTeam = teamNumber;
+            long activeGoalkeepers = assignments.stream()
+                    .filter(assignment -> assignment.getTeamNumber() == currentTeam)
+                    .filter(assignment -> "GOALKEEPER".equals(assignment.getAssignedRole()))
+                    .filter(assignment -> !reserveAssignmentIds.contains(assignment.getId()))
+                    .count();
+            if (activeGoalkeepers > 1) {
+                throw new MatchTeamService.MultipleActiveGoalkeepersException();
+            }
         }
         reserveRepository.deleteAllByMatchId(matchId);
         if (!reserveAssignmentIds.isEmpty()) {

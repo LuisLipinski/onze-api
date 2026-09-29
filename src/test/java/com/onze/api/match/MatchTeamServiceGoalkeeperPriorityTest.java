@@ -65,4 +65,16 @@ class MatchTeamServiceGoalkeeperPriorityTest {
         assertThat(firstRental).isZero();
         assertThat(secondRental).isZero();
     }
+
+    @Test
+    void shouldUseExtraVolunteerOrVersatileGoalkeeperInAnOutfieldRole() {
+        assertThat(MatchTeamService.hasOutfieldPosition(
+                TeamParticipantType.MEMBER, PlayerPosition.DEFENDER, null)).isTrue();
+        assertThat(MatchTeamService.hasOutfieldPosition(
+                TeamParticipantType.MEMBER, PlayerPosition.GOALKEEPER, PlayerPosition.DEFENDER)).isTrue();
+        assertThat(MatchTeamService.hasOutfieldPosition(
+                TeamParticipantType.MEMBER, PlayerPosition.GOALKEEPER, null)).isFalse();
+        assertThat(MatchTeamService.hasOutfieldPosition(
+                TeamParticipantType.RENTAL_GOALKEEPER, PlayerPosition.GOALKEEPER, PlayerPosition.DEFENDER)).isFalse();
+    }
 }
