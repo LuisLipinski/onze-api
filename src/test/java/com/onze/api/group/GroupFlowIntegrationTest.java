@@ -1,5 +1,6 @@
 package com.onze.api.group;
 
+import com.onze.api.IntegrationTestSupport;
 import com.onze.api.auth.AuthModels.AuthResponse;
 import com.onze.api.auth.PasswordResetCodeRepository;
 import com.onze.api.group.GroupModels.GroupResponse;
@@ -9,15 +10,11 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.web.servlet.MockMvc;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import tools.jackson.databind.json.JsonMapper;
 
@@ -29,20 +26,12 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@Testcontainers
 @SpringBootTest(properties = {
         "security.jwt.secret=onze-group-integration-secret-with-at-least-32-bytes",
         "security.jwt.issuer=onze-api-group-integration-test"
 })
 @AutoConfigureMockMvc
-class GroupFlowIntegrationTest {
-
-    @Container
-    @ServiceConnection
-    static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:18-alpine")
-            .withDatabaseName("onze_group_test")
-            .withUsername("onze")
-            .withPassword("onze");
+class GroupFlowIntegrationTest extends IntegrationTestSupport {
 
     @Autowired
     private MockMvc mockMvc;
