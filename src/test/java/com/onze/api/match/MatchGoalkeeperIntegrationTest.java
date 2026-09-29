@@ -804,6 +804,68 @@ class MatchGoalkeeperIntegrationTest {
                 .andExpect(jsonPath("$.teams[2].assignments.length()").value(1));
     }
 
+    @Test
+    void shouldKeepOnlyOneGoalkeeperOnFieldAfterGenerationAndManualChanges() throws Exception {
+        AuthResponse creator = register("extra-keepers@example.com", "Principal Goleiros Extras");
+        GroupResponse group = createGroup(creator, "Pelada com goleiros extras");
+        MatchResponse match = readMatch(createMatch(
+                creator,
+                group.id(),
+                teamMatchBody(LocalDate.now(SAO_PAULO).plusDays(4), "FUT7", 3, 14, 2))
+                .andExpect(status().isCreated())
+                .andReturn());
+        for (int index = 1; index <= 3; index++) {
+            addRentalGoalkeeper(match.id(), creator, "Goleiro extra " + index)
+                    .andExpect(status().isOk());
+        }
+
+        var generatedResult = mockMvc.perform(post("/api/matches/{matchId}/teams/generate", match.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(creator)))
+                .andExpect(status().isOk())
+                .andReturn();
+        var teams = jsonMapper.readValue(
+                generatedResult.getResponse().getContentAsString(),
+                TeamModels.MatchTeamsResponse.class);
+        var reserveResult = mockMvc.perform(get("/api/matches/{matchId}/teams/reserves", match.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(creator)))
+                .andExpect(status().isOk())
+                .andReturn();
+        var reserves = jsonMapper.readValue(
+                reserveResult.getResponse().getContentAsString(),
+                MatchTeamReserveModels.MatchTeamReservesResponse.class);
+        assertThat(reserves.reserveAssignmentIds()).hasSize(1);
+        assertThat(teams.teams()).allSatisfy(team -> assertThat(team.assignments().stream()
+                .filter(assignment -> assignment.assignedRole().equals("GOALKEEPER"))
+                .filter(assignment -> !reserves.reserveAssignmentIds().contains(assignment.id()))
+                .count()).isEqualTo(1));
+
+        mockMvc.perform(put("/api/matches/{matchId}/teams/reserves", match.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(creator))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"reserveAssignmentIds": []}
+                                """))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("MULTIPLE_ACTIVE_GOALKEEPERS"));
+
+        var crowdedTeam = teams.teams().stream()
+                .filter(team -> team.assignments().size() == 2)
+                .findFirst().orElseThrow();
+        var otherKeeper = teams.teams().stream()
+                .filter(team -> team.teamNumber() != crowdedTeam.teamNumber())
+                .flatMap(team -> team.assignments().stream())
+                .findFirst().orElseThrow();
+        mockMvc.perform(put("/api/matches/{matchId}/teams/assignments/{assignmentId}",
+                        match.id(), otherKeeper.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(creator))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"teamNumber": %d, "assignedRole": "GOALKEEPER"}
+                                """.formatted(crowdedTeam.teamNumber())))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("MULTIPLE_ACTIVE_GOALKEEPERS"));
+    }
+
     private org.springframework.test.web.servlet.ResultActions createMatch(
             AuthResponse user,
             UUID groupId,

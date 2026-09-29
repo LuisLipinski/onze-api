@@ -39,6 +39,7 @@ import com.onze.api.match.MatchTeamService.GoalkeepersNotReadyException;
 import com.onze.api.match.MatchTeamService.InvalidTeamAssignmentException;
 import com.onze.api.match.MatchTeamService.TeamAssignmentNotFoundException;
 import com.onze.api.match.MatchTeamService.IneligibleGoalkeeperException;
+import com.onze.api.match.MatchTeamService.MultipleActiveGoalkeepersException;
 import com.onze.api.match.MatchTeamImageService.InvalidTeamImageException;
 import com.onze.api.match.MatchTeamImageService.InvalidTeamIdentityException;
 import com.onze.api.match.MatchTeamImageService.TeamImageLockedException;
@@ -315,6 +316,14 @@ public class MatchExceptionHandler {
                 .body(new ApiErrorResponse(
                         "INELIGIBLE_GOALKEEPER",
                         "Este participante não pode ser escalado automaticamente como goleiro."));
+    }
+
+    @ExceptionHandler(MultipleActiveGoalkeepersException.class)
+    ResponseEntity<ApiErrorResponse> multipleActiveGoalkeepers() {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(new ApiErrorResponse(
+                        "MULTIPLE_ACTIVE_GOALKEEPERS",
+                        "Cada time pode ter apenas um goleiro em campo. Coloque o goleiro extra na reserva."));
     }
 
     @ExceptionHandler(AttendanceClosedException.class)
