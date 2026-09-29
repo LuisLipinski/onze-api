@@ -6,6 +6,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 
+import com.onze.api.IntegrationTestSupport;
 import com.onze.api.auth.AuthModels.AuthResponse;
 import com.onze.api.auth.PasswordResetCodeRepository;
 import com.onze.api.group.GroupInviteModels.InviteResponse;
@@ -23,15 +24,11 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import tools.jackson.databind.json.JsonMapper;
 
@@ -44,7 +41,6 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@Testcontainers
 @SpringBootTest(properties = {
         "security.jwt.secret=onze-goalkeeper-integration-secret-with-at-least-32-bytes",
         "security.jwt.issuer=onze-api-goalkeeper-integration-test",
@@ -52,16 +48,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "matches.processing.initial-delay-ms=3600000"
 })
 @AutoConfigureMockMvc
-class MatchGoalkeeperIntegrationTest {
+class MatchGoalkeeperIntegrationTest extends IntegrationTestSupport {
 
     private static final ZoneId SAO_PAULO = ZoneId.of("America/Sao_Paulo");
-
-    @Container
-    @ServiceConnection
-    static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:18-alpine")
-            .withDatabaseName("onze_goalkeeper_test")
-            .withUsername("onze")
-            .withPassword("onze");
 
     @Autowired
     private MockMvc mockMvc;
