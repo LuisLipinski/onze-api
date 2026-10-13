@@ -109,6 +109,62 @@ class MatchFlowIntegrationTest extends IntegrationTestSupport {
     }
 
     @Test
+    void shouldPersistTeamStatisticsBySideAndRestrictEditsToManagers() throws Exception {
+        AuthResponse creator = register("stats-primary@example.com", "Admin Estatísticas");
+        AuthResponse viewer = register("stats-viewer@example.com", "Torcedor");
+        GroupResponse group = createGroup(creator, "Pelada com detalhes");
+        join(viewer, createInvite(creator, group.id()).code());
+        var result = mockMvc.perform(post("/api/groups/{groupId}/matches", group.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(creator))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(matchBody(LocalDate.now(SAO_PAULO).plusDays(3), "NONE", 10)))
+                .andExpect(status().isCreated()).andReturn();
+        MatchResponse match = jsonMapper.readValue(result.getResponse().getContentAsString(), MatchResponse.class);
+        mockMvc.perform(put("/api/matches/{matchId}/live/start", match.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(creator)))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/matches/{matchId}/live/team-statistics", match.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(viewer))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"sideNumber\":1,\"type\":\"FOULS\",\"delta\":1}"))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(post("/api/matches/{matchId}/live/team-statistics", match.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(creator))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"sideNumber\":1,\"type\":\"SHOTS_ON_TARGET\",\"delta\":1}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.teamStatistics[0].shots").value(1))
+                .andExpect(jsonPath("$.teamStatistics[0].shotsOnTarget").value(1));
+        mockMvc.perform(post("/api/matches/{matchId}/live/team-statistics", match.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(creator))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"sideNumber\":2,\"type\":\"CORNERS\",\"delta\":1}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.teamStatistics[1].corners").value(1));
+        mockMvc.perform(post("/api/matches/{matchId}/live/team-statistics", match.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(creator))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"sideNumber\":1,\"type\":\"SHOTS\",\"delta\":-1}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_TEAM_STATISTIC"));
+
+        mockMvc.perform(get("/api/matches/{matchId}/live", match.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(viewer)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.teamStatistics[0].sideNumber").value(1))
+                .andExpect(jsonPath("$.teamStatistics[1].sideNumber").value(2));
+        mockMvc.perform(put("/api/matches/{matchId}/live/finish", match.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(creator)))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/api/matches/{matchId}/live", match.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(viewer)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.teamStatistics[0].shots").value(1))
+                .andExpect(jsonPath("$.teamStatistics[1].corners").value(1));
+    }
+
+    @Test
     void shouldFinishLastPeriodOnlyAfterAddedTimeAndKeepShootoutSeparateFromGoals() throws Exception {
         AuthResponse creator = register("timed-shootout@example.com", "Principal Tempos");
         GroupResponse group = createGroup(creator, "Pelada com pênaltis");

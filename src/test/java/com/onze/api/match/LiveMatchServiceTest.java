@@ -46,6 +46,7 @@ class LiveMatchServiceTest {
     private MatchTeamAssignmentRepository assignments;
     private MatchGoalEventRepository goals;
     private MatchCardEventRepository cards;
+    private LiveMatchTeamStatisticsRepository teamStatistics;
     private MatchPeriodRepository periods;
     private MatchPenaltyShootoutRepository penaltyShootouts;
     private MatchPenaltyTakerRepository penaltyTakers;
@@ -72,6 +73,7 @@ class LiveMatchServiceTest {
         assignments = mock(MatchTeamAssignmentRepository.class);
         goals = mock(MatchGoalEventRepository.class);
         cards = mock(MatchCardEventRepository.class);
+        teamStatistics = mock(LiveMatchTeamStatisticsRepository.class);
         periods = mock(MatchPeriodRepository.class);
         penaltyShootouts = mock(MatchPenaltyShootoutRepository.class);
         penaltyTakers = mock(MatchPenaltyTakerRepository.class);
@@ -83,7 +85,7 @@ class LiveMatchServiceTest {
         weeklyMatchWindowService = mock(WeeklyMatchWindowService.class);
         events = mock(ApplicationEventPublisher.class);
         service = new LiveMatchService(matches, members, scores, teamImages, teamIdentityService,
-                assignments, goals, cards, periods, penaltyShootouts, penaltyTakers, penaltyAttempts,
+                assignments, goals, cards, teamStatistics, periods, penaltyShootouts, penaltyTakers, penaltyAttempts,
                 users, guests, rentalGoalkeepers, notifications, weeklyMatchWindowService, events,
                 Clock.fixed(NOW, ZoneOffset.UTC));
         matchId = UUID.randomUUID();
@@ -100,6 +102,7 @@ class LiveMatchServiceTest {
         when(goals.save(any(MatchGoalEvent.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(goals.findAllByMatchIdOrderByElapsedSecondsDescCreatedAtDesc(matchId)).thenReturn(List.of());
         when(cards.findAllByMatchIdOrderByElapsedSecondsDescCreatedAtDesc(matchId)).thenReturn(List.of());
+        when(teamStatistics.findAllByMatchIdOrderBySideNumberAsc(matchId)).thenReturn(List.of());
         when(periods.findAllByMatchIdOrderByStartedAtAsc(matchId)).thenReturn(List.of());
         when(periods.findFirstByMatchIdAndEndedAtIsNullOrderByStartedAtDesc(matchId))
                 .thenReturn(Optional.empty());
@@ -199,6 +202,67 @@ class LiveMatchServiceTest {
     }
 
     @Test
+    void recordsTeamStatisticsAndIncludesShotsOnTargetInTotalShots() {
+        service.start(adminId.toString(), matchId);
+        var first = new LiveMatchTeamStatistics(matchId, 1);
+        var second = new LiveMatchTeamStatistics(matchId, 2);
+        when(teamStatistics.findByMatchIdAndSideNumber(matchId, 1)).thenReturn(Optional.of(first));
+        when(teamStatistics.findByMatchIdAndSideNumber(matchId, 2)).thenReturn(Optional.of(second));
+        when(teamStatistics.findAllByMatchIdOrderBySideNumberAsc(matchId)).thenReturn(List.of(first, second));
+
+        service.adjustTeamStatistic(adminId.toString(), matchId, 1, TeamStatisticType.SHOTS_ON_TARGET, 1);
+        service.adjustTeamStatistic(adminId.toString(), matchId, 1, TeamStatisticType.SHOTS, 1);
+        service.adjustTeamStatistic(adminId.toString(), matchId, 2, TeamStatisticType.CORNERS, 1);
+        var state = service.adjustTeamStatistic(adminId.toString(), matchId, 2, TeamStatisticType.FOULS, 1);
+
+        assertEquals(2, state.teamStatistics().getFirst().shots());
+        assertEquals(1, state.teamStatistics().getFirst().shotsOnTarget());
+        assertEquals(1, state.teamStatistics().get(1).corners());
+        assertEquals(1, state.teamStatistics().get(1).fouls());
+        assertEquals(5L, state.version());
+        verify(teamStatistics, times(4)).save(any(LiveMatchTeamStatistics.class));
+
+        var corrected = service.adjustTeamStatistic(adminId.toString(), matchId, 1,
+                TeamStatisticType.SHOTS_ON_TARGET, -1);
+        assertEquals(1, corrected.teamStatistics().getFirst().shots());
+        assertEquals(0, corrected.teamStatistics().getFirst().shotsOnTarget());
+    }
+
+    @Test
+    void rejectsNegativeAndInconsistentTeamStatistics() {
+        service.start(adminId.toString(), matchId);
+        var statistics = new LiveMatchTeamStatistics(matchId, 1);
+        when(teamStatistics.findByMatchIdAndSideNumber(matchId, 1)).thenReturn(Optional.of(statistics));
+        service.adjustTeamStatistic(adminId.toString(), matchId, 1, TeamStatisticType.SHOTS_ON_TARGET, 1);
+
+        assertThrows(LiveMatchService.InvalidTeamStatisticException.class,
+                () -> service.adjustTeamStatistic(adminId.toString(), matchId, 1, TeamStatisticType.SHOTS, -1));
+        assertThrows(LiveMatchService.InvalidTeamStatisticException.class,
+                () -> service.adjustTeamStatistic(adminId.toString(), matchId, 2, TeamStatisticType.FOULS, -1));
+        assertThrows(LiveMatchService.InvalidTeamStatisticException.class,
+                () -> service.adjustTeamStatistic(adminId.toString(), matchId, 3, TeamStatisticType.CORNERS, 1));
+        assertThrows(LiveMatchService.InvalidTeamStatisticException.class,
+                () -> service.adjustTeamStatistic(adminId.toString(), matchId, 1, TeamStatisticType.CORNERS, 0));
+        assertEquals(1, statistics.getShots());
+        assertEquals(1, statistics.getShotsOnTarget());
+    }
+
+    @Test
+    void onlyManagersCanChangeTeamStatisticsDuringAnActivePeriod() {
+        service.start(adminId.toString(), matchId);
+        UUID viewerId = UUID.randomUUID();
+        when(members.findByGroupIdAndUserId(groupId, viewerId))
+                .thenReturn(Optional.of(new GroupMember(groupId, viewerId, GroupRole.MEMBER)));
+        assertThrows(GroupAccessDeniedException.class,
+                () -> service.adjustTeamStatistic(viewerId.toString(), matchId, 1, TeamStatisticType.FOULS, 1));
+
+        service.finish(adminId.toString(), matchId);
+        assertThrows(InvalidLiveMatchTransitionException.class,
+                () -> service.adjustTeamStatistic(adminId.toString(), matchId, 1, TeamStatisticType.FOULS, 1));
+        verifyNoInteractions(teamStatistics);
+    }
+
+    @Test
     void rejectsNegativeScoreAndUnknownSide() {
         service.start(adminId.toString(), matchId);
         assertThrows(LiveMatchService.InvalidLiveMatchScoreException.class,
@@ -219,6 +283,7 @@ class LiveMatchServiceTest {
         verify(scores).deleteAllByMatchId(matchId);
         verify(goals).deleteAllByMatchId(matchId);
         verify(cards).deleteAllByMatchId(matchId);
+        verify(teamStatistics).deleteAllByMatchId(matchId);
     }
 
     @Test

@@ -20,6 +20,7 @@ import com.onze.api.match.MatchService.MatchNotFoundException;
 import com.onze.api.match.LiveMatchModels.LiveMatchStateResponse;
 import com.onze.api.match.LiveMatchModels.LiveMatchSnapshotResponse;
 import com.onze.api.match.LiveMatchModels.LiveScoreSideResponse;
+import com.onze.api.match.LiveMatchModels.TeamStatisticsResponse;
 import com.onze.api.match.LiveMatchModels.TeamIdentityNameRequest;
 import com.onze.api.match.LiveMatchModels.CreateGoalEventResponse;
 import com.onze.api.match.LiveMatchModels.GoalEventResponse;
@@ -47,6 +48,7 @@ public class LiveMatchService {
     private final MatchTeamAssignmentRepository assignmentRepository;
     private final MatchGoalEventRepository goalEventRepository;
     private final MatchCardEventRepository cardEventRepository;
+    private final LiveMatchTeamStatisticsRepository teamStatisticsRepository;
     private final MatchPeriodRepository periodRepository;
     private final MatchPenaltyShootoutRepository penaltyShootoutRepository;
     private final MatchPenaltyTakerRepository penaltyTakerRepository;
@@ -64,6 +66,7 @@ public class LiveMatchService {
             MatchTeamImageService teamIdentityService,
             MatchTeamAssignmentRepository assignmentRepository,
             MatchGoalEventRepository goalEventRepository, MatchCardEventRepository cardEventRepository,
+            LiveMatchTeamStatisticsRepository teamStatisticsRepository,
             MatchPeriodRepository periodRepository,
             MatchPenaltyShootoutRepository penaltyShootoutRepository,
             MatchPenaltyTakerRepository penaltyTakerRepository,
@@ -83,6 +86,7 @@ public class LiveMatchService {
         this.assignmentRepository = assignmentRepository;
         this.goalEventRepository = goalEventRepository;
         this.cardEventRepository = cardEventRepository;
+        this.teamStatisticsRepository = teamStatisticsRepository;
         this.periodRepository = periodRepository;
         this.penaltyShootoutRepository = penaltyShootoutRepository;
         this.penaltyTakerRepository = penaltyTakerRepository;
@@ -143,6 +147,7 @@ public class LiveMatchService {
         scoreRepository.deleteAllByMatchId(matchId);
         goalEventRepository.deleteAllByMatchId(matchId);
         cardEventRepository.deleteAllByMatchId(matchId);
+        teamStatisticsRepository.deleteAllByMatchId(matchId);
         penaltyAttemptRepository.deleteAllByMatchId(matchId);
         penaltyTakerRepository.deleteAllByMatchId(matchId);
         penaltyShootoutRepository.deleteByMatchId(matchId);
@@ -370,6 +375,31 @@ public class LiveMatchService {
             match.liveStateChanged();
             publish(matchId, match, LiveMatchChangeType.SCORE_UPDATED);
         }
+        return response(matchId, match, access.member());
+    }
+
+    @Transactional
+    public LiveMatchStateResponse adjustTeamStatistic(String authenticatedUserId, UUID matchId,
+            int sideNumber, TeamStatisticType type, int delta) {
+        Access access = accessibleMatch(authenticatedUserId, matchId, true);
+        FootballMatch match = access.match();
+        finishIfExpired(match, Instant.now(clock));
+        if (match.getStatus() != MatchStatus.IN_PROGRESS || match.getStartedAt() == null
+                || (match.isPeriodsEnabled() && activePeriod(matchId).isEmpty())) {
+            throw new InvalidLiveMatchTransitionException();
+        }
+        if (sideNumber < 1 || sideNumber > sideCount(match) || type == null
+                || (delta != 1 && delta != -1)) throw new InvalidTeamStatisticException();
+        LiveMatchTeamStatistics stats = teamStatisticsRepository.findByMatchIdAndSideNumber(matchId, sideNumber)
+                .orElseGet(() -> new LiveMatchTeamStatistics(matchId, sideNumber));
+        try {
+            stats.adjust(type, delta);
+        } catch (IllegalArgumentException exception) {
+            throw new InvalidTeamStatisticException();
+        }
+        teamStatisticsRepository.save(stats);
+        match.liveStateChanged();
+        publish(matchId, match, LiveMatchChangeType.TEAM_STATISTIC_UPDATED);
         return response(matchId, match, access.member());
     }
 
@@ -727,6 +757,7 @@ public class LiveMatchService {
         return new LiveMatchStateResponse(
                 snapshot.matchId(), snapshot.status(), snapshot.startedAt(), snapshot.finishedAt(),
                 snapshot.version(), snapshot.scores(), snapshot.goalEvents(), snapshot.cardEvents(),
+                snapshot.teamStatistics(),
                 snapshot.phase(), snapshot.periods(), snapshot.penaltyShootout(),
                 member.hasPermission(GroupAdminPermission.SCHEDULE_GAMES));
     }
@@ -771,11 +802,16 @@ public class LiveMatchService {
         List<CardEventResponse> cardEvents = cardEventRepository
                 .findAllByMatchIdOrderByElapsedSecondsDescCreatedAtDesc(matchId)
                 .stream().map(this::cardResponse).toList();
+        List<TeamStatisticsResponse> teamStatistics = teamStatisticsRepository
+                .findAllByMatchIdOrderBySideNumberAsc(matchId)
+                .stream().map(item -> new TeamStatisticsResponse(item.getSideNumber(),
+                        item.getShots(), item.getShotsOnTarget(), item.getCorners(), item.getFouls()))
+                .toList();
         List<MatchPeriodResponse> periods = periodRepository.findAllByMatchIdOrderByStartedAtAsc(matchId)
                 .stream().map(this::periodResponse).toList();
         PenaltyShootoutResponse penaltyShootout = penaltyResponse(matchId).orElse(null);
         return new LiveMatchSnapshotResponse(matchId, match.getStatus(), match.getStartedAt(),
-                match.getFinishedAt(), match.getLiveVersion(), scores, goalEvents, cardEvents,
+                match.getFinishedAt(), match.getLiveVersion(), scores, goalEvents, cardEvents, teamStatistics,
                 livePhase(match, periods, penaltyShootout), periods, penaltyShootout);
     }
 
@@ -925,6 +961,7 @@ public class LiveMatchService {
 
     public static final class InvalidLiveMatchTransitionException extends RuntimeException { }
     public static final class InvalidLiveMatchScoreException extends RuntimeException { }
+    public static final class InvalidTeamStatisticException extends RuntimeException { }
     public static final class InvalidGoalEventException extends RuntimeException { }
     public static final class InvalidCardEventException extends RuntimeException { }
     public static final class InvalidPeriodConfigurationException extends RuntimeException { }
