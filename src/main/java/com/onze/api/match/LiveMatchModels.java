@@ -18,6 +18,18 @@ public final class LiveMatchModels {
             @NotNull @Min(1) Integer sideNumber,
             @NotNull @Min(0) Integer score) { }
 
+    public record AdjustTeamStatisticRequest(
+            @NotNull @Min(1) Integer sideNumber,
+            @NotNull TeamStatisticType type,
+            @NotNull @Min(-1) @Max(1) Integer delta) { }
+
+    public record TeamStatisticsResponse(
+            int sideNumber,
+            int shots,
+            int shotsOnTarget,
+            int corners,
+            int fouls) { }
+
     public record StartLiveMatchRequest(
             @Size(max = 16) List<@Valid TeamIdentityNameRequest> teams) { }
 
@@ -70,6 +82,7 @@ public final class LiveMatchModels {
             List<LiveScoreSideResponse> scores,
             List<GoalEventResponse> goalEvents,
             List<CardEventResponse> cardEvents,
+            List<TeamStatisticsResponse> teamStatistics,
             LiveMatchPhase phase,
             List<MatchPeriodResponse> periods,
             PenaltyShootoutResponse penaltyShootout,
@@ -84,6 +97,7 @@ public final class LiveMatchModels {
             List<LiveScoreSideResponse> scores,
             List<GoalEventResponse> goalEvents,
             List<CardEventResponse> cardEvents,
+            List<TeamStatisticsResponse> teamStatistics,
             LiveMatchPhase phase,
             List<MatchPeriodResponse> periods,
             PenaltyShootoutResponse penaltyShootout) { }

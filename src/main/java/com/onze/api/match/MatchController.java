@@ -24,6 +24,7 @@ import com.onze.api.match.LiveMatchModels.LiveMatchStateResponse;
 import com.onze.api.match.LiveMatchModels.LiveMatchSummaryResponse;
 import com.onze.api.match.LiveMatchModels.StartLiveMatchRequest;
 import com.onze.api.match.LiveMatchModels.UpdateLiveScoreRequest;
+import com.onze.api.match.LiveMatchModels.AdjustTeamStatisticRequest;
 import com.onze.api.match.LiveMatchModels.CreateGoalEventRequest;
 import com.onze.api.match.LiveMatchModels.CreateGoalEventResponse;
 import com.onze.api.match.LiveMatchModels.CreateCardEventRequest;
@@ -189,6 +190,15 @@ public class MatchController {
             @Valid @RequestBody UpdateLiveScoreRequest request) {
         return liveMatchService.updateScore(
                 authentication.getName(), matchId, request.sideNumber(), request.score());
+    }
+
+    @PostMapping("/api/matches/{matchId}/live/team-statistics")
+    public LiveMatchStateResponse adjustTeamStatistic(
+            Authentication authentication,
+            @PathVariable UUID matchId,
+            @Valid @RequestBody AdjustTeamStatisticRequest request) {
+        return liveMatchService.adjustTeamStatistic(authentication.getName(), matchId,
+                request.sideNumber(), request.type(), request.delta());
     }
 
     @PostMapping("/api/matches/{matchId}/live/goals")

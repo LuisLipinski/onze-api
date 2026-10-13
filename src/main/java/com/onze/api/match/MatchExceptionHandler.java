@@ -50,6 +50,7 @@ import com.onze.api.match.MatchGoalkeeperService.GoalkeeperPaymentAlreadyRecorde
 import com.onze.api.match.MatchGoalkeeperService.PrimaryGoalkeeperCannotBeUnassignedException;
 import com.onze.api.match.LiveMatchService.InvalidLiveMatchTransitionException;
 import com.onze.api.match.LiveMatchService.InvalidLiveMatchScoreException;
+import com.onze.api.match.LiveMatchService.InvalidTeamStatisticException;
 import com.onze.api.match.LiveMatchService.InvalidGoalEventException;
 import com.onze.api.match.LiveMatchService.InvalidCardEventException;
 import com.onze.api.match.LiveMatchService.InvalidPeriodConfigurationException;
@@ -79,6 +80,12 @@ public class MatchExceptionHandler {
     ResponseEntity<ApiErrorResponse> invalidLiveScore() {
         return ResponseEntity.badRequest()
                 .body(new ApiErrorResponse("INVALID_LIVE_MATCH_SCORE", "O placar informado não é válido para este jogo."));
+    }
+
+    @ExceptionHandler(InvalidTeamStatisticException.class)
+    ResponseEntity<ApiErrorResponse> invalidTeamStatistic() {
+        return ResponseEntity.badRequest()
+                .body(new ApiErrorResponse("INVALID_TEAM_STATISTIC", "Confira o time e o total desta estatística."));
     }
 
     @ExceptionHandler(InvalidGoalEventException.class)
