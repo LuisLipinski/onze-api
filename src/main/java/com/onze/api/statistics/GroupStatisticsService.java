@@ -286,7 +286,7 @@ public class GroupStatisticsService {
                                 participation.teamNumber(),
                                 "Time " + participation.teamNumber(),
                                 null,
-                                0, 0, 0, 0, 0, 0));
+                                0, 0, 0, 0, 0, 0, 0));
                 playerHistory.computeIfAbsent(statistics.userId, ignored -> new ArrayList<>())
                         .add(new PlayerMatchHistoryResponse(
                                 matchId,
@@ -428,6 +428,8 @@ public class GroupStatisticsService {
                     identity == null ? null : identity.getImageUrl(),
                     scoreByTeam.getOrDefault(teamNumber, 0),
                     (int) fouls.stream().filter(item -> item.getOffenderSideNumber() == side).count(),
+                    (int) fouls.stream().filter(item -> item.getVictimSideNumber() != null
+                            && item.getVictimSideNumber() == side).count(),
                     (int) fouls.stream().filter(item -> item.isPenalty()
                             && item.getOffenderSideNumber() == side).count(),
                     (int) fouls.stream().filter(item -> item.isPenalty()

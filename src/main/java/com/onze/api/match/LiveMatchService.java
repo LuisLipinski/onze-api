@@ -519,7 +519,10 @@ public class LiveMatchService {
             stats.adjust(TeamStatisticType.SHOTS, 1);
             teamStatisticsRepository.save(stats);
         }
-        foul.resolve(taker, participantName(matchId, taker), scored, goalId, shotId, now);
+        EventTime resolutionTime = eventTime(match, now);
+        foul.resolve(taker, participantName(matchId, taker), scored, goalId, shotId, now,
+                resolutionTime.elapsedSeconds(), resolutionTime.periodType(),
+                resolutionTime.periodNumber(), resolutionTime.periodElapsedSeconds());
         match.liveStateChanged();
         publish(matchId, match, LiveMatchChangeType.PENALTY_RESOLVED);
         return response(matchId, match, access.member());
@@ -1030,7 +1033,9 @@ public class LiveMatchService {
                 event.isPenalty(), event.getTakerAssignmentId(), event.getTakerDisplayName(),
                 event.getScored(), event.getGoalEventId(), event.getElapsedSeconds(),
                 event.getPeriodType(), event.getPeriodNumber(), event.getPeriodElapsedSeconds(),
-                event.getCreatedAt());
+                event.getCreatedAt(), event.getResolvedAt(), event.getResolutionElapsedSeconds(),
+                event.getResolutionPeriodType(), event.getResolutionPeriodNumber(),
+                event.getResolutionPeriodElapsedSeconds());
     }
 
     private MatchPeriodResponse periodResponse(MatchPeriod period) {

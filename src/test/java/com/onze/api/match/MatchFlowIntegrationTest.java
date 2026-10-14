@@ -303,12 +303,28 @@ class MatchFlowIntegrationTest extends IntegrationTestSupport {
 
         String awardBody = "{\"offenderAssignmentId\":\"" + defenderId
                 + "\",\"victimAssignmentId\":\"" + attackerId + "\",\"penalty\":true}";
+        var regularFoul = mockMvc.perform(post("/api/matches/{matchId}/live/fouls", match.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(admin))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(awardBody.replace("\"penalty\":true", "\"penalty\":false")))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.foulEvents[0].offenderSideNumber").value(2))
+                .andExpect(jsonPath("$.foulEvents[0].victimSideNumber").value(1))
+                .andExpect(jsonPath("$.teamStatistics[0].fouls").value(1))
+                .andReturn();
+        String regularId = jsonMapper.readTree(regularFoul.getResponse().getContentAsString())
+                .path("foulEvents").get(0).path("id").asText();
+        mockMvc.perform(delete("/api/matches/{matchId}/live/fouls/{eventId}", match.id(), regularId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(admin)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.foulEvents.length()").value(0));
         var award = mockMvc.perform(post("/api/matches/{matchId}/live/fouls", match.id())
                         .header(HttpHeaders.AUTHORIZATION, bearer(admin))
                         .contentType(MediaType.APPLICATION_JSON).content(awardBody))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.foulEvents[0].victimDisplayName").value("Atacante"))
                 .andExpect(jsonPath("$.foulEvents[0].scored").isEmpty())
+                .andExpect(jsonPath("$.foulEvents[0].resolvedAt").isEmpty())
                 .andExpect(jsonPath("$.teamStatistics[0].sideNumber").value(2))
                 .andExpect(jsonPath("$.teamStatistics[0].fouls").value(1))
                 .andReturn();
@@ -325,6 +341,9 @@ class MatchFlowIntegrationTest extends IntegrationTestSupport {
                         .content("{\"takerAssignmentId\":\"" + attackerId + "\",\"scored\":false}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.foulEvents[0].scored").value(false))
+                .andExpect(jsonPath("$.foulEvents[0].resolvedAt").isNotEmpty())
+                .andExpect(jsonPath("$.foulEvents[0].resolutionElapsedSeconds").isNumber())
+                .andExpect(jsonPath("$.foulEvents[0].takerDisplayName").value("Atacante"))
                 .andExpect(jsonPath("$.teamStatistics[0].shots").value(1))
                 .andExpect(jsonPath("$.teamStatistics[0].shotsOnTarget").value(0));
         mockMvc.perform(post("/api/matches/{matchId}/live/team-statistics", match.id())

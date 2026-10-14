@@ -48,6 +48,11 @@ public class MatchFoulEvent {
     @Column(name = "created_by_user_id", nullable = false) private UUID createdByUserId;
     @Column(name = "created_at", nullable = false) private Instant createdAt;
     @Column(name = "resolved_at") private Instant resolvedAt;
+    @Column(name = "resolution_elapsed_seconds") private Long resolutionElapsedSeconds;
+    @Enumerated(EnumType.STRING)
+    @Column(name = "resolution_period_type", length = 16) private MatchPeriodType resolutionPeriodType;
+    @Column(name = "resolution_period_number") private Integer resolutionPeriodNumber;
+    @Column(name = "resolution_period_elapsed_seconds") private Long resolutionPeriodElapsedSeconds;
 
     protected MatchFoulEvent() { }
 
@@ -78,7 +83,9 @@ public class MatchFoulEvent {
     }
 
     public void resolve(MatchTeamAssignment taker, String name, boolean scored,
-            UUID goalEventId, UUID shotEventId, Instant now) {
+            UUID goalEventId, UUID shotEventId, Instant now, long resolutionElapsedSeconds,
+            MatchPeriodType resolutionPeriodType, Integer resolutionPeriodNumber,
+            Long resolutionPeriodElapsedSeconds) {
         if (!penalty || this.scored != null) throw new IllegalStateException();
         this.takerAssignmentId = taker.getId();
         this.takerParticipantType = taker.getParticipantType();
@@ -88,6 +95,10 @@ public class MatchFoulEvent {
         this.goalEventId = goalEventId;
         this.shotEventId = shotEventId;
         this.resolvedAt = now;
+        this.resolutionElapsedSeconds = resolutionElapsedSeconds;
+        this.resolutionPeriodType = resolutionPeriodType;
+        this.resolutionPeriodNumber = resolutionPeriodNumber;
+        this.resolutionPeriodElapsedSeconds = resolutionPeriodElapsedSeconds;
     }
 
     public UUID getId() { return id; }
@@ -116,4 +127,8 @@ public class MatchFoulEvent {
     public Long getPeriodElapsedSeconds() { return periodElapsedSeconds; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getResolvedAt() { return resolvedAt; }
+    public Long getResolutionElapsedSeconds() { return resolutionElapsedSeconds; }
+    public MatchPeriodType getResolutionPeriodType() { return resolutionPeriodType; }
+    public Integer getResolutionPeriodNumber() { return resolutionPeriodNumber; }
+    public Long getResolutionPeriodElapsedSeconds() { return resolutionPeriodElapsedSeconds; }
 }

@@ -298,6 +298,7 @@ class GroupStatisticsServiceTest {
         assertEquals(2, defenderTotals.foulsCommitted());
         assertEquals(2, defenderTotals.penaltiesCommitted());
         assertEquals(2, group.matchHistory().getFirst().teams().get(1).foulsCommitted());
+        assertEquals(2, group.matchHistory().getFirst().teams().getFirst().foulsSuffered());
         assertEquals(2, group.matchHistory().getFirst().teams().getFirst().penaltiesWon());
         assertEquals(1, group.matchHistory().getFirst().teams().getFirst().penaltiesMissed());
         assertEquals(2, service.getPlayer(aliceId.toString(), groupId, aliceId)

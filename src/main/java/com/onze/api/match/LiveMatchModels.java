@@ -66,7 +66,12 @@ public final class LiveMatchModels {
             MatchPeriodType periodType,
             Integer periodNumber,
             Long periodElapsedSeconds,
-            Instant createdAt) { }
+            Instant createdAt,
+            Instant resolvedAt,
+            Long resolutionElapsedSeconds,
+            MatchPeriodType resolutionPeriodType,
+            Integer resolutionPeriodNumber,
+            Long resolutionPeriodElapsedSeconds) { }
 
     public record StartLiveMatchRequest(
             @Size(max = 16) List<@Valid TeamIdentityNameRequest> teams) { }
