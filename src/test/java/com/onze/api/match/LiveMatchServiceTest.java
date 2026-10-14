@@ -48,6 +48,7 @@ class LiveMatchServiceTest {
     private MatchCardEventRepository cards;
     private LiveMatchTeamStatisticsRepository teamStatistics;
     private MatchShotEventRepository shotEvents;
+    private MatchFoulEventRepository fouls;
     private MatchPeriodRepository periods;
     private MatchPenaltyShootoutRepository penaltyShootouts;
     private MatchPenaltyTakerRepository penaltyTakers;
@@ -76,6 +77,7 @@ class LiveMatchServiceTest {
         cards = mock(MatchCardEventRepository.class);
         teamStatistics = mock(LiveMatchTeamStatisticsRepository.class);
         shotEvents = mock(MatchShotEventRepository.class);
+        fouls = mock(MatchFoulEventRepository.class);
         periods = mock(MatchPeriodRepository.class);
         penaltyShootouts = mock(MatchPenaltyShootoutRepository.class);
         penaltyTakers = mock(MatchPenaltyTakerRepository.class);
@@ -87,7 +89,7 @@ class LiveMatchServiceTest {
         weeklyMatchWindowService = mock(WeeklyMatchWindowService.class);
         events = mock(ApplicationEventPublisher.class);
         service = new LiveMatchService(matches, members, scores, teamImages, teamIdentityService,
-                assignments, goals, cards, teamStatistics, shotEvents, periods, penaltyShootouts, penaltyTakers, penaltyAttempts,
+                assignments, goals, cards, teamStatistics, shotEvents, fouls, periods, penaltyShootouts, penaltyTakers, penaltyAttempts,
                 users, guests, rentalGoalkeepers, notifications, weeklyMatchWindowService, events,
                 Clock.fixed(NOW, ZoneOffset.UTC));
         matchId = UUID.randomUUID();
@@ -106,6 +108,7 @@ class LiveMatchServiceTest {
         when(cards.findAllByMatchIdOrderByElapsedSecondsDescCreatedAtDesc(matchId)).thenReturn(List.of());
         when(teamStatistics.findAllByMatchIdOrderBySideNumberAsc(matchId)).thenReturn(List.of());
         when(shotEvents.findAllByMatchIdOrderByCreatedAtDesc(matchId)).thenReturn(List.of());
+        when(fouls.findAllByMatchIdOrderByElapsedSecondsDescCreatedAtDesc(matchId)).thenReturn(List.of());
         when(periods.findAllByMatchIdOrderByStartedAtAsc(matchId)).thenReturn(List.of());
         when(periods.findFirstByMatchIdAndEndedAtIsNullOrderByStartedAtDesc(matchId))
                 .thenReturn(Optional.empty());
@@ -213,6 +216,13 @@ class LiveMatchServiceTest {
                 .thenReturn(Optional.of(new User("shooter@example.invalid", "hash", "Jogador")));
         var first = new LiveMatchTeamStatistics(matchId, 1);
         var second = new LiveMatchTeamStatistics(matchId, 2);
+        MatchTeamAssignment offender = assignment(2);
+        when(assignments.findByIdAndMatchId(offender.getId(), matchId)).thenReturn(Optional.of(offender));
+        when(users.findById(offender.getParticipantId()))
+                .thenReturn(Optional.of(new User("offender@example.invalid", "hash", "Atleta")));
+        MatchShotEvent recordedShot = new MatchShotEvent(matchId, shooter, "Jogador", true, NOW);
+        when(shotEvents.findAllByMatchIdAndSideNumberAndOnTargetOrderByCreatedAtDesc(matchId, 1, true))
+                .thenReturn(List.of(recordedShot));
         when(teamStatistics.findByMatchIdAndSideNumber(matchId, 1)).thenReturn(Optional.of(first));
         when(teamStatistics.findByMatchIdAndSideNumber(matchId, 2)).thenReturn(Optional.of(second));
         when(teamStatistics.findAllByMatchIdOrderBySideNumberAsc(matchId)).thenReturn(List.of(first, second));
@@ -222,7 +232,7 @@ class LiveMatchServiceTest {
         service.adjustTeamStatistic(adminId.toString(), matchId, 1,
                 TeamStatisticType.SHOTS, 1, shooter.getId());
         service.adjustTeamStatistic(adminId.toString(), matchId, 2, TeamStatisticType.CORNERS, 1);
-        var state = service.adjustTeamStatistic(adminId.toString(), matchId, 2, TeamStatisticType.FOULS, 1);
+        var state = service.createFoul(adminId.toString(), matchId, offender.getId(), null, false);
 
         assertEquals(2, state.teamStatistics().getFirst().shots());
         assertEquals(1, state.teamStatistics().getFirst().shotsOnTarget());

@@ -19,7 +19,14 @@ public final class GroupStatisticsModels {
             int draws,
             int losses,
             int goals,
-            int assists) { }
+            int assists,
+            int foulsCommitted,
+            int foulsSuffered,
+            int penaltiesCommitted,
+            int penaltiesWon,
+            int penaltiesTaken,
+            int penaltiesScored,
+            int penaltiesMissed) { }
 
     public record StatisticsPlayerResponse(
             UUID userId,
@@ -39,13 +46,25 @@ public final class GroupStatisticsModels {
             List<RankingEntryResponse> goals,
             List<RankingEntryResponse> assists,
             List<RankingEntryResponse> gamesPlayed,
-            List<RankingEntryResponse> wins) { }
+            List<RankingEntryResponse> wins,
+            List<RankingEntryResponse> foulsCommitted,
+            List<RankingEntryResponse> foulsSuffered,
+            List<RankingEntryResponse> penaltiesCommitted,
+            List<RankingEntryResponse> penaltiesWon,
+            List<RankingEntryResponse> penaltiesTaken,
+            List<RankingEntryResponse> penaltiesScored,
+            List<RankingEntryResponse> penaltiesMissed) { }
 
     public record StatisticsTeamResponse(
             int teamNumber,
             String name,
             String imageUrl,
-            int score) { }
+            int score,
+            int foulsCommitted,
+            int penaltiesCommitted,
+            int penaltiesWon,
+            int penaltiesScored,
+            int penaltiesMissed) { }
 
     public record GroupMatchHistoryResponse(
             UUID matchId,
@@ -68,6 +87,13 @@ public final class GroupStatisticsModels {
             PlayerMatchResult result,
             int goals,
             int assists,
+            int foulsCommitted,
+            int foulsSuffered,
+            int penaltiesCommitted,
+            int penaltiesWon,
+            int penaltiesTaken,
+            int penaltiesScored,
+            int penaltiesMissed,
             List<StatisticsTeamResponse> teams) { }
 
     public record GroupStatisticsResponse(

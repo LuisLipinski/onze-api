@@ -40,6 +40,34 @@ public final class LiveMatchModels {
             boolean onTarget,
             Instant createdAt) { }
 
+    public record CreateFoulEventRequest(
+            @NotNull UUID offenderAssignmentId,
+            UUID victimAssignmentId,
+            @NotNull Boolean penalty) { }
+
+    public record ResolveMatchPenaltyRequest(
+            @NotNull UUID takerAssignmentId,
+            @NotNull Boolean scored) { }
+
+    public record FoulEventResponse(
+            UUID id,
+            int offenderSideNumber,
+            UUID offenderAssignmentId,
+            String offenderDisplayName,
+            Integer victimSideNumber,
+            UUID victimAssignmentId,
+            String victimDisplayName,
+            boolean penalty,
+            UUID takerAssignmentId,
+            String takerDisplayName,
+            Boolean scored,
+            UUID goalEventId,
+            long elapsedSeconds,
+            MatchPeriodType periodType,
+            Integer periodNumber,
+            Long periodElapsedSeconds,
+            Instant createdAt) { }
+
     public record StartLiveMatchRequest(
             @Size(max = 16) List<@Valid TeamIdentityNameRequest> teams) { }
 
@@ -96,6 +124,7 @@ public final class LiveMatchModels {
             List<CardEventResponse> cardEvents,
             List<TeamStatisticsResponse> teamStatistics,
             List<ShotEventResponse> shotEvents,
+            List<FoulEventResponse> foulEvents,
             LiveMatchPhase phase,
             List<MatchPeriodResponse> periods,
             PenaltyShootoutResponse penaltyShootout,
@@ -112,6 +141,7 @@ public final class LiveMatchModels {
             List<CardEventResponse> cardEvents,
             List<TeamStatisticsResponse> teamStatistics,
             List<ShotEventResponse> shotEvents,
+            List<FoulEventResponse> foulEvents,
             LiveMatchPhase phase,
             List<MatchPeriodResponse> periods,
             PenaltyShootoutResponse penaltyShootout) { }

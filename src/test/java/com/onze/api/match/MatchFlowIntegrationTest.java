@@ -267,6 +267,101 @@ class MatchFlowIntegrationTest extends IntegrationTestSupport {
                 .andExpect(jsonPath("$.teamStatistics[0].shotsOnTarget").value(0));
     }
 
+    @Test
+    void tracksFoulsPenaltyAwardMissedAndScoredKicksAndRevertsTheLinkedGoal() throws Exception {
+        AuthResponse admin = register("foul-admin@example.com", "Atacante");
+        AuthResponse defender = register("foul-defender@example.com", "Defensor");
+        GroupResponse group = createGroup(admin, "Pelada com pênalti em jogo");
+        join(defender, createInvite(admin, group.id()).code());
+        var created = mockMvc.perform(post("/api/groups/{groupId}/matches", group.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(admin))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(matchBody(LocalDate.now(SAO_PAULO).plusDays(3), "NONE", 10)))
+                .andExpect(status().isCreated()).andReturn();
+        MatchResponse match = jsonMapper.readValue(created.getResponse().getContentAsString(), MatchResponse.class);
+        mockMvc.perform(put("/api/matches/{matchId}/live/start", match.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(admin)))
+                .andExpect(status().isOk());
+        UUID attackerId = addPlayer(match.id(), 1, admin.user().id());
+        UUID defenderId = addPlayer(match.id(), 2, defender.user().id());
+
+        mockMvc.perform(post("/api/matches/{matchId}/live/team-statistics", match.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(admin))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"sideNumber\":2,\"type\":\"FOULS\",\"delta\":1}"))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(post("/api/matches/{matchId}/live/fouls", match.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(defender))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"offenderAssignmentId\":\"" + defenderId + "\",\"penalty\":true}"))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(post("/api/matches/{matchId}/live/fouls", match.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(admin))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"offenderAssignmentId\":\"" + defenderId + "\",\"penalty\":true}"))
+                .andExpect(status().isBadRequest());
+
+        String awardBody = "{\"offenderAssignmentId\":\"" + defenderId
+                + "\",\"victimAssignmentId\":\"" + attackerId + "\",\"penalty\":true}";
+        var award = mockMvc.perform(post("/api/matches/{matchId}/live/fouls", match.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(admin))
+                        .contentType(MediaType.APPLICATION_JSON).content(awardBody))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.foulEvents[0].victimDisplayName").value("Atacante"))
+                .andExpect(jsonPath("$.foulEvents[0].scored").isEmpty())
+                .andExpect(jsonPath("$.teamStatistics[0].sideNumber").value(2))
+                .andExpect(jsonPath("$.teamStatistics[0].fouls").value(1))
+                .andReturn();
+        String awardId = jsonMapper.readTree(award.getResponse().getContentAsString())
+                .path("foulEvents").get(0).path("id").asText();
+        mockMvc.perform(post("/api/matches/{matchId}/live/fouls/{eventId}/resolve", match.id(), awardId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(admin))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"takerAssignmentId\":\"" + defenderId + "\",\"scored\":false}"))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(post("/api/matches/{matchId}/live/fouls/{eventId}/resolve", match.id(), awardId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(admin))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"takerAssignmentId\":\"" + attackerId + "\",\"scored\":false}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.foulEvents[0].scored").value(false))
+                .andExpect(jsonPath("$.teamStatistics[0].shots").value(1))
+                .andExpect(jsonPath("$.teamStatistics[0].shotsOnTarget").value(0));
+        mockMvc.perform(post("/api/matches/{matchId}/live/team-statistics", match.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(admin))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"sideNumber\":1,\"type\":\"SHOTS\",\"delta\":-1}"))
+                .andExpect(status().isBadRequest());
+
+        var second = mockMvc.perform(post("/api/matches/{matchId}/live/fouls", match.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(admin))
+                        .contentType(MediaType.APPLICATION_JSON).content(awardBody))
+                .andExpect(status().isCreated()).andReturn();
+        String secondId = jsonMapper.readTree(second.getResponse().getContentAsString())
+                .path("foulEvents").get(0).path("id").asText();
+        var converted = mockMvc.perform(post("/api/matches/{matchId}/live/fouls/{eventId}/resolve", match.id(), secondId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(admin))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"takerAssignmentId\":\"" + attackerId + "\",\"scored\":true}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.scores[0].score").value(1))
+                .andExpect(jsonPath("$.teamStatistics[0].shots").value(2))
+                .andExpect(jsonPath("$.teamStatistics[0].shotsOnTarget").value(1))
+                .andExpect(jsonPath("$.foulEvents[0].scored").value(true))
+                .andReturn();
+        String goalId = jsonMapper.readTree(converted.getResponse().getContentAsString())
+                .path("foulEvents").get(0).path("goalEventId").asText();
+        mockMvc.perform(delete("/api/matches/{matchId}/live/goals/{eventId}", match.id(), goalId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(admin)))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(delete("/api/matches/{matchId}/live/fouls/{eventId}", match.id(), secondId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(admin)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.scores[0].score").value(0))
+                .andExpect(jsonPath("$.teamStatistics[0].shots").value(1))
+                .andExpect(jsonPath("$.teamStatistics[1].fouls").value(1));
+    }
+
     private UUID addPlayer(UUID matchId, int sideNumber, UUID userId) {
         UUID id = UUID.randomUUID();
         jdbcTemplate.update("""

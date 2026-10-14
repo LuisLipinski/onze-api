@@ -21,6 +21,8 @@ import com.onze.api.match.TeamModels.MatchTeamsResponse;
 import com.onze.api.match.TeamModels.MatchTeamImageResponse;
 import com.onze.api.match.TeamModels.UpdateTeamAssignmentRequest;
 import com.onze.api.match.LiveMatchModels.LiveMatchStateResponse;
+import com.onze.api.match.LiveMatchModels.CreateFoulEventRequest;
+import com.onze.api.match.LiveMatchModels.ResolveMatchPenaltyRequest;
 import com.onze.api.match.LiveMatchModels.LiveMatchSummaryResponse;
 import com.onze.api.match.LiveMatchModels.StartLiveMatchRequest;
 import com.onze.api.match.LiveMatchModels.UpdateLiveScoreRequest;
@@ -199,6 +201,29 @@ public class MatchController {
             @Valid @RequestBody AdjustTeamStatisticRequest request) {
         return liveMatchService.adjustTeamStatistic(authentication.getName(), matchId,
                 request.sideNumber(), request.type(), request.delta(), request.playerAssignmentId());
+    }
+
+    @PostMapping("/api/matches/{matchId}/live/fouls")
+    public ResponseEntity<LiveMatchStateResponse> createFoul(
+            Authentication authentication, @PathVariable UUID matchId,
+            @Valid @RequestBody CreateFoulEventRequest request) {
+        return ResponseEntity.status(201).body(liveMatchService.createFoul(
+                authentication.getName(), matchId, request.offenderAssignmentId(),
+                request.victimAssignmentId(), request.penalty()));
+    }
+
+    @PostMapping("/api/matches/{matchId}/live/fouls/{eventId}/resolve")
+    public LiveMatchStateResponse resolveMatchPenalty(
+            Authentication authentication, @PathVariable UUID matchId, @PathVariable UUID eventId,
+            @Valid @RequestBody ResolveMatchPenaltyRequest request) {
+        return liveMatchService.resolveMatchPenalty(authentication.getName(), matchId, eventId,
+                request.takerAssignmentId(), request.scored());
+    }
+
+    @DeleteMapping("/api/matches/{matchId}/live/fouls/{eventId}")
+    public LiveMatchStateResponse deleteFoul(
+            Authentication authentication, @PathVariable UUID matchId, @PathVariable UUID eventId) {
+        return liveMatchService.deleteFoul(authentication.getName(), matchId, eventId);
     }
 
     @PostMapping("/api/matches/{matchId}/live/goals")
