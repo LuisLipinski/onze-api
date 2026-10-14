@@ -28,6 +28,8 @@ import com.onze.api.match.MatchAttendance;
 import com.onze.api.match.MatchAttendanceRepository;
 import com.onze.api.match.MatchGoalEvent;
 import com.onze.api.match.MatchGoalEventRepository;
+import com.onze.api.match.MatchFoulEvent;
+import com.onze.api.match.MatchFoulEventRepository;
 import com.onze.api.match.MatchPenaltyShootout;
 import com.onze.api.match.MatchPenaltyShootoutRepository;
 import com.onze.api.match.MatchStatus;
@@ -53,6 +55,7 @@ class GroupStatisticsServiceTest {
     private MatchAttendanceRepository attendances;
     private LiveMatchScoreRepository scores;
     private MatchGoalEventRepository goals;
+    private MatchFoulEventRepository fouls;
     private MatchTeamImageRepository teamImages;
     private MatchPenaltyShootoutRepository penaltyShootouts;
     private GroupStatisticsService service;
@@ -72,11 +75,13 @@ class GroupStatisticsServiceTest {
         attendances = mock(MatchAttendanceRepository.class);
         scores = mock(LiveMatchScoreRepository.class);
         goals = mock(MatchGoalEventRepository.class);
+        fouls = mock(MatchFoulEventRepository.class);
         teamImages = mock(MatchTeamImageRepository.class);
         penaltyShootouts = mock(MatchPenaltyShootoutRepository.class);
         service = new GroupStatisticsService(
-                groups, members, users, matches, assignments, attendances, scores, goals,
+                groups, members, users, matches, assignments, attendances, scores, goals, fouls,
                 teamImages, penaltyShootouts);
+        when(fouls.findAllByMatchIdIn(anyCollection())).thenReturn(List.of());
 
         groupId = UUID.randomUUID();
         aliceId = UUID.randomUUID();
@@ -253,6 +258,50 @@ class GroupStatisticsServiceTest {
         assertEquals(0, response.currentPlayer().totals().gamesPlayed());
         assertTrue(response.matchHistory().isEmpty());
         verifyNoInteractions(assignments, attendances, scores, goals, teamImages, penaltyShootouts);
+    }
+
+    @Test
+    void countsPenaltiesAndFoulsForPlayersAndTeamsAfterFinishing() {
+        UUID matchId = UUID.randomUUID();
+        Instant time = Instant.parse("2026-10-14T18:00:00Z");
+        when(matches.findAllByGroupIdAndStatusOrderByFinishedAtDescStartsAtDesc(
+                groupId, MatchStatus.FINISHED))
+                .thenReturn(List.of(match(matchId, time, time.plusSeconds(3600), 2)));
+        MatchTeamAssignment attacker = assignment(matchId, aliceId, 1);
+        MatchTeamAssignment defender = assignment(matchId, bobId, 2);
+        doReturn(List.of(attacker, defender)).when(assignments)
+                .findAllByMatchIdInAndParticipantTypeOrderByMatchIdAscTeamNumberAscCreatedAtAsc(
+                        anyCollection(), any());
+        doReturn(List.of(score(matchId, 1, 1), score(matchId, 2, 0)))
+                .when(scores).findAllByMatchIdInOrderByMatchIdAscSideNumberAsc(anyCollection());
+        when(goals.findAllByMatchIdInOrderByMatchIdAscElapsedSecondsAscCreatedAtAsc(anyCollection()))
+                .thenReturn(List.of());
+        when(teamImages.findAllByMatchIdInOrderByMatchIdAscTeamNumberAsc(anyCollection()))
+                .thenReturn(List.of());
+        MatchFoulEvent missed = new MatchFoulEvent(matchId, defender, "Bruno", attacker, "Alice",
+                true, 100, null, null, null, bobId, time);
+        missed.resolve(attacker, "Alice", false, null, UUID.randomUUID(), time.plusSeconds(10));
+        MatchFoulEvent converted = new MatchFoulEvent(matchId, defender, "Bruno", attacker, "Alice",
+                true, 200, null, null, null, bobId, time.plusSeconds(100));
+        converted.resolve(attacker, "Alice", true, UUID.randomUUID(), null, time.plusSeconds(110));
+        when(fouls.findAllByMatchIdIn(anyCollection())).thenReturn(List.of(missed, converted));
+
+        var group = service.getGroup(aliceId.toString(), groupId);
+        var attackerTotals = statisticsFor(group, aliceId).totals();
+        var defenderTotals = statisticsFor(group, bobId).totals();
+        assertEquals(2, attackerTotals.foulsSuffered());
+        assertEquals(2, attackerTotals.penaltiesWon());
+        assertEquals(2, attackerTotals.penaltiesTaken());
+        assertEquals(1, attackerTotals.penaltiesScored());
+        assertEquals(1, attackerTotals.penaltiesMissed());
+        assertEquals(2, defenderTotals.foulsCommitted());
+        assertEquals(2, defenderTotals.penaltiesCommitted());
+        assertEquals(2, group.matchHistory().getFirst().teams().get(1).foulsCommitted());
+        assertEquals(2, group.matchHistory().getFirst().teams().getFirst().penaltiesWon());
+        assertEquals(1, group.matchHistory().getFirst().teams().getFirst().penaltiesMissed());
+        assertEquals(2, service.getPlayer(aliceId.toString(), groupId, aliceId)
+                .matchHistory().getFirst().penaltiesWon());
+        assertEquals(aliceId, group.rankings().penaltiesScored().getFirst().userId());
     }
 
     @Test

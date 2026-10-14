@@ -28,6 +28,8 @@ import com.onze.api.match.MatchAttendance;
 import com.onze.api.match.MatchAttendanceRepository;
 import com.onze.api.match.MatchGoalEvent;
 import com.onze.api.match.MatchGoalEventRepository;
+import com.onze.api.match.MatchFoulEvent;
+import com.onze.api.match.MatchFoulEventRepository;
 import com.onze.api.match.MatchPenaltyShootout;
 import com.onze.api.match.MatchPenaltyShootoutRepository;
 import com.onze.api.match.MatchStatus;
@@ -67,6 +69,7 @@ public class GroupStatisticsService {
     private final MatchAttendanceRepository attendanceRepository;
     private final LiveMatchScoreRepository scoreRepository;
     private final MatchGoalEventRepository goalEventRepository;
+    private final MatchFoulEventRepository foulEventRepository;
     private final MatchTeamImageRepository teamImageRepository;
     private final MatchPenaltyShootoutRepository penaltyShootoutRepository;
 
@@ -79,6 +82,7 @@ public class GroupStatisticsService {
             MatchAttendanceRepository attendanceRepository,
             LiveMatchScoreRepository scoreRepository,
             MatchGoalEventRepository goalEventRepository,
+            MatchFoulEventRepository foulEventRepository,
             MatchTeamImageRepository teamImageRepository,
             MatchPenaltyShootoutRepository penaltyShootoutRepository) {
         this.groupRepository = groupRepository;
@@ -89,6 +93,7 @@ public class GroupStatisticsService {
         this.attendanceRepository = attendanceRepository;
         this.scoreRepository = scoreRepository;
         this.goalEventRepository = goalEventRepository;
+        this.foulEventRepository = foulEventRepository;
         this.teamImageRepository = teamImageRepository;
         this.penaltyShootoutRepository = penaltyShootoutRepository;
     }
@@ -175,6 +180,8 @@ public class GroupStatisticsService {
                 ? List.of()
                 : goalEventRepository
                         .findAllByMatchIdInOrderByMatchIdAscElapsedSecondsAscCreatedAtAsc(matchIds);
+        List<MatchFoulEvent> fouls = matchIds.isEmpty()
+                ? List.of() : foulEventRepository.findAllByMatchIdIn(matchIds);
         List<MatchTeamImage> identities = matchIds.isEmpty()
                 ? List.of()
                 : teamImageRepository.findAllByMatchIdInOrderByMatchIdAscTeamNumberAsc(matchIds);
@@ -200,6 +207,12 @@ public class GroupStatisticsService {
                 .filter(goal -> goal.getAssistParticipantType() == TeamParticipantType.MEMBER)
                 .map(MatchGoalEvent::getAssistParticipantId)
                 .forEach(playerIds::add);
+        fouls.stream().filter(foul -> foul.getOffenderParticipantType() == TeamParticipantType.MEMBER)
+                .map(MatchFoulEvent::getOffenderParticipantId).forEach(playerIds::add);
+        fouls.stream().filter(foul -> foul.getVictimParticipantType() == TeamParticipantType.MEMBER)
+                .map(MatchFoulEvent::getVictimParticipantId).forEach(playerIds::add);
+        fouls.stream().filter(foul -> foul.getTakerParticipantType() == TeamParticipantType.MEMBER)
+                .map(MatchFoulEvent::getTakerParticipantId).forEach(playerIds::add);
 
         Map<UUID, User> users = userRepository.findAllById(playerIds).stream()
                 .collect(Collectors.toMap(User::getId, user -> user));
@@ -226,6 +239,7 @@ public class GroupStatisticsService {
                 participations, Participation::matchId);
         Map<UUID, List<LiveMatchScore>> scoresByMatch = groupByMatch(scores, LiveMatchScore::getMatchId);
         Map<UUID, List<MatchGoalEvent>> goalsByMatch = groupByMatch(goals, MatchGoalEvent::getMatchId);
+        Map<UUID, List<MatchFoulEvent>> foulsByMatch = groupByMatch(fouls, MatchFoulEvent::getMatchId);
         Map<UUID, List<MatchTeamImage>> identitiesByMatch = groupByMatch(identities, MatchTeamImage::getMatchId);
 
         List<GroupMatchHistoryResponse> groupHistory = new ArrayList<>(matches.size());
@@ -233,10 +247,11 @@ public class GroupStatisticsService {
         for (FootballMatch match : matches) {
             UUID matchId = match.getId();
             List<MatchGoalEvent> matchGoals = goalsByMatch.getOrDefault(matchId, List.of());
+            List<MatchFoulEvent> matchFouls = foulsByMatch.getOrDefault(matchId, List.of());
             List<StatisticsTeamResponse> teams = teams(
                     match,
                     scoresByMatch.getOrDefault(matchId, List.of()),
-                    identitiesByMatch.getOrDefault(matchId, List.of()));
+                    identitiesByMatch.getOrDefault(matchId, List.of()), matchFouls);
             groupHistory.add(new GroupMatchHistoryResponse(
                     matchId,
                     match.getStartsAt(),
@@ -248,6 +263,11 @@ public class GroupStatisticsService {
 
             Map<UUID, Integer> goalsByPlayer = countGoals(matchGoals);
             Map<UUID, Integer> assistsByPlayer = countAssists(matchGoals);
+            Map<UUID, FoulTotals> foulsByPlayer = countPlayerFouls(matchFouls);
+            foulsByPlayer.forEach((userId, totals) -> {
+                MutablePlayerStatistics stats = playerStats.get(userId);
+                if (stats != null) stats.addFouls(totals);
+            });
             for (Participation participation : participationsByMatch.getOrDefault(matchId, List.of())) {
                 MutablePlayerStatistics statistics = playerStats.get(participation.userId());
                 if (statistics == null) {
@@ -257,6 +277,7 @@ public class GroupStatisticsService {
                         teams, participation.teamNumber(), penaltyWinners.get(matchId));
                 int playerGoals = goalsByPlayer.getOrDefault(statistics.userId, 0);
                 int playerAssists = assistsByPlayer.getOrDefault(statistics.userId, 0);
+                FoulTotals playerFouls = foulsByPlayer.getOrDefault(statistics.userId, new FoulTotals());
                 statistics.addMatch(result);
                 StatisticsTeamResponse ownTeam = teams.stream()
                         .filter(team -> team.teamNumber() == participation.teamNumber())
@@ -265,7 +286,7 @@ public class GroupStatisticsService {
                                 participation.teamNumber(),
                                 "Time " + participation.teamNumber(),
                                 null,
-                                0));
+                                0, 0, 0, 0, 0, 0));
                 playerHistory.computeIfAbsent(statistics.userId, ignored -> new ArrayList<>())
                         .add(new PlayerMatchHistoryResponse(
                                 matchId,
@@ -279,6 +300,13 @@ public class GroupStatisticsService {
                                 result,
                                 playerGoals,
                                 playerAssists,
+                                playerFouls.foulsCommitted,
+                                playerFouls.foulsSuffered,
+                                playerFouls.penaltiesCommitted,
+                                playerFouls.penaltiesWon,
+                                playerFouls.penaltiesTaken,
+                                playerFouls.penaltiesScored,
+                                playerFouls.penaltiesMissed,
                                 teams));
             }
         }
@@ -330,10 +358,44 @@ public class GroupStatisticsService {
         return result;
     }
 
+    private Map<UUID, FoulTotals> countPlayerFouls(List<MatchFoulEvent> fouls) {
+        Map<UUID, FoulTotals> result = new HashMap<>();
+        for (MatchFoulEvent foul : fouls) {
+            if (foul.getOffenderParticipantType() == TeamParticipantType.MEMBER) {
+                FoulTotals totals = result.computeIfAbsent(foul.getOffenderParticipantId(), ignored -> new FoulTotals());
+                totals.foulsCommitted++;
+                if (foul.isPenalty()) totals.penaltiesCommitted++;
+            }
+            if (foul.getVictimParticipantType() == TeamParticipantType.MEMBER) {
+                FoulTotals totals = result.computeIfAbsent(foul.getVictimParticipantId(), ignored -> new FoulTotals());
+                totals.foulsSuffered++;
+                if (foul.isPenalty()) totals.penaltiesWon++;
+            }
+            if (foul.getTakerParticipantType() == TeamParticipantType.MEMBER) {
+                FoulTotals totals = result.computeIfAbsent(foul.getTakerParticipantId(), ignored -> new FoulTotals());
+                totals.penaltiesTaken++;
+                if (Boolean.TRUE.equals(foul.getScored())) totals.penaltiesScored++;
+                else if (Boolean.FALSE.equals(foul.getScored())) totals.penaltiesMissed++;
+            }
+        }
+        return result;
+    }
+
+    private static final class FoulTotals {
+        private int foulsCommitted;
+        private int foulsSuffered;
+        private int penaltiesCommitted;
+        private int penaltiesWon;
+        private int penaltiesTaken;
+        private int penaltiesScored;
+        private int penaltiesMissed;
+    }
+
     private List<StatisticsTeamResponse> teams(
             FootballMatch match,
             List<LiveMatchScore> scores,
-            List<MatchTeamImage> identities) {
+            List<MatchTeamImage> identities,
+            List<MatchFoulEvent> fouls) {
         Map<Integer, Integer> scoreByTeam = scores.stream().collect(Collectors.toMap(
                 LiveMatchScore::getSideNumber,
                 LiveMatchScore::getScore,
@@ -344,12 +406,24 @@ public class GroupStatisticsService {
                 (first, ignored) -> first));
         List<StatisticsTeamResponse> result = new ArrayList<>();
         for (int teamNumber = 1; teamNumber <= sideCount(match); teamNumber++) {
+            int side = teamNumber;
             MatchTeamImage identity = identityByTeam.get(teamNumber);
             result.add(new StatisticsTeamResponse(
                     teamNumber,
                     identity == null ? "Time " + teamNumber : identity.getTeamName(),
                     identity == null ? null : identity.getImageUrl(),
-                    scoreByTeam.getOrDefault(teamNumber, 0)));
+                    scoreByTeam.getOrDefault(teamNumber, 0),
+                    (int) fouls.stream().filter(item -> item.getOffenderSideNumber() == side).count(),
+                    (int) fouls.stream().filter(item -> item.isPenalty()
+                            && item.getOffenderSideNumber() == side).count(),
+                    (int) fouls.stream().filter(item -> item.isPenalty()
+                            && item.getVictimSideNumber() == side).count(),
+                    (int) fouls.stream().filter(item -> item.isPenalty()
+                            && item.getVictimSideNumber() == side
+                            && Boolean.TRUE.equals(item.getScored())).count(),
+                    (int) fouls.stream().filter(item -> item.isPenalty()
+                            && item.getVictimSideNumber() == side
+                            && Boolean.FALSE.equals(item.getScored())).count()));
         }
         return List.copyOf(result);
     }
@@ -383,7 +457,14 @@ public class GroupStatisticsService {
                 ranking(players, player -> player.totals().goals()),
                 ranking(players, player -> player.totals().assists()),
                 ranking(players, player -> player.totals().gamesPlayed()),
-                ranking(players, player -> player.totals().wins()));
+                ranking(players, player -> player.totals().wins()),
+                ranking(players, player -> player.totals().foulsCommitted()),
+                ranking(players, player -> player.totals().foulsSuffered()),
+                ranking(players, player -> player.totals().penaltiesCommitted()),
+                ranking(players, player -> player.totals().penaltiesWon()),
+                ranking(players, player -> player.totals().penaltiesTaken()),
+                ranking(players, player -> player.totals().penaltiesScored()),
+                ranking(players, player -> player.totals().penaltiesMissed()));
     }
 
     private List<RankingEntryResponse> ranking(
@@ -441,6 +522,7 @@ public class GroupStatisticsService {
         private int losses;
         private int goals;
         private int assists;
+        private final FoulTotals fouls = new FoulTotals();
 
         private MutablePlayerStatistics(
                 UUID userId,
@@ -470,13 +552,26 @@ public class GroupStatisticsService {
             assists++;
         }
 
+        private void addFouls(FoulTotals totals) {
+            fouls.foulsCommitted += totals.foulsCommitted;
+            fouls.foulsSuffered += totals.foulsSuffered;
+            fouls.penaltiesCommitted += totals.penaltiesCommitted;
+            fouls.penaltiesWon += totals.penaltiesWon;
+            fouls.penaltiesTaken += totals.penaltiesTaken;
+            fouls.penaltiesScored += totals.penaltiesScored;
+            fouls.penaltiesMissed += totals.penaltiesMissed;
+        }
+
         private StatisticsPlayerResponse response() {
             return new StatisticsPlayerResponse(
                     userId,
                     displayName,
                     currentMember,
                     currentUser,
-                    new StatisticsTotalsResponse(gamesPlayed, wins, draws, losses, goals, assists));
+                    new StatisticsTotalsResponse(gamesPlayed, wins, draws, losses, goals, assists,
+                            fouls.foulsCommitted, fouls.foulsSuffered, fouls.penaltiesCommitted,
+                            fouls.penaltiesWon, fouls.penaltiesTaken, fouls.penaltiesScored,
+                            fouls.penaltiesMissed));
         }
     }
 

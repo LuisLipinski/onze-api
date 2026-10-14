@@ -48,6 +48,7 @@ class LiveMatchChangedListenerTest {
                 List.of(),
                 List.of(),
                 List.of(),
+                List.of(),
                 LiveMatchPhase.LEGACY,
                 List.of(),
                 null);

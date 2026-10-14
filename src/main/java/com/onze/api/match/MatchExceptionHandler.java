@@ -53,6 +53,7 @@ import com.onze.api.match.LiveMatchService.InvalidLiveMatchScoreException;
 import com.onze.api.match.LiveMatchService.InvalidTeamStatisticException;
 import com.onze.api.match.LiveMatchService.InvalidGoalEventException;
 import com.onze.api.match.LiveMatchService.InvalidCardEventException;
+import com.onze.api.match.LiveMatchService.InvalidFoulEventException;
 import com.onze.api.match.LiveMatchService.InvalidPeriodConfigurationException;
 import com.onze.api.match.LiveMatchService.MatchPeriodNotReadyException;
 import com.onze.api.match.LiveMatchService.InvalidPenaltyShootoutException;
@@ -98,6 +99,12 @@ public class MatchExceptionHandler {
     ResponseEntity<ApiErrorResponse> invalidCardEvent() {
         return ResponseEntity.badRequest()
                 .body(new ApiErrorResponse("INVALID_CARD_EVENT", "Confira o jogador e o time do cartão."));
+    }
+
+    @ExceptionHandler(InvalidFoulEventException.class)
+    ResponseEntity<ApiErrorResponse> invalidFoulEvent() {
+        return ResponseEntity.badRequest().body(new ApiErrorResponse(
+                "INVALID_FOUL_EVENT", "Confira quem cometeu, quem sofreu e quem cobrou o pênalti."));
     }
 
     @ExceptionHandler(InvalidPeriodConfigurationException.class)
