@@ -193,7 +193,7 @@ public class GroupStatisticsService {
         assignments.stream().map(MatchTeamAssignment::getParticipantId).forEach(playerIds::add);
         externalAttendances.stream().map(MatchAttendance::getUserId).forEach(playerIds::add);
         goals.stream()
-                .filter(goal -> goal.getScorerParticipantType() == TeamParticipantType.MEMBER)
+                .filter(goal -> !goal.isOwnGoal() && goal.getScorerParticipantType() == TeamParticipantType.MEMBER)
                 .map(MatchGoalEvent::getScorerParticipantId)
                 .forEach(playerIds::add);
         goals.stream()
@@ -284,7 +284,7 @@ public class GroupStatisticsService {
         }
 
         for (MatchGoalEvent goal : goals) {
-            if (goal.getScorerParticipantType() == TeamParticipantType.MEMBER) {
+            if (!goal.isOwnGoal() && goal.getScorerParticipantType() == TeamParticipantType.MEMBER) {
                 MutablePlayerStatistics statistics = playerStats.get(goal.getScorerParticipantId());
                 if (statistics != null) {
                     statistics.addGoal();
@@ -313,7 +313,7 @@ public class GroupStatisticsService {
     private Map<UUID, Integer> countGoals(List<MatchGoalEvent> goals) {
         Map<UUID, Integer> result = new HashMap<>();
         for (MatchGoalEvent goal : goals) {
-            if (goal.getScorerParticipantType() == TeamParticipantType.MEMBER) {
+            if (!goal.isOwnGoal() && goal.getScorerParticipantType() == TeamParticipantType.MEMBER) {
                 result.merge(goal.getScorerParticipantId(), 1, Integer::sum);
             }
         }

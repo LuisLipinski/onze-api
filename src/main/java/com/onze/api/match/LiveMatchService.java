@@ -21,6 +21,7 @@ import com.onze.api.match.LiveMatchModels.LiveMatchStateResponse;
 import com.onze.api.match.LiveMatchModels.LiveMatchSnapshotResponse;
 import com.onze.api.match.LiveMatchModels.LiveScoreSideResponse;
 import com.onze.api.match.LiveMatchModels.TeamStatisticsResponse;
+import com.onze.api.match.LiveMatchModels.ShotEventResponse;
 import com.onze.api.match.LiveMatchModels.TeamIdentityNameRequest;
 import com.onze.api.match.LiveMatchModels.CreateGoalEventResponse;
 import com.onze.api.match.LiveMatchModels.GoalEventResponse;
@@ -49,6 +50,7 @@ public class LiveMatchService {
     private final MatchGoalEventRepository goalEventRepository;
     private final MatchCardEventRepository cardEventRepository;
     private final LiveMatchTeamStatisticsRepository teamStatisticsRepository;
+    private final MatchShotEventRepository shotEventRepository;
     private final MatchPeriodRepository periodRepository;
     private final MatchPenaltyShootoutRepository penaltyShootoutRepository;
     private final MatchPenaltyTakerRepository penaltyTakerRepository;
@@ -67,6 +69,7 @@ public class LiveMatchService {
             MatchTeamAssignmentRepository assignmentRepository,
             MatchGoalEventRepository goalEventRepository, MatchCardEventRepository cardEventRepository,
             LiveMatchTeamStatisticsRepository teamStatisticsRepository,
+            MatchShotEventRepository shotEventRepository,
             MatchPeriodRepository periodRepository,
             MatchPenaltyShootoutRepository penaltyShootoutRepository,
             MatchPenaltyTakerRepository penaltyTakerRepository,
@@ -87,6 +90,7 @@ public class LiveMatchService {
         this.goalEventRepository = goalEventRepository;
         this.cardEventRepository = cardEventRepository;
         this.teamStatisticsRepository = teamStatisticsRepository;
+        this.shotEventRepository = shotEventRepository;
         this.periodRepository = periodRepository;
         this.penaltyShootoutRepository = penaltyShootoutRepository;
         this.penaltyTakerRepository = penaltyTakerRepository;
@@ -145,6 +149,7 @@ public class LiveMatchService {
         FootballMatch match = managedMatch(authenticatedUserId, matchId);
         if (match.getStatus() != MatchStatus.IN_PROGRESS) throw new InvalidLiveMatchTransitionException();
         scoreRepository.deleteAllByMatchId(matchId);
+        shotEventRepository.deleteAllByMatchId(matchId);
         goalEventRepository.deleteAllByMatchId(matchId);
         cardEventRepository.deleteAllByMatchId(matchId);
         teamStatisticsRepository.deleteAllByMatchId(matchId);
@@ -381,6 +386,12 @@ public class LiveMatchService {
     @Transactional
     public LiveMatchStateResponse adjustTeamStatistic(String authenticatedUserId, UUID matchId,
             int sideNumber, TeamStatisticType type, int delta) {
+        return adjustTeamStatistic(authenticatedUserId, matchId, sideNumber, type, delta, null);
+    }
+
+    @Transactional
+    public LiveMatchStateResponse adjustTeamStatistic(String authenticatedUserId, UUID matchId,
+            int sideNumber, TeamStatisticType type, int delta, UUID playerAssignmentId) {
         Access access = accessibleMatch(authenticatedUserId, matchId, true);
         FootballMatch match = access.match();
         finishIfExpired(match, Instant.now(clock));
@@ -390,14 +401,44 @@ public class LiveMatchService {
         }
         if (sideNumber < 1 || sideNumber > sideCount(match) || type == null
                 || (delta != 1 && delta != -1)) throw new InvalidTeamStatisticException();
+        boolean shot = type == TeamStatisticType.SHOTS || type == TeamStatisticType.SHOTS_ON_TARGET;
+        MatchTeamAssignment player = null;
+        if (shot && delta == 1) {
+            if (playerAssignmentId == null) throw new InvalidTeamStatisticException();
+            player = assignmentRepository.findByIdAndMatchId(playerAssignmentId, matchId)
+                    .orElseThrow(InvalidTeamStatisticException::new);
+            if (player.getTeamNumber() != sideNumber || isSentOff(matchId, player.getId())) {
+                throw new InvalidTeamStatisticException();
+            }
+        } else if (playerAssignmentId != null) {
+            throw new InvalidTeamStatisticException();
+        }
         LiveMatchTeamStatistics stats = teamStatisticsRepository.findByMatchIdAndSideNumber(matchId, sideNumber)
                 .orElseGet(() -> new LiveMatchTeamStatistics(matchId, sideNumber));
+        MatchShotEvent shotToRemove = null;
+        if (shot && delta == -1) {
+            if (type == TeamStatisticType.SHOTS_ON_TARGET
+                    && stats.getShotsOnTarget() <= goalEventRepository
+                            .countByMatchIdAndSideNumberAndShotRecordedTrue(matchId, sideNumber)) {
+                throw new InvalidTeamStatisticException();
+            }
+            shotToRemove = shotEventRepository
+                    .findAllByMatchIdAndSideNumberAndOnTargetOrderByCreatedAtDesc(
+                            matchId, sideNumber, type == TeamStatisticType.SHOTS_ON_TARGET)
+                    .stream().findFirst().orElse(null);
+        }
         try {
             stats.adjust(type, delta);
         } catch (IllegalArgumentException exception) {
             throw new InvalidTeamStatisticException();
         }
         teamStatisticsRepository.save(stats);
+        if (player != null) {
+            shotEventRepository.save(new MatchShotEvent(matchId, player,
+                    participantName(matchId, player), type == TeamStatisticType.SHOTS_ON_TARGET,
+                    Instant.now(clock)));
+        }
+        if (shotToRemove != null) shotEventRepository.delete(shotToRemove);
         match.liveStateChanged();
         publish(matchId, match, LiveMatchChangeType.TEAM_STATISTIC_UPDATED);
         return response(matchId, match, access.member());
@@ -406,13 +447,23 @@ public class LiveMatchService {
     @Transactional
     public CreateGoalEventResponse createGoal(String authenticatedUserId, UUID matchId,
             UUID scorerAssignmentId, UUID assistAssignmentId, boolean penalty) {
+        return createGoal(authenticatedUserId, matchId, scorerAssignmentId, assistAssignmentId,
+                penalty, null, false);
+    }
+
+    @Transactional
+    public CreateGoalEventResponse createGoal(String authenticatedUserId, UUID matchId,
+            UUID scorerAssignmentId, UUID assistAssignmentId, boolean penalty,
+            Integer sideNumber, boolean ownGoal) {
         Access access = accessibleMatch(authenticatedUserId, matchId, true);
         FootballMatch match = access.match();
         finishIfExpired(match, Instant.now(clock));
         if (match.getStatus() != MatchStatus.IN_PROGRESS || match.getStartedAt() == null) {
             throw new InvalidLiveMatchTransitionException();
         }
-        if (penalty && assistAssignmentId != null) throw new InvalidGoalEventException();
+        if (((penalty || ownGoal) && assistAssignmentId != null) || (ownGoal && penalty)) {
+            throw new InvalidGoalEventException();
+        }
 
         MatchTeamAssignment scorer = assignmentRepository.findByIdAndMatchId(scorerAssignmentId, matchId)
                 .orElseThrow(InvalidGoalEventException::new);
@@ -426,22 +477,32 @@ public class LiveMatchService {
             }
             if (isSentOff(matchId, assist.getId())) throw new InvalidGoalEventException();
         }
-        if (scorer.getTeamNumber() < 1 || scorer.getTeamNumber() > sideCount(match)) {
+        int scoringSide = sideNumber == null ? scorer.getTeamNumber() : sideNumber;
+        if (scorer.getTeamNumber() < 1 || scorer.getTeamNumber() > sideCount(match)
+                || scoringSide < 1 || scoringSide > sideCount(match)
+                || ownGoal != (scorer.getTeamNumber() != scoringSide)) {
             throw new InvalidGoalEventException();
         }
 
         initializeScoreboard(match, matchId);
-        LiveMatchScore score = scoreRepository.findByMatchIdAndSideNumber(matchId, scorer.getTeamNumber())
+        LiveMatchScore score = scoreRepository.findByMatchIdAndSideNumber(matchId, scoringSide)
                 .orElseThrow(InvalidLiveMatchScoreException::new);
         Instant now = Instant.now(clock);
         EventTime eventTime = eventTime(match, now);
         MatchGoalEvent event = goalEventRepository.save(new MatchGoalEvent(
-                matchId, scorer, participantName(matchId, scorer), assist,
+                matchId, scoringSide, scorer, participantName(matchId, scorer), assist,
                 assist == null ? null : participantName(matchId, assist),
-                penalty, eventTime.elapsedSeconds(), eventTime.periodType(),
+                penalty, ownGoal, eventTime.elapsedSeconds(), eventTime.periodType(),
                 eventTime.periodNumber(), eventTime.periodElapsedSeconds(),
                 access.member().getUserId(), now));
         score.update(score.getScore() + 1);
+        if (!ownGoal) {
+            LiveMatchTeamStatistics stats = teamStatisticsRepository
+                    .findByMatchIdAndSideNumber(matchId, scoringSide)
+                    .orElseGet(() -> new LiveMatchTeamStatistics(matchId, scoringSide));
+            stats.adjust(TeamStatisticType.SHOTS_ON_TARGET, 1);
+            teamStatisticsRepository.save(stats);
+        }
         match.liveStateChanged();
         enqueueLiveNotification(matchId, match, MatchNotificationType.LIVE_MATCH_GOAL);
         publish(matchId, match, LiveMatchChangeType.GOAL_ADDED);
@@ -500,6 +561,12 @@ public class LiveMatchService {
         LiveMatchScore score = scoreRepository.findByMatchIdAndSideNumber(matchId, event.getSideNumber())
                 .orElseThrow(InvalidLiveMatchScoreException::new);
         score.update(Math.max(0, score.getScore() - 1));
+        if (event.isShotRecorded()) {
+            LiveMatchTeamStatistics stats = teamStatisticsRepository
+                    .findByMatchIdAndSideNumber(matchId, event.getSideNumber())
+                    .orElseThrow(InvalidTeamStatisticException::new);
+            stats.adjust(TeamStatisticType.SHOTS_ON_TARGET, -1);
+        }
         goalEventRepository.delete(event);
         match.liveStateChanged();
         publish(matchId, match, LiveMatchChangeType.GOAL_REMOVED);
@@ -704,7 +771,8 @@ public class LiveMatchService {
                 event.getScorerAssignmentId(), event.getScorerParticipantType(), event.getScorerParticipantId(),
                 event.getScorerDisplayName(), event.getAssistAssignmentId(), event.getAssistParticipantType(),
                 event.getAssistParticipantId(), event.getAssistDisplayName(),
-                event.isPenalty(), event.getElapsedSeconds(), event.getPeriodType(),
+                event.isPenalty(), event.isOwnGoal(), event.isShotRecorded(),
+                event.getElapsedSeconds(), event.getPeriodType(),
                 event.getPeriodNumber(), event.getPeriodElapsedSeconds(), event.getCreatedAt());
     }
 
@@ -757,7 +825,7 @@ public class LiveMatchService {
         return new LiveMatchStateResponse(
                 snapshot.matchId(), snapshot.status(), snapshot.startedAt(), snapshot.finishedAt(),
                 snapshot.version(), snapshot.scores(), snapshot.goalEvents(), snapshot.cardEvents(),
-                snapshot.teamStatistics(),
+                snapshot.teamStatistics(), snapshot.shotEvents(),
                 snapshot.phase(), snapshot.periods(), snapshot.penaltyShootout(),
                 member.hasPermission(GroupAdminPermission.SCHEDULE_GAMES));
     }
@@ -805,13 +873,20 @@ public class LiveMatchService {
         List<TeamStatisticsResponse> teamStatistics = teamStatisticsRepository
                 .findAllByMatchIdOrderBySideNumberAsc(matchId)
                 .stream().map(item -> new TeamStatisticsResponse(item.getSideNumber(),
-                        item.getShots(), item.getShotsOnTarget(), item.getCorners(), item.getFouls()))
+                        item.getShots(), item.getShotsOnTarget(), item.getCorners(), item.getFouls(),
+                        goalEventRepository.countByMatchIdAndSideNumberAndShotRecordedTrue(
+                                matchId, item.getSideNumber())))
                 .toList();
+        List<ShotEventResponse> shotEvents = shotEventRepository.findAllByMatchIdOrderByCreatedAtDesc(matchId)
+                .stream().map(item -> new ShotEventResponse(item.getId(), item.getSideNumber(),
+                        item.getPlayerAssignmentId(), item.getPlayerDisplayName(),
+                        item.isOnTarget(), item.getCreatedAt())).toList();
         List<MatchPeriodResponse> periods = periodRepository.findAllByMatchIdOrderByStartedAtAsc(matchId)
                 .stream().map(this::periodResponse).toList();
         PenaltyShootoutResponse penaltyShootout = penaltyResponse(matchId).orElse(null);
         return new LiveMatchSnapshotResponse(matchId, match.getStatus(), match.getStartedAt(),
                 match.getFinishedAt(), match.getLiveVersion(), scores, goalEvents, cardEvents, teamStatistics,
+                shotEvents,
                 livePhase(match, periods, penaltyShootout), periods, penaltyShootout);
     }
 

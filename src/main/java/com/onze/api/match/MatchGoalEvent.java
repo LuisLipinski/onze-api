@@ -54,6 +54,12 @@ public class MatchGoalEvent {
     @Column(name = "penalty", nullable = false)
     private boolean penalty;
 
+    @Column(name = "own_goal", nullable = false)
+    private boolean ownGoal;
+
+    @Column(name = "shot_recorded", nullable = false)
+    private boolean shotRecorded;
+
     @Column(name = "elapsed_seconds", nullable = false)
     private long elapsedSeconds;
 
@@ -75,13 +81,13 @@ public class MatchGoalEvent {
 
     protected MatchGoalEvent() { }
 
-    public MatchGoalEvent(UUID matchId, MatchTeamAssignment scorer, String scorerDisplayName,
+    public MatchGoalEvent(UUID matchId, int sideNumber, MatchTeamAssignment scorer, String scorerDisplayName,
             MatchTeamAssignment assist, String assistDisplayName,
-            boolean penalty, long elapsedSeconds, MatchPeriodType periodType,
+            boolean penalty, boolean ownGoal, long elapsedSeconds, MatchPeriodType periodType,
             Integer periodNumber, Long periodElapsedSeconds,
             UUID createdByUserId, Instant createdAt) {
         this.matchId = matchId;
-        this.sideNumber = scorer.getTeamNumber();
+        this.sideNumber = sideNumber;
         this.scorerAssignmentId = scorer.getId();
         this.scorerParticipantType = scorer.getParticipantType();
         this.scorerParticipantId = scorer.getParticipantId();
@@ -93,6 +99,8 @@ public class MatchGoalEvent {
             this.assistDisplayName = assistDisplayName;
         }
         this.penalty = penalty;
+        this.ownGoal = ownGoal;
+        this.shotRecorded = !ownGoal;
         this.elapsedSeconds = elapsedSeconds;
         this.periodType = periodType;
         this.periodNumber = periodNumber;
@@ -113,6 +121,8 @@ public class MatchGoalEvent {
     public UUID getAssistParticipantId() { return assistParticipantId; }
     public String getAssistDisplayName() { return assistDisplayName; }
     public boolean isPenalty() { return penalty; }
+    public boolean isOwnGoal() { return ownGoal; }
+    public boolean isShotRecorded() { return shotRecorded; }
     public long getElapsedSeconds() { return elapsedSeconds; }
     public MatchPeriodType getPeriodType() { return periodType; }
     public Integer getPeriodNumber() { return periodNumber; }

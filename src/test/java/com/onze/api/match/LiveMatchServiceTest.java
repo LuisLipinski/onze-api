@@ -47,6 +47,7 @@ class LiveMatchServiceTest {
     private MatchGoalEventRepository goals;
     private MatchCardEventRepository cards;
     private LiveMatchTeamStatisticsRepository teamStatistics;
+    private MatchShotEventRepository shotEvents;
     private MatchPeriodRepository periods;
     private MatchPenaltyShootoutRepository penaltyShootouts;
     private MatchPenaltyTakerRepository penaltyTakers;
@@ -74,6 +75,7 @@ class LiveMatchServiceTest {
         goals = mock(MatchGoalEventRepository.class);
         cards = mock(MatchCardEventRepository.class);
         teamStatistics = mock(LiveMatchTeamStatisticsRepository.class);
+        shotEvents = mock(MatchShotEventRepository.class);
         periods = mock(MatchPeriodRepository.class);
         penaltyShootouts = mock(MatchPenaltyShootoutRepository.class);
         penaltyTakers = mock(MatchPenaltyTakerRepository.class);
@@ -85,7 +87,7 @@ class LiveMatchServiceTest {
         weeklyMatchWindowService = mock(WeeklyMatchWindowService.class);
         events = mock(ApplicationEventPublisher.class);
         service = new LiveMatchService(matches, members, scores, teamImages, teamIdentityService,
-                assignments, goals, cards, teamStatistics, periods, penaltyShootouts, penaltyTakers, penaltyAttempts,
+                assignments, goals, cards, teamStatistics, shotEvents, periods, penaltyShootouts, penaltyTakers, penaltyAttempts,
                 users, guests, rentalGoalkeepers, notifications, weeklyMatchWindowService, events,
                 Clock.fixed(NOW, ZoneOffset.UTC));
         matchId = UUID.randomUUID();
@@ -103,6 +105,7 @@ class LiveMatchServiceTest {
         when(goals.findAllByMatchIdOrderByElapsedSecondsDescCreatedAtDesc(matchId)).thenReturn(List.of());
         when(cards.findAllByMatchIdOrderByElapsedSecondsDescCreatedAtDesc(matchId)).thenReturn(List.of());
         when(teamStatistics.findAllByMatchIdOrderBySideNumberAsc(matchId)).thenReturn(List.of());
+        when(shotEvents.findAllByMatchIdOrderByCreatedAtDesc(matchId)).thenReturn(List.of());
         when(periods.findAllByMatchIdOrderByStartedAtAsc(matchId)).thenReturn(List.of());
         when(periods.findFirstByMatchIdAndEndedAtIsNullOrderByStartedAtDesc(matchId))
                 .thenReturn(Optional.empty());
@@ -204,14 +207,20 @@ class LiveMatchServiceTest {
     @Test
     void recordsTeamStatisticsAndIncludesShotsOnTargetInTotalShots() {
         service.start(adminId.toString(), matchId);
+        MatchTeamAssignment shooter = assignment(1);
+        when(assignments.findByIdAndMatchId(shooter.getId(), matchId)).thenReturn(Optional.of(shooter));
+        when(users.findById(shooter.getParticipantId()))
+                .thenReturn(Optional.of(new User("shooter@example.invalid", "hash", "Jogador")));
         var first = new LiveMatchTeamStatistics(matchId, 1);
         var second = new LiveMatchTeamStatistics(matchId, 2);
         when(teamStatistics.findByMatchIdAndSideNumber(matchId, 1)).thenReturn(Optional.of(first));
         when(teamStatistics.findByMatchIdAndSideNumber(matchId, 2)).thenReturn(Optional.of(second));
         when(teamStatistics.findAllByMatchIdOrderBySideNumberAsc(matchId)).thenReturn(List.of(first, second));
 
-        service.adjustTeamStatistic(adminId.toString(), matchId, 1, TeamStatisticType.SHOTS_ON_TARGET, 1);
-        service.adjustTeamStatistic(adminId.toString(), matchId, 1, TeamStatisticType.SHOTS, 1);
+        service.adjustTeamStatistic(adminId.toString(), matchId, 1,
+                TeamStatisticType.SHOTS_ON_TARGET, 1, shooter.getId());
+        service.adjustTeamStatistic(adminId.toString(), matchId, 1,
+                TeamStatisticType.SHOTS, 1, shooter.getId());
         service.adjustTeamStatistic(adminId.toString(), matchId, 2, TeamStatisticType.CORNERS, 1);
         var state = service.adjustTeamStatistic(adminId.toString(), matchId, 2, TeamStatisticType.FOULS, 1);
 
@@ -231,9 +240,14 @@ class LiveMatchServiceTest {
     @Test
     void rejectsNegativeAndInconsistentTeamStatistics() {
         service.start(adminId.toString(), matchId);
+        MatchTeamAssignment shooter = assignment(1);
+        when(assignments.findByIdAndMatchId(shooter.getId(), matchId)).thenReturn(Optional.of(shooter));
+        when(users.findById(shooter.getParticipantId()))
+                .thenReturn(Optional.of(new User("shooter-rejection@example.invalid", "hash", "Jogador")));
         var statistics = new LiveMatchTeamStatistics(matchId, 1);
         when(teamStatistics.findByMatchIdAndSideNumber(matchId, 1)).thenReturn(Optional.of(statistics));
-        service.adjustTeamStatistic(adminId.toString(), matchId, 1, TeamStatisticType.SHOTS_ON_TARGET, 1);
+        service.adjustTeamStatistic(adminId.toString(), matchId, 1,
+                TeamStatisticType.SHOTS_ON_TARGET, 1, shooter.getId());
 
         assertThrows(LiveMatchService.InvalidTeamStatisticException.class,
                 () -> service.adjustTeamStatistic(adminId.toString(), matchId, 1, TeamStatisticType.SHOTS, -1));

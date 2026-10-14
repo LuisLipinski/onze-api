@@ -12,5 +12,6 @@ public interface MatchGoalEventRepository extends JpaRepository<MatchGoalEvent, 
     List<MatchGoalEvent> findAllByMatchIdInOrderByMatchIdAscElapsedSecondsAscCreatedAtAsc(
             Collection<UUID> matchIds);
     Optional<MatchGoalEvent> findByIdAndMatchId(UUID id, UUID matchId);
+    long countByMatchIdAndSideNumberAndShotRecordedTrue(UUID matchId, int sideNumber);
     void deleteAllByMatchId(UUID matchId);
 }
