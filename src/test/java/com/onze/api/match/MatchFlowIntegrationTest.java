@@ -3,6 +3,7 @@ package com.onze.api.match;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.List;
+import java.util.UUID;
 
 import com.onze.api.IntegrationTestSupport;
 import com.onze.api.auth.AuthModels.AuthResponse;
@@ -124,6 +125,8 @@ class MatchFlowIntegrationTest extends IntegrationTestSupport {
                         .header(HttpHeaders.AUTHORIZATION, bearer(creator)))
                 .andExpect(status().isOk());
 
+        UUID playerAssignmentId = addPlayer(match.id(), 1, creator.user().id());
+
         mockMvc.perform(post("/api/matches/{matchId}/live/team-statistics", match.id())
                         .header(HttpHeaders.AUTHORIZATION, bearer(viewer))
                         .contentType(MediaType.APPLICATION_JSON)
@@ -132,10 +135,12 @@ class MatchFlowIntegrationTest extends IntegrationTestSupport {
         mockMvc.perform(post("/api/matches/{matchId}/live/team-statistics", match.id())
                         .header(HttpHeaders.AUTHORIZATION, bearer(creator))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"sideNumber\":1,\"type\":\"SHOTS_ON_TARGET\",\"delta\":1}"))
+                        .content("{\"sideNumber\":1,\"type\":\"SHOTS_ON_TARGET\",\"delta\":1,\"playerAssignmentId\":\""
+                                + playerAssignmentId + "\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.teamStatistics[0].shots").value(1))
-                .andExpect(jsonPath("$.teamStatistics[0].shotsOnTarget").value(1));
+                .andExpect(jsonPath("$.teamStatistics[0].shotsOnTarget").value(1))
+                .andExpect(jsonPath("$.shotEvents[0].playerDisplayName").value("Admin Estatísticas"));
         mockMvc.perform(post("/api/matches/{matchId}/live/team-statistics", match.id())
                         .header(HttpHeaders.AUTHORIZATION, bearer(creator))
                         .contentType(MediaType.APPLICATION_JSON)
@@ -162,6 +167,115 @@ class MatchFlowIntegrationTest extends IntegrationTestSupport {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.teamStatistics[0].shots").value(1))
                 .andExpect(jsonPath("$.teamStatistics[1].corners").value(1));
+    }
+
+    @Test
+    void attributesShotsAndGoalsToTheRightPlayersAndReversesThemOnDeletion() throws Exception {
+        AuthResponse admin = register("own-goal-admin@example.com", "Artilheiro");
+        AuthResponse defender = register("own-goal-defender@example.com", "Defensor");
+        GroupResponse group = createGroup(admin, "Pelada com gols contra");
+        join(defender, createInvite(admin, group.id()).code());
+        var created = mockMvc.perform(post("/api/groups/{groupId}/matches", group.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(admin))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(matchBody(LocalDate.now(SAO_PAULO).plusDays(3), "NONE", 10)))
+                .andExpect(status().isCreated()).andReturn();
+        MatchResponse match = jsonMapper.readValue(created.getResponse().getContentAsString(), MatchResponse.class);
+        mockMvc.perform(put("/api/matches/{matchId}/live/start", match.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(admin)))
+                .andExpect(status().isOk());
+        UUID scorerId = addPlayer(match.id(), 1, admin.user().id());
+        UUID defenderId = addPlayer(match.id(), 2, defender.user().id());
+
+        mockMvc.perform(post("/api/matches/{matchId}/live/team-statistics", match.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(admin))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"sideNumber\":1,\"type\":\"SHOTS\",\"delta\":1}"))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(post("/api/matches/{matchId}/live/team-statistics", match.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(admin))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"sideNumber\":2,\"type\":\"SHOTS\",\"delta\":1,\"playerAssignmentId\":\""
+                                + scorerId + "\"}"))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(post("/api/matches/{matchId}/live/team-statistics", match.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(admin))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"sideNumber\":1,\"type\":\"SHOTS_ON_TARGET\",\"delta\":1,\"playerAssignmentId\":\""
+                                + scorerId + "\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.teamStatistics[0].shotsOnTarget").value(1))
+                .andExpect(jsonPath("$.shotEvents[0].playerAssignmentId").value(scorerId.toString()));
+
+        var normal = mockMvc.perform(post("/api/matches/{matchId}/live/goals", match.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(admin))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"scorerAssignmentId\":\"" + scorerId
+                                + "\",\"penalty\":false,\"sideNumber\":1,\"ownGoal\":false}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.liveMatch.scores[0].score").value(1))
+                .andExpect(jsonPath("$.liveMatch.teamStatistics[0].shots").value(2))
+                .andExpect(jsonPath("$.liveMatch.teamStatistics[0].shotsOnTarget").value(2))
+                .andExpect(jsonPath("$.liveMatch.teamStatistics[0].goalShots").value(1))
+                .andReturn();
+        String normalId = jsonMapper.readTree(normal.getResponse().getContentAsString())
+                .path("event").path("id").asText();
+
+        mockMvc.perform(post("/api/matches/{matchId}/live/team-statistics", match.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(admin))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"sideNumber\":1,\"type\":\"SHOTS_ON_TARGET\",\"delta\":-1}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.teamStatistics[0].shotsOnTarget").value(1))
+                .andExpect(jsonPath("$.shotEvents.length()").value(0));
+        mockMvc.perform(post("/api/matches/{matchId}/live/team-statistics", match.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(admin))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"sideNumber\":1,\"type\":\"SHOTS_ON_TARGET\",\"delta\":-1}"))
+                .andExpect(status().isBadRequest());
+
+        mockMvc.perform(post("/api/matches/{matchId}/live/goals", match.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(admin))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"scorerAssignmentId\":\"" + defenderId
+                                + "\",\"penalty\":false,\"sideNumber\":1,\"ownGoal\":false}"))
+                .andExpect(status().isBadRequest());
+        var own = mockMvc.perform(post("/api/matches/{matchId}/live/goals", match.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(admin))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"scorerAssignmentId\":\"" + defenderId
+                                + "\",\"penalty\":false,\"sideNumber\":1,\"ownGoal\":true}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.event.sideNumber").value(1))
+                .andExpect(jsonPath("$.event.ownGoal").value(true))
+                .andExpect(jsonPath("$.event.shotRecorded").value(false))
+                .andExpect(jsonPath("$.liveMatch.scores[0].score").value(2))
+                .andExpect(jsonPath("$.liveMatch.teamStatistics[0].shotsOnTarget").value(1))
+                .andReturn();
+        String ownId = jsonMapper.readTree(own.getResponse().getContentAsString())
+                .path("event").path("id").asText();
+
+        mockMvc.perform(delete("/api/matches/{matchId}/live/goals/{eventId}", match.id(), ownId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(admin)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.scores[0].score").value(1))
+                .andExpect(jsonPath("$.teamStatistics[0].shotsOnTarget").value(1));
+        mockMvc.perform(delete("/api/matches/{matchId}/live/goals/{eventId}", match.id(), normalId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(admin)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.scores[0].score").value(0))
+                .andExpect(jsonPath("$.teamStatistics[0].shotsOnTarget").value(0));
+    }
+
+    private UUID addPlayer(UUID matchId, int sideNumber, UUID userId) {
+        UUID id = UUID.randomUUID();
+        jdbcTemplate.update("""
+                INSERT INTO match_team_assignments
+                    (id, match_id, team_number, participant_type, participant_id,
+                     assigned_role, assignment_reason, position_origin)
+                VALUES (?, ?, ?, 'MEMBER', ?, 'DEFENDER', 'MANUAL_ADMIN_CHANGE', 'MANUAL')
+                """, id, matchId, sideNumber, userId);
+        return id;
     }
 
     @Test

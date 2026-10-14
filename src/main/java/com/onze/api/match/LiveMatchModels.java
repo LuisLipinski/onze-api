@@ -21,14 +21,24 @@ public final class LiveMatchModels {
     public record AdjustTeamStatisticRequest(
             @NotNull @Min(1) Integer sideNumber,
             @NotNull TeamStatisticType type,
-            @NotNull @Min(-1) @Max(1) Integer delta) { }
+            @NotNull @Min(-1) @Max(1) Integer delta,
+            UUID playerAssignmentId) { }
 
     public record TeamStatisticsResponse(
             int sideNumber,
             int shots,
             int shotsOnTarget,
             int corners,
-            int fouls) { }
+            int fouls,
+            long goalShots) { }
+
+    public record ShotEventResponse(
+            UUID id,
+            int sideNumber,
+            UUID playerAssignmentId,
+            String playerDisplayName,
+            boolean onTarget,
+            Instant createdAt) { }
 
     public record StartLiveMatchRequest(
             @Size(max = 16) List<@Valid TeamIdentityNameRequest> teams) { }
@@ -57,7 +67,9 @@ public final class LiveMatchModels {
     public record CreateGoalEventRequest(
             @NotNull UUID scorerAssignmentId,
             UUID assistAssignmentId,
-            @NotNull Boolean penalty) { }
+            @NotNull Boolean penalty,
+            @Min(1) Integer sideNumber,
+            Boolean ownGoal) { }
 
     public record CreateCardEventRequest(
             @NotNull UUID playerAssignmentId,
@@ -83,6 +95,7 @@ public final class LiveMatchModels {
             List<GoalEventResponse> goalEvents,
             List<CardEventResponse> cardEvents,
             List<TeamStatisticsResponse> teamStatistics,
+            List<ShotEventResponse> shotEvents,
             LiveMatchPhase phase,
             List<MatchPeriodResponse> periods,
             PenaltyShootoutResponse penaltyShootout,
@@ -98,6 +111,7 @@ public final class LiveMatchModels {
             List<GoalEventResponse> goalEvents,
             List<CardEventResponse> cardEvents,
             List<TeamStatisticsResponse> teamStatistics,
+            List<ShotEventResponse> shotEvents,
             LiveMatchPhase phase,
             List<MatchPeriodResponse> periods,
             PenaltyShootoutResponse penaltyShootout) { }
@@ -183,6 +197,8 @@ public final class LiveMatchModels {
             UUID assistParticipantId,
             String assistDisplayName,
             boolean penalty,
+            boolean ownGoal,
+            boolean shotRecorded,
             long elapsedSeconds,
             MatchPeriodType periodType,
             Integer periodNumber,

@@ -129,6 +129,7 @@ class GroupStatisticsServiceTest {
                 .when(scores).findAllByMatchIdInOrderByMatchIdAscSideNumberAsc(anyCollection());
         doReturn(List.of(
                         goal(newestMatchId, bobId, aliceId),
+                        ownGoal(newestMatchId, bobId),
                         goal(oldestMatchId, aliceId, bobId),
                         goal(oldestMatchId, aliceId, null),
                         guestGoal(oldestMatchId)))
@@ -144,7 +145,7 @@ class GroupStatisticsServiceTest {
         var response = service.getGroup(aliceId.toString(), groupId);
 
         assertEquals(2, response.finishedMatches());
-        assertEquals(4, response.registeredGoals());
+        assertEquals(5, response.registeredGoals());
         assertEquals(3, response.playersWithMatches());
         assertEquals("Alice", response.currentPlayer().displayName());
         assertEquals(2, response.currentPlayer().totals().gamesPlayed());
@@ -160,7 +161,7 @@ class GroupStatisticsServiceTest {
                 response.rankings().goals().stream().map(item -> item.value()).toList());
         assertEquals(newestMatchId, response.matchHistory().getFirst().matchId());
         assertEquals("Verde", response.matchHistory().getFirst().teams().getFirst().name());
-        assertEquals(1, response.matchHistory().getFirst().registeredGoals());
+        assertEquals(2, response.matchHistory().getFirst().registeredGoals());
 
         var player = service.getPlayer(aliceId.toString(), groupId, aliceId);
 
@@ -426,6 +427,12 @@ class GroupStatisticsServiceTest {
             when(goal.getAssistParticipantId()).thenReturn(assistId);
         }
         return goal;
+    }
+
+    private MatchGoalEvent ownGoal(UUID matchId, UUID scorerId) {
+        MatchGoalEvent event = goal(matchId, scorerId, null);
+        when(event.isOwnGoal()).thenReturn(true);
+        return event;
     }
 
     private MatchGoalEvent guestGoal(UUID matchId) {

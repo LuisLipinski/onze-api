@@ -47,6 +47,7 @@ class LiveMatchServiceTest {
     private MatchGoalEventRepository goals;
     private MatchCardEventRepository cards;
     private LiveMatchTeamStatisticsRepository teamStatistics;
+    private MatchShotEventRepository shotEvents;
     private MatchPeriodRepository periods;
     private MatchPenaltyShootoutRepository penaltyShootouts;
     private MatchPenaltyTakerRepository penaltyTakers;
@@ -74,6 +75,7 @@ class LiveMatchServiceTest {
         goals = mock(MatchGoalEventRepository.class);
         cards = mock(MatchCardEventRepository.class);
         teamStatistics = mock(LiveMatchTeamStatisticsRepository.class);
+        shotEvents = mock(MatchShotEventRepository.class);
         periods = mock(MatchPeriodRepository.class);
         penaltyShootouts = mock(MatchPenaltyShootoutRepository.class);
         penaltyTakers = mock(MatchPenaltyTakerRepository.class);
@@ -85,7 +87,7 @@ class LiveMatchServiceTest {
         weeklyMatchWindowService = mock(WeeklyMatchWindowService.class);
         events = mock(ApplicationEventPublisher.class);
         service = new LiveMatchService(matches, members, scores, teamImages, teamIdentityService,
-                assignments, goals, cards, teamStatistics, periods, penaltyShootouts, penaltyTakers, penaltyAttempts,
+                assignments, goals, cards, teamStatistics, shotEvents, periods, penaltyShootouts, penaltyTakers, penaltyAttempts,
                 users, guests, rentalGoalkeepers, notifications, weeklyMatchWindowService, events,
                 Clock.fixed(NOW, ZoneOffset.UTC));
         matchId = UUID.randomUUID();
@@ -103,6 +105,7 @@ class LiveMatchServiceTest {
         when(goals.findAllByMatchIdOrderByElapsedSecondsDescCreatedAtDesc(matchId)).thenReturn(List.of());
         when(cards.findAllByMatchIdOrderByElapsedSecondsDescCreatedAtDesc(matchId)).thenReturn(List.of());
         when(teamStatistics.findAllByMatchIdOrderBySideNumberAsc(matchId)).thenReturn(List.of());
+        when(shotEvents.findAllByMatchIdOrderByCreatedAtDesc(matchId)).thenReturn(List.of());
         when(periods.findAllByMatchIdOrderByStartedAtAsc(matchId)).thenReturn(List.of());
         when(periods.findFirstByMatchIdAndEndedAtIsNullOrderByStartedAtDesc(matchId))
                 .thenReturn(Optional.empty());

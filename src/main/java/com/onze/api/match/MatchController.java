@@ -198,7 +198,7 @@ public class MatchController {
             @PathVariable UUID matchId,
             @Valid @RequestBody AdjustTeamStatisticRequest request) {
         return liveMatchService.adjustTeamStatistic(authentication.getName(), matchId,
-                request.sideNumber(), request.type(), request.delta());
+                request.sideNumber(), request.type(), request.delta(), request.playerAssignmentId());
     }
 
     @PostMapping("/api/matches/{matchId}/live/goals")
@@ -207,7 +207,8 @@ public class MatchController {
             @PathVariable UUID matchId,
             @Valid @RequestBody CreateGoalEventRequest request) {
         CreateGoalEventResponse response = liveMatchService.createGoal(authentication.getName(), matchId,
-                request.scorerAssignmentId(), request.assistAssignmentId(), request.penalty());
+                request.scorerAssignmentId(), request.assistAssignmentId(), request.penalty(),
+                request.sideNumber(), Boolean.TRUE.equals(request.ownGoal()));
         return ResponseEntity.status(201).body(response);
     }
 
