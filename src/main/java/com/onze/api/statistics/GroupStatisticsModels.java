@@ -61,6 +61,7 @@ public final class GroupStatisticsModels {
             String imageUrl,
             int score,
             int foulsCommitted,
+            int foulsSuffered,
             int penaltiesCommitted,
             int penaltiesWon,
             int penaltiesScored,
