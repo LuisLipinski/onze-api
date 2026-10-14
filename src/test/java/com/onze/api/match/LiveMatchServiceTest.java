@@ -207,14 +207,20 @@ class LiveMatchServiceTest {
     @Test
     void recordsTeamStatisticsAndIncludesShotsOnTargetInTotalShots() {
         service.start(adminId.toString(), matchId);
+        MatchTeamAssignment shooter = assignment(1);
+        when(assignments.findByIdAndMatchId(shooter.getId(), matchId)).thenReturn(Optional.of(shooter));
+        when(users.findById(shooter.getParticipantId()))
+                .thenReturn(Optional.of(new User("shooter@example.invalid", "hash", "Jogador")));
         var first = new LiveMatchTeamStatistics(matchId, 1);
         var second = new LiveMatchTeamStatistics(matchId, 2);
         when(teamStatistics.findByMatchIdAndSideNumber(matchId, 1)).thenReturn(Optional.of(first));
         when(teamStatistics.findByMatchIdAndSideNumber(matchId, 2)).thenReturn(Optional.of(second));
         when(teamStatistics.findAllByMatchIdOrderBySideNumberAsc(matchId)).thenReturn(List.of(first, second));
 
-        service.adjustTeamStatistic(adminId.toString(), matchId, 1, TeamStatisticType.SHOTS_ON_TARGET, 1);
-        service.adjustTeamStatistic(adminId.toString(), matchId, 1, TeamStatisticType.SHOTS, 1);
+        service.adjustTeamStatistic(adminId.toString(), matchId, 1,
+                TeamStatisticType.SHOTS_ON_TARGET, 1, shooter.getId());
+        service.adjustTeamStatistic(adminId.toString(), matchId, 1,
+                TeamStatisticType.SHOTS, 1, shooter.getId());
         service.adjustTeamStatistic(adminId.toString(), matchId, 2, TeamStatisticType.CORNERS, 1);
         var state = service.adjustTeamStatistic(adminId.toString(), matchId, 2, TeamStatisticType.FOULS, 1);
 
@@ -234,9 +240,14 @@ class LiveMatchServiceTest {
     @Test
     void rejectsNegativeAndInconsistentTeamStatistics() {
         service.start(adminId.toString(), matchId);
+        MatchTeamAssignment shooter = assignment(1);
+        when(assignments.findByIdAndMatchId(shooter.getId(), matchId)).thenReturn(Optional.of(shooter));
+        when(users.findById(shooter.getParticipantId()))
+                .thenReturn(Optional.of(new User("shooter-rejection@example.invalid", "hash", "Jogador")));
         var statistics = new LiveMatchTeamStatistics(matchId, 1);
         when(teamStatistics.findByMatchIdAndSideNumber(matchId, 1)).thenReturn(Optional.of(statistics));
-        service.adjustTeamStatistic(adminId.toString(), matchId, 1, TeamStatisticType.SHOTS_ON_TARGET, 1);
+        service.adjustTeamStatistic(adminId.toString(), matchId, 1,
+                TeamStatisticType.SHOTS_ON_TARGET, 1, shooter.getId());
 
         assertThrows(LiveMatchService.InvalidTeamStatisticException.class,
                 () -> service.adjustTeamStatistic(adminId.toString(), matchId, 1, TeamStatisticType.SHOTS, -1));
