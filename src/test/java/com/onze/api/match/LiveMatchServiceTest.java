@@ -220,8 +220,9 @@ class LiveMatchServiceTest {
         when(assignments.findByIdAndMatchId(offender.getId(), matchId)).thenReturn(Optional.of(offender));
         when(users.findById(offender.getParticipantId()))
                 .thenReturn(Optional.of(new User("offender@example.invalid", "hash", "Atleta")));
+        MatchShotEvent recordedShot = new MatchShotEvent(matchId, shooter, "Jogador", true, NOW);
         when(shotEvents.findAllByMatchIdAndSideNumberAndOnTargetOrderByCreatedAtDesc(matchId, 1, true))
-                .thenReturn(List.of(new MatchShotEvent(matchId, shooter, "Jogador", true, NOW)));
+                .thenReturn(List.of(recordedShot));
         when(teamStatistics.findByMatchIdAndSideNumber(matchId, 1)).thenReturn(Optional.of(first));
         when(teamStatistics.findByMatchIdAndSideNumber(matchId, 2)).thenReturn(Optional.of(second));
         when(teamStatistics.findAllByMatchIdOrderBySideNumberAsc(matchId)).thenReturn(List.of(first, second));

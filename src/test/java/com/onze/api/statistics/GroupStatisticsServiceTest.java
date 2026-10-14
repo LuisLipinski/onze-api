@@ -264,9 +264,10 @@ class GroupStatisticsServiceTest {
     void countsPenaltiesAndFoulsForPlayersAndTeamsAfterFinishing() {
         UUID matchId = UUID.randomUUID();
         Instant time = Instant.parse("2026-10-14T18:00:00Z");
+        FootballMatch finished = match(matchId, time, time.plusSeconds(3600), 2);
         when(matches.findAllByGroupIdAndStatusOrderByFinishedAtDescStartsAtDesc(
                 groupId, MatchStatus.FINISHED))
-                .thenReturn(List.of(match(matchId, time, time.plusSeconds(3600), 2)));
+                .thenReturn(List.of(finished));
         MatchTeamAssignment attacker = assignment(matchId, aliceId, 1);
         MatchTeamAssignment defender = assignment(matchId, bobId, 2);
         doReturn(List.of(attacker, defender)).when(assignments)
@@ -302,6 +303,38 @@ class GroupStatisticsServiceTest {
         assertEquals(2, service.getPlayer(aliceId.toString(), groupId, aliceId)
                 .matchHistory().getFirst().penaltiesWon());
         assertEquals(aliceId, group.rankings().penaltiesScored().getFirst().userId());
+    }
+
+    @Test
+    void keepsEarlierPenaltyGoalsInTheNewPlayerAndTeamHighscores() {
+        UUID matchId = UUID.randomUUID();
+        Instant time = Instant.parse("2026-10-01T18:00:00Z");
+        FootballMatch finished = match(matchId, time, time.plusSeconds(3600), 2);
+        when(matches.findAllByGroupIdAndStatusOrderByFinishedAtDescStartsAtDesc(
+                groupId, MatchStatus.FINISHED))
+                .thenReturn(List.of(finished));
+        doReturn(List.of(assignment(matchId, aliceId, 1))).when(assignments)
+                .findAllByMatchIdInAndParticipantTypeOrderByMatchIdAscTeamNumberAscCreatedAtAsc(
+                        anyCollection(), any());
+        doReturn(List.of(score(matchId, 1, 1), score(matchId, 2, 0)))
+                .when(scores).findAllByMatchIdInOrderByMatchIdAscSideNumberAsc(anyCollection());
+        MatchGoalEvent legacyPenalty = mock(MatchGoalEvent.class);
+        when(legacyPenalty.getId()).thenReturn(UUID.randomUUID());
+        when(legacyPenalty.getMatchId()).thenReturn(matchId);
+        when(legacyPenalty.getSideNumber()).thenReturn(1);
+        when(legacyPenalty.isPenalty()).thenReturn(true);
+        when(legacyPenalty.getScorerParticipantType()).thenReturn(TeamParticipantType.MEMBER);
+        when(legacyPenalty.getScorerParticipantId()).thenReturn(aliceId);
+        when(goals.findAllByMatchIdInOrderByMatchIdAscElapsedSecondsAscCreatedAtAsc(anyCollection()))
+                .thenReturn(List.of(legacyPenalty));
+        when(teamImages.findAllByMatchIdInOrderByMatchIdAscTeamNumberAsc(anyCollection()))
+                .thenReturn(List.of());
+
+        var group = service.getGroup(aliceId.toString(), groupId);
+
+        assertEquals(1, statisticsFor(group, aliceId).totals().penaltiesTaken());
+        assertEquals(1, statisticsFor(group, aliceId).totals().penaltiesScored());
+        assertEquals(1, group.matchHistory().getFirst().teams().getFirst().penaltiesScored());
     }
 
     @Test
