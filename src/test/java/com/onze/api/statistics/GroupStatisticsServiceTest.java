@@ -281,10 +281,12 @@ class GroupStatisticsServiceTest {
                 .thenReturn(List.of());
         MatchFoulEvent missed = new MatchFoulEvent(matchId, defender, "Bruno", attacker, "Alice",
                 true, 100, null, null, null, bobId, time);
-        missed.resolve(attacker, "Alice", false, null, UUID.randomUUID(), time.plusSeconds(10));
+        missed.resolve(attacker, "Alice", false, null, UUID.randomUUID(), time.plusSeconds(10),
+                110, null, null, null);
         MatchFoulEvent converted = new MatchFoulEvent(matchId, defender, "Bruno", attacker, "Alice",
                 true, 200, null, null, null, bobId, time.plusSeconds(100));
-        converted.resolve(attacker, "Alice", true, UUID.randomUUID(), null, time.plusSeconds(110));
+        converted.resolve(attacker, "Alice", true, UUID.randomUUID(), null, time.plusSeconds(110),
+                210, null, null, null);
         when(fouls.findAllByMatchIdIn(anyCollection())).thenReturn(List.of(missed, converted));
 
         var group = service.getGroup(aliceId.toString(), groupId);
