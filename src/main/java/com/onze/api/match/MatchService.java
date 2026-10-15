@@ -38,6 +38,7 @@ import com.onze.api.technical.TechnicalRatingPolicy;
 import com.onze.api.technical.TechnicalProfileModels.OverallResponse;
 import com.onze.api.technical.TechnicalProfileModels.PositionOverallResponse;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -60,6 +61,7 @@ public class MatchService {
     private final GroupMemberRepository groupMemberRepository;
     private final UserRepository userRepository;
     private final Clock clock;
+    private final boolean testDataEnabled;
 
     public MatchService(
             FootballMatchRepository matchRepository,
@@ -77,7 +79,8 @@ public class MatchService {
             GroupRepository groupRepository,
             GroupMemberRepository groupMemberRepository,
             UserRepository userRepository,
-            Clock clock) {
+            Clock clock,
+            @Value("${dev.test-data.enabled:false}") boolean testDataEnabled) {
         this.matchRepository = matchRepository;
         this.seriesRepository = seriesRepository;
         this.attendanceRepository = attendanceRepository;
@@ -94,6 +97,7 @@ public class MatchService {
         this.groupMemberRepository = groupMemberRepository;
         this.userRepository = userRepository;
         this.clock = clock;
+        this.testDataEnabled = testDataEnabled;
     }
 
     @Transactional
@@ -1224,7 +1228,7 @@ public class MatchService {
                 membership.hasPermission(GroupAdminPermission.MANAGE_TEAMS),
                 membership.hasPermission(GroupAdminPermission.MANAGE_LIVE_MATCH),
                 membership.hasPermission(GroupAdminPermission.CANCEL_GAMES),
-                membership.hasPermission(GroupAdminPermission.MANAGE_TEST_DATA),
+                testDataEnabled && membership.hasPermission(GroupAdminPermission.MANAGE_TEST_DATA),
                 membership.hasPermission(GroupAdminPermission.SCHEDULE_GAMES));
     }
 

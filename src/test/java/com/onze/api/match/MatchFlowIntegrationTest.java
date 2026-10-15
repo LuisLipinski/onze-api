@@ -43,6 +43,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "security.jwt.secret=onze-match-integration-secret-with-at-least-32-bytes",
         "security.jwt.issuer=onze-api-match-integration-test",
         "notifications.expo.enabled=false",
+        "dev.test-data.enabled=true",
         "matches.processing.initial-delay-ms=3600000"
 })
 @AutoConfigureMockMvc
@@ -1546,6 +1547,34 @@ class MatchFlowIntegrationTest extends IntegrationTestSupport {
         assertThat(notificationJobRepository.findAll().stream()
                 .filter(job -> job.getNotificationType() == MatchNotificationType.PAYMENT_CONFIRMED).toList())
                 .hasSize(1);
+    }
+
+    @Test
+    void shouldExposeEnabledTestToolsOnlyToAuthorizedMembers() throws Exception {
+        AuthResponse primary = register("test-tools-owner@example.com", "Principal");
+        AuthResponse member = register("test-tools-member@example.com", "Membro");
+        GroupResponse group = createGroup(primary, "Ferramentas habilitadas");
+        join(member, createInvite(primary, group.id()).code());
+        var created = mockMvc.perform(post("/api/groups/{groupId}/matches", group.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(primary))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(matchBody(LocalDate.now(SAO_PAULO).plusDays(3), "NONE", 14)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.canManageTestData").value(true)).andReturn();
+        MatchResponse match = jsonMapper.readValue(created.getResponse().getContentAsString(), MatchResponse.class);
+        mockMvc.perform(get("/api/matches/{id}/teams", match.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(primary)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.canManageTestData").value(true));
+        mockMvc.perform(get("/api/dev/test-data/matches/{id}", match.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(primary))).andExpect(status().isOk());
+        mockMvc.perform(get("/api/matches/{id}", match.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(member)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.canManageTestData").value(false));
+        mockMvc.perform(get("/api/matches/{id}/teams", match.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(member)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.canManageTestData").value(false));
+        mockMvc.perform(get("/api/dev/test-data/matches/{id}", match.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(member))).andExpect(status().isForbidden());
     }
 
     private void setAdminPermissions(AuthResponse primary, UUID groupId, UUID memberId, String... permissions)

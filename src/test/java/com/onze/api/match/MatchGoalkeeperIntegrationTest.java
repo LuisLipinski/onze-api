@@ -855,6 +855,25 @@ class MatchGoalkeeperIntegrationTest extends IntegrationTestSupport {
                 .andExpect(jsonPath("$.code").value("MULTIPLE_ACTIVE_GOALKEEPERS"));
     }
 
+    @Test
+    void shouldHideTestToolsByDefaultEvenForPrimaryAdmin() throws Exception {
+        AuthResponse primary = register("disabled-test-tools@example.com", "Principal");
+        GroupResponse group = createGroup(primary, "Ferramentas desabilitadas");
+        var created = createMatch(primary, group.id(),
+                        paidMatchBody(LocalDate.now(SAO_PAULO).plusDays(3), 12, "NONE", null))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.canManageTestData").value(false)).andReturn();
+        MatchResponse match = jsonMapper.readValue(created.getResponse().getContentAsString(), MatchResponse.class);
+        mockMvc.perform(get("/api/matches/{id}", match.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(primary)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.canManageTestData").value(false));
+        mockMvc.perform(get("/api/matches/{id}/teams", match.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(primary)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.canManageTestData").value(false));
+        mockMvc.perform(get("/api/dev/test-data/matches/{id}", match.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(primary))).andExpect(status().isNotFound());
+    }
+
     private org.springframework.test.web.servlet.ResultActions createMatch(
             AuthResponse user,
             UUID groupId,

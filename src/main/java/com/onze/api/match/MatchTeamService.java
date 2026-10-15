@@ -33,6 +33,7 @@ import com.onze.api.technical.TechnicalRatingPolicy.OverallResult;
 import com.onze.api.user.User;
 import com.onze.api.user.UserRepository;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -71,6 +72,7 @@ public class MatchTeamService {
     private final GroupMemberSkillRatingRepository memberRatingRepository;
     private final UserRepository userRepository;
     private final MatchTeamImageService teamIdentityService;
+    private final boolean testDataEnabled;
 
     public MatchTeamService(
             FootballMatchRepository matchRepository,
@@ -84,7 +86,8 @@ public class MatchTeamService {
             GroupMemberRepository memberRepository,
             GroupMemberSkillRatingRepository memberRatingRepository,
             UserRepository userRepository,
-            MatchTeamImageService teamIdentityService) {
+            MatchTeamImageService teamIdentityService,
+            @Value("${dev.test-data.enabled:false}") boolean testDataEnabled) {
         this.matchRepository = matchRepository;
         this.attendanceRepository = attendanceRepository;
         this.guestRepository = guestRepository;
@@ -97,6 +100,7 @@ public class MatchTeamService {
         this.memberRatingRepository = memberRatingRepository;
         this.userRepository = userRepository;
         this.teamIdentityService = teamIdentityService;
+        this.testDataEnabled = testDataEnabled;
     }
 
     @Transactional
@@ -701,7 +705,7 @@ public class MatchTeamService {
                 participants.size() < match.getIdealPlayers(),
                 technicalVisible,
                 actor.hasPermission(GroupAdminPermission.MANAGE_TEAMS),
-                actor.hasPermission(GroupAdminPermission.MANAGE_TEST_DATA),
+                testDataEnabled && actor.hasPermission(GroupAdminPermission.MANAGE_TEST_DATA),
                 generationNotice,
                 teams);
     }
