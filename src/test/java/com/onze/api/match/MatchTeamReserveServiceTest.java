@@ -142,6 +142,8 @@ class MatchTeamReserveServiceTest {
                 assignments.size(),
                 false,
                 true,
+                true,
+                false,
                 null,
                 List.of(new TeamResponse(
                         1, "Time 1", null, 30, assignments.size(), 0, assignments)));

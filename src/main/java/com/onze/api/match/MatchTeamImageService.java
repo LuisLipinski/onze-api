@@ -229,7 +229,7 @@ public class MatchTeamImageService {
         }
         GroupMember member = memberRepository.findByGroupIdAndUserId(groupId, userId)
                 .orElseThrow(GroupAccessDeniedException::new);
-        if (manage && !member.hasPermission(GroupAdminPermission.SCHEDULE_GAMES)) {
+        if (manage && !member.hasPermission(GroupAdminPermission.MANAGE_LIVE_MATCH)) {
             throw new GroupAccessDeniedException();
         }
         return member;

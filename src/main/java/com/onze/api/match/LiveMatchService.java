@@ -942,7 +942,7 @@ public class LiveMatchService {
                 .orElseThrow(MatchNotFoundException::new);
         GroupMember member = memberRepository.findByGroupIdAndUserId(match.getGroupId(), userId)
                 .orElseThrow(GroupAccessDeniedException::new);
-        if (lock && !member.hasPermission(GroupAdminPermission.SCHEDULE_GAMES)) throw new GroupAccessDeniedException();
+        if (lock && !member.hasPermission(GroupAdminPermission.MANAGE_LIVE_MATCH)) throw new GroupAccessDeniedException();
         return new Access(match, member);
     }
 
@@ -960,7 +960,7 @@ public class LiveMatchService {
                 snapshot.version(), snapshot.scores(), snapshot.goalEvents(), snapshot.cardEvents(),
                 snapshot.teamStatistics(), snapshot.shotEvents(), snapshot.foulEvents(),
                 snapshot.phase(), snapshot.periods(), snapshot.penaltyShootout(),
-                member.hasPermission(GroupAdminPermission.SCHEDULE_GAMES));
+                member.hasPermission(GroupAdminPermission.MANAGE_LIVE_MATCH));
     }
 
     @Transactional(readOnly = true)

@@ -101,7 +101,7 @@ public class MatchService {
         UUID userId = parseUserId(authenticatedUserId);
         Group group = requireGroup(groupId);
         GroupMember membership = requireMembership(groupId, userId);
-        requireManagePermission(membership);
+        requirePermission(membership, GroupAdminPermission.SCHEDULE_GAMES);
 
         ZoneId zoneId = parseZoneId(request.timeZone());
         Instant startsAt = request.date().atTime(request.startTime()).atZone(zoneId).toInstant();
@@ -268,7 +268,7 @@ public class MatchService {
                         groupId, List.of(MatchStatus.IN_PROGRESS))
                 .stream().filter(match -> matches.stream().noneMatch(item -> item.getId().equals(match.getId())))
                 .forEach(matches::add);
-        if (membership.hasPermission(GroupAdminPermission.SCHEDULE_GAMES)) {
+        if (membership.hasPermission(GroupAdminPermission.MANAGE_PAYMENTS)) {
             Set<UUID> scheduledIds = matches.stream()
                     .map(FootballMatch::getId)
                     .collect(java.util.stream.Collectors.toSet());
@@ -299,11 +299,11 @@ public class MatchService {
         UUID userId = parseUserId(authenticatedUserId);
         requireGroup(groupId);
         GroupMember membership = requireMembership(groupId, userId);
-        boolean canManage = membership.hasPermission(GroupAdminPermission.SCHEDULE_GAMES);
+        boolean canManagePayments = membership.hasPermission(GroupAdminPermission.MANAGE_PAYMENTS);
 
         return playerCreditService.listForGroup(groupId, clock.instant())
                 .stream()
-                .filter(credit -> canManage || credit.userId().equals(userId))
+                .filter(credit -> canManagePayments || credit.userId().equals(userId))
                 .map(credit -> {
                     User user = userRepository.findById(credit.userId()).orElse(null);
                     if (user == null) {
@@ -441,7 +441,7 @@ public class MatchService {
                 .orElseThrow(MatchNotFoundException::new);
         Group group = requireGroup(match.getGroupId());
         GroupMember membership = requireMembership(match.getGroupId(), adminUserId);
-        requireManagePermission(membership);
+        requirePermission(membership, GroupAdminPermission.MANAGE_MATCH_PLAYERS);
         Instant now = clock.instant();
         requireOpenMatch(match, now);
 
@@ -539,7 +539,7 @@ public class MatchService {
                 .orElseThrow(MatchNotFoundException::new);
         Group group = requireGroup(match.getGroupId());
         GroupMember membership = requireMembership(match.getGroupId(), adminUserId);
-        requireManagePermission(membership);
+        requirePermission(membership, GroupAdminPermission.MANAGE_MATCH_PLAYERS);
         Instant now = clock.instant();
         requireEditableMatch(match, now);
 
@@ -577,7 +577,7 @@ public class MatchService {
                 .orElseThrow(MatchNotFoundException::new);
         Group group = requireGroup(match.getGroupId());
         GroupMember membership = requireMembership(match.getGroupId(), adminUserId);
-        requireManagePermission(membership);
+        requirePermission(membership, GroupAdminPermission.MANAGE_MATCH_PLAYERS);
         Instant now = clock.instant();
         requireEditableMatch(match, now);
 
@@ -613,7 +613,7 @@ public class MatchService {
                 .orElseThrow(MatchNotFoundException::new);
         Group group = requireGroup(match.getGroupId());
         GroupMember membership = requireMembership(match.getGroupId(), adminUserId);
-        requireManagePermission(membership);
+        requirePermission(membership, GroupAdminPermission.MANAGE_MATCH_PLAYERS);
         Instant now = clock.instant();
         requireEditableMatch(match, now);
 
@@ -636,7 +636,7 @@ public class MatchService {
                 .orElseThrow(MatchNotFoundException::new);
         Group group = requireGroup(match.getGroupId());
         GroupMember membership = requireMembership(match.getGroupId(), adminUserId);
-        requireManagePermission(membership);
+        requirePermission(membership, GroupAdminPermission.SCHEDULE_GAMES);
         Instant now = clock.instant();
         requireEditableMatch(match, now);
         PlayerConfiguration configuration = MatchPlayerPolicy.resolve(
@@ -672,7 +672,7 @@ public class MatchService {
                 .orElseThrow(MatchNotFoundException::new);
         Group group = requireGroup(match.getGroupId());
         GroupMember membership = requireMembership(match.getGroupId(), adminUserId);
-        requireManagePermission(membership);
+        requirePermission(membership, GroupAdminPermission.MANAGE_MATCH_PLAYERS);
         Instant now = clock.instant();
         requireEditableMatch(match, now);
         if (capacityService.isFull(match)) {
@@ -712,7 +712,7 @@ public class MatchService {
                 .orElseThrow(MatchNotFoundException::new);
         Group group = requireGroup(match.getGroupId());
         GroupMember membership = requireMembership(match.getGroupId(), adminUserId);
-        requireManagePermission(membership);
+        requirePermission(membership, GroupAdminPermission.MANAGE_MATCH_PLAYERS);
         Instant now = clock.instant();
         requireEditableMatch(match, now);
         MatchGuest guest = guestRepository.findByIdAndMatchId(guestId, matchId)
@@ -817,7 +817,7 @@ public class MatchService {
                 .orElseThrow(MatchNotFoundException::new);
         Group group = requireGroup(match.getGroupId());
         GroupMember membership = requireMembership(match.getGroupId(), adminUserId);
-        requireManagePermission(membership);
+        requirePermission(membership, GroupAdminPermission.MANAGE_PAYMENTS);
         requirePayment(match);
 
         List<MatchAttendance> settlements = playerUserIds.stream()
@@ -894,7 +894,7 @@ public class MatchService {
                 .orElseThrow(MatchNotFoundException::new);
         Group group = requireGroup(match.getGroupId());
         GroupMember membership = requireMembership(match.getGroupId(), adminUserId);
-        requireManagePermission(membership);
+        requirePermission(membership, GroupAdminPermission.MANAGE_PAYMENTS);
         Instant now = clock.instant();
         requireOpenMatch(match, now);
         requirePayment(match);
@@ -929,7 +929,7 @@ public class MatchService {
         FootballMatch match = matchRepository.findByIdForUpdate(matchId)
                 .orElseThrow(MatchNotFoundException::new);
         GroupMember membership = requireMembership(match.getGroupId(), userId);
-        requireManagePermission(membership);
+        requirePermission(membership, GroupAdminPermission.CANCEL_GAMES);
         Instant now = clock.instant();
         if (!match.getStartsAt().isAfter(now)) {
             throw new MatchAlreadyStartedException();
@@ -955,7 +955,7 @@ public class MatchService {
         MatchSeries series = seriesRepository.findById(seriesId)
                 .orElseThrow(MatchSeriesNotFoundException::new);
         GroupMember membership = requireMembership(series.getGroupId(), userId);
-        requireManagePermission(membership);
+        requirePermission(membership, GroupAdminPermission.CANCEL_GAMES);
         if (!series.isActive()) {
             return;
         }
@@ -1044,7 +1044,7 @@ public class MatchService {
         MatchAttendance currentUserAttendance = null;
         int goingCount = Math.toIntExact(capacityService.occupiedSpots(match.getId()));
         int notGoingCount = 0;
-        boolean canManage = membership.hasPermission(GroupAdminPermission.SCHEDULE_GAMES);
+        boolean canManagePayments = membership.hasPermission(GroupAdminPermission.MANAGE_PAYMENTS);
 
         for (MatchAttendance attendance : storedAttendances) {
             User user = userRepository.findById(attendance.getUserId()).orElse(null);
@@ -1068,7 +1068,9 @@ public class MatchService {
                 myPaymentDeadlineRemovedAt = attendance.getPaymentDeadlineRemovedAt();
                 currentUserAttendance = attendance;
             }
-            boolean financialDetailsVisible = currentUser || canManage;
+            boolean financialDetailsVisible = currentUser || canManagePayments;
+            boolean replacementDetailsVisible = financialDetailsVisible
+                    || membership.hasPermission(GroupAdminPermission.MANAGE_MATCH_PLAYERS);
             String replacementDisplayName = attendance.getReplacementUserId() == null
                     ? null
                     : userRepository.findById(attendance.getReplacementUserId())
@@ -1089,12 +1091,12 @@ public class MatchService {
                     financialDetailsVisible ? remainingPaymentAmount : null,
                     financialDetailsVisible ? creditAllocationStatus : null,
                     financialDetailsVisible ? attendance.getPaymentDeadlineRemovedAt() : null,
-                    financialDetailsVisible ? attendance.getReplacementRequiredAt() : null,
-                    financialDetailsVisible ? attendance.getReplacementUserId() : null,
-                    financialDetailsVisible ? replacementDisplayName : null,
-                    financialDetailsVisible ? attendance.getReplacementFilledAt() : null,
-                    financialDetailsVisible ? attendance.getAddedAsReplacementAt() : null,
-                    financialDetailsVisible ? attendance.getReplacementForUserId() : null,
+                    replacementDetailsVisible ? attendance.getReplacementRequiredAt() : null,
+                    replacementDetailsVisible ? attendance.getReplacementUserId() : null,
+                    replacementDetailsVisible ? replacementDisplayName : null,
+                    replacementDetailsVisible ? attendance.getReplacementFilledAt() : null,
+                    replacementDetailsVisible ? attendance.getAddedAsReplacementAt() : null,
+                    replacementDetailsVisible ? attendance.getReplacementForUserId() : null,
                     financialDetailsVisible && settlementAvailable(match, attendance),
                     currentUser));
         }
@@ -1196,7 +1198,13 @@ public class MatchService {
                 guests,
                 teamAssignmentRepository.countByMatchId(match.getId()) > 0,
                 technicalDetailsVisible,
-                canManage);
+                membership.hasPermission(GroupAdminPermission.MANAGE_MATCH_PLAYERS),
+                canManagePayments,
+                membership.hasPermission(GroupAdminPermission.MANAGE_TEAMS),
+                membership.hasPermission(GroupAdminPermission.MANAGE_LIVE_MATCH),
+                membership.hasPermission(GroupAdminPermission.CANCEL_GAMES),
+                membership.hasPermission(GroupAdminPermission.MANAGE_TEST_DATA),
+                membership.hasPermission(GroupAdminPermission.SCHEDULE_GAMES));
     }
 
     private GuestTechnicalProfileResponse guestTechnicalResponse(
@@ -1351,7 +1359,7 @@ public class MatchService {
             Instant now) {
         for (GroupMember admin : groupMemberRepository
                 .findAllByGroupIdOrderByCreatedAtAsc(match.getGroupId())) {
-            if (!admin.hasPermission(GroupAdminPermission.SCHEDULE_GAMES)) {
+            if (!admin.hasPermission(GroupAdminPermission.MANAGE_PAYMENTS)) {
                 continue;
             }
             notificationQueue.enqueue(
@@ -1492,8 +1500,8 @@ public class MatchService {
                 .orElseThrow(GroupService.GroupAccessDeniedException::new);
     }
 
-    private void requireManagePermission(GroupMember membership) {
-        if (!membership.hasPermission(GroupAdminPermission.SCHEDULE_GAMES)) {
+    private void requirePermission(GroupMember membership, GroupAdminPermission permission) {
+        if (!membership.hasPermission(permission)) {
             throw new GroupService.GroupAccessDeniedException();
         }
     }

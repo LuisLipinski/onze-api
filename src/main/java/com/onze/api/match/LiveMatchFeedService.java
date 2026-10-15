@@ -97,7 +97,7 @@ public class LiveMatchFeedService {
                     Group group = groupsById.get(match.getGroupId());
                     return summary(match, group,
                             scoresByMatch.getOrDefault(match.getId(), List.of()),
-                            membership.hasPermission(GroupAdminPermission.SCHEDULE_GAMES));
+                            membership.hasPermission(GroupAdminPermission.MANAGE_LIVE_MATCH));
                 })
                 .toList();
     }

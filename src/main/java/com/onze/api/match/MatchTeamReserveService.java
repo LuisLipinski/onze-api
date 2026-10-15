@@ -118,7 +118,7 @@ public class MatchTeamReserveService {
         FootballMatch match = matchRepository.findByIdForUpdate(matchId)
                 .orElseThrow(MatchService.MatchNotFoundException::new);
         GroupMember actor = requireMembership(authenticatedUserId, match.getGroupId());
-        requireTechnicalPermission(actor);
+        requireTeamPermission(actor);
         MatchTeamsResponse teams = teamService.get(authenticatedUserId, matchId);
         return replace(matchId, automaticReserveIds(teams));
     }
@@ -131,7 +131,7 @@ public class MatchTeamReserveService {
         FootballMatch match = matchRepository.findByIdForUpdate(matchId)
                 .orElseThrow(MatchService.MatchNotFoundException::new);
         GroupMember actor = requireMembership(authenticatedUserId, match.getGroupId());
-        requireTechnicalPermission(actor);
+        requireTeamPermission(actor);
         return replace(matchId, new LinkedHashSet<>(reserveAssignmentIds));
     }
 
@@ -345,8 +345,8 @@ public class MatchTeamReserveService {
                 .orElseThrow(GroupService.GroupAccessDeniedException::new);
     }
 
-    private void requireTechnicalPermission(GroupMember actor) {
-        if (!actor.hasPermission(GroupAdminPermission.EDIT_PLAYER_PROFILES)) {
+    private void requireTeamPermission(GroupMember actor) {
+        if (!actor.hasPermission(GroupAdminPermission.MANAGE_TEAMS)) {
             throw new GroupService.GroupAccessDeniedException();
         }
     }

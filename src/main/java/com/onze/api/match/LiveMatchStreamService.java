@@ -154,7 +154,7 @@ public class LiveMatchStreamService {
                     .stream()
                     .collect(Collectors.toUnmodifiableMap(
                             GroupMember::getGroupId,
-                            member -> member.hasPermission(GroupAdminPermission.SCHEDULE_GAMES),
+                            member -> member.hasPermission(GroupAdminPermission.MANAGE_LIVE_MATCH),
                             (first, ignored) -> first));
         }
 
@@ -165,7 +165,7 @@ public class LiveMatchStreamService {
                 .orElseThrow(GroupAccessDeniedException::new);
         return Map.of(
                 match.getGroupId(),
-                member.hasPermission(GroupAdminPermission.SCHEDULE_GAMES));
+                member.hasPermission(GroupAdminPermission.MANAGE_LIVE_MATCH));
     }
 
     private void register(Subscription subscription) {

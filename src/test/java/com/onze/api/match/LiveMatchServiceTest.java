@@ -24,6 +24,8 @@ import java.util.List;
 import java.util.UUID;
 
 import com.onze.api.group.GroupMember;
+import com.onze.api.group.GroupAdminPermission;
+import java.util.Set;
 import com.onze.api.group.GroupMemberRepository;
 import com.onze.api.group.GroupRole;
 import com.onze.api.group.GroupService.GroupAccessDeniedException;
@@ -135,6 +137,21 @@ class LiveMatchServiceTest {
         verify(notifications).enqueue(eq(matchId), isNull(),
                 eq(MatchNotificationType.LIVE_MATCH_FINISHED), anyString(), eq(NOW));
         verify(weeklyMatchWindowService).ensureForMatch(match, NOW);
+    }
+
+    @Test
+    void schedulingPermissionDoesNotControlLiveMatchAndLiveAccessCanBeRevoked() {
+        GroupMember admin = new GroupMember(groupId, adminId, GroupRole.ADMIN);
+        admin.replacePermissions(Set.of(GroupAdminPermission.SCHEDULE_GAMES));
+        when(members.findByGroupIdAndUserId(groupId, adminId)).thenReturn(Optional.of(admin));
+        assertThrows(GroupAccessDeniedException.class, () -> service.start(adminId.toString(), matchId));
+        assertEquals(MatchStatus.SCHEDULED, match.getStatus());
+        admin.replacePermissions(Set.of(GroupAdminPermission.MANAGE_LIVE_MATCH));
+        service.start(adminId.toString(), matchId);
+        assertEquals(MatchStatus.IN_PROGRESS, match.getStatus());
+        admin.replacePermissions(Set.of());
+        assertThrows(GroupAccessDeniedException.class, () -> service.finish(adminId.toString(), matchId));
+        assertEquals(MatchStatus.IN_PROGRESS, match.getStatus());
     }
 
     @Test
