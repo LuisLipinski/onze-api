@@ -15,6 +15,35 @@ class MatchAttendanceTest {
     private static final BigDecimal PAYMENT_AMOUNT = new BigDecimal("20.00");
 
     @Test
+    void shouldReturnRejectedReportToPendingWithoutChangingAttendanceOrCredit() {
+        MatchAttendance attendance = paidAttendance();
+        attendance.reserveCredit(new BigDecimal("5.00"), PAYMENT_AMOUNT, NOW.minusSeconds(120));
+        attendance.reportPayment(NOW.minusSeconds(60));
+        BigDecimal creditBefore = attendance.getCreditAppliedAmount();
+        BigDecimal cashBefore = attendance.getCashAmountDue();
+
+        attendance.rejectPaymentReport();
+
+        assertThat(attendance.getStatus()).isEqualTo(AttendanceStatus.GOING);
+        assertThat(attendance.getPaymentStatus()).isEqualTo(PaymentStatus.PENDING);
+        assertThat(attendance.getPaymentReportedAt()).isNull();
+        assertThat(attendance.getPaymentConfirmedAt()).isNull();
+        assertThat(attendance.getCreditAppliedAmount()).isEqualTo(creditBefore);
+        assertThat(attendance.getCashAmountDue()).isEqualTo(cashBefore);
+        assertThat(attendance.getPaymentSettlementStatus()).isNull();
+        attendance.reportPayment(NOW);
+        assertThat(attendance.getPaymentStatus()).isEqualTo(PaymentStatus.REPORTED);
+    }
+
+    @Test
+    void shouldNotRejectAnAlreadyConfirmedPayment() {
+        MatchAttendance attendance = paidAttendance();
+        attendance.confirmPayment(NOW);
+        assertThatThrownBy(attendance::rejectPaymentReport).isInstanceOf(IllegalStateException.class);
+        assertThat(attendance.getPaymentStatus()).isEqualTo(PaymentStatus.PAID);
+    }
+
+    @Test
     void shouldCancelPendingChargeWhenPlayerLeaves() {
         MatchAttendance attendance = paidAttendance();
 

@@ -16,6 +16,8 @@ import com.onze.api.group.GroupModels.GroupResponse;
 import com.onze.api.group.GroupModels.ScheduleRequest;
 import com.onze.api.group.GroupModels.ScheduleResponse;
 import com.onze.api.group.GroupModels.UpdateGroupDetailsRequest;
+import com.onze.api.statistics.GroupRankingSeason;
+import com.onze.api.statistics.GroupRankingSeasonRepository;
 import com.onze.api.user.User;
 import com.onze.api.user.UserRepository;
 
@@ -33,18 +35,21 @@ public class GroupService {
     private final GroupScheduleRepository groupScheduleRepository;
     private final UserRepository userRepository;
     private final GroupPhotoStorage groupPhotoStorage;
+    private final GroupRankingSeasonRepository seasonRepository;
 
     public GroupService(
             GroupRepository groupRepository,
             GroupMemberRepository groupMemberRepository,
             GroupScheduleRepository groupScheduleRepository,
             UserRepository userRepository,
-            GroupPhotoStorage groupPhotoStorage) {
+            GroupPhotoStorage groupPhotoStorage,
+            GroupRankingSeasonRepository seasonRepository) {
         this.groupRepository = groupRepository;
         this.groupMemberRepository = groupMemberRepository;
         this.groupScheduleRepository = groupScheduleRepository;
         this.userRepository = userRepository;
         this.groupPhotoStorage = groupPhotoStorage;
+        this.seasonRepository = seasonRepository;
     }
 
     @Transactional
@@ -56,6 +61,8 @@ public class GroupService {
                 creator.getId()));
 
         groupMemberRepository.save(new GroupMember(group.getId(), creator.getId(), GroupRole.PRIMARY_ADMIN));
+        seasonRepository.save(new GroupRankingSeason(
+                group.getId(), 1, group.getCreatedAt()));
         return toResponse(
                 group,
                 GroupRole.PRIMARY_ADMIN,

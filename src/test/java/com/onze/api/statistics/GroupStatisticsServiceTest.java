@@ -11,6 +11,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -42,6 +43,8 @@ import com.onze.api.match.TeamParticipantType;
 import com.onze.api.statistics.GroupStatisticsModels.PlayerMatchResult;
 import com.onze.api.user.User;
 import com.onze.api.user.UserRepository;
+
+import tools.jackson.databind.json.JsonMapper;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -80,7 +83,8 @@ class GroupStatisticsServiceTest {
         penaltyShootouts = mock(MatchPenaltyShootoutRepository.class);
         service = new GroupStatisticsService(
                 groups, members, users, matches, assignments, attendances, scores, goals, fouls,
-                teamImages, penaltyShootouts);
+                teamImages, penaltyShootouts, mock(GroupRankingSeasonRepository.class),
+                JsonMapper.builder().build(), Clock.systemUTC());
         when(fouls.findAllByMatchIdIn(anyCollection())).thenReturn(List.of());
 
         groupId = UUID.randomUUID();
@@ -160,7 +164,7 @@ class GroupStatisticsServiceTest {
         assertEquals(1, response.currentPlayer().totals().assists());
         assertEquals(List.of("Alice", "Bruno", "Carla", "Davi"),
                 response.players().stream().map(item -> item.displayName()).toList());
-        assertEquals(List.of(1, 2, 3, 3),
+        assertEquals(List.of(1, 2, 3, 4),
                 response.rankings().goals().stream().map(item -> item.rank()).toList());
         assertEquals(List.of(2, 1, 0, 0),
                 response.rankings().goals().stream().map(item -> item.value()).toList());
@@ -257,7 +261,8 @@ class GroupStatisticsServiceTest {
         assertEquals(4, response.players().size());
         assertEquals(0, response.currentPlayer().totals().gamesPlayed());
         assertTrue(response.matchHistory().isEmpty());
-        verifyNoInteractions(assignments, attendances, scores, goals, teamImages, penaltyShootouts);
+        verifyNoInteractions(assignments, attendances, scores, goals, teamImages, penaltyShootouts, mock(GroupRankingSeasonRepository.class),
+                JsonMapper.builder().build(), Clock.systemUTC());
     }
 
     @Test
@@ -422,6 +427,54 @@ class GroupStatisticsServiceTest {
         assertFalse(former.currentMember());
         assertEquals(1, former.totals().gamesPlayed());
         assertEquals(1, former.totals().wins());
+    }
+
+    @Test
+    void breaksGoalsAndAssistsTiesUsingTheOtherMetricThenMoreGames() {
+        var first = rankedPlayer("Teste 1", 10, 8, 5, 0, 0);
+        var second = rankedPlayer("Teste 2", 10, 9, 5, 0, 0);
+        var moreGames = rankedPlayer("Teste 5", 10, 9, 6, 0, 0);
+        var rankings = service.rankings(List.of(first, second, moreGames));
+        assertEquals(List.of("Teste 5", "Teste 2", "Teste 1"),
+                rankings.goals().stream().map(item -> item.displayName()).toList());
+        assertEquals(List.of(1, 2, 3), rankings.goals().stream().map(item -> item.rank()).toList());
+
+        var third = rankedPlayer("Teste 3", 2, 15, 4, 0, 0);
+        var fourth = rankedPlayer("Teste 4", 1, 15, 8, 0, 0);
+        var moreAssistsGames = rankedPlayer("Teste 6", 2, 15, 5, 0, 0);
+        assertEquals(List.of("Teste 6", "Teste 3", "Teste 4"),
+                service.rankings(List.of(third, fourth, moreAssistsGames)).assists().stream()
+                        .map(item -> item.displayName()).toList());
+    }
+
+    @Test
+    void breaksGamesTiesByWinsAndWinsAndLossesTiesByMoreGames() {
+        var a = rankedPlayer("A", 0, 0, 10, 4, 3);
+        var b = rankedPlayer("B", 0, 0, 10, 5, 3);
+        var c = rankedPlayer("C", 0, 0, 11, 5, 3);
+        var rankings = service.rankings(List.of(a, b, c));
+        assertEquals(List.of("C", "B", "A"),
+                rankings.gamesPlayed().stream().map(item -> item.displayName()).toList());
+        assertEquals(List.of("C", "B", "A"),
+                rankings.wins().stream().map(item -> item.displayName()).toList());
+        assertEquals(List.of("C", "A", "B"),
+                rankings.losses().stream().map(item -> item.displayName()).toList());
+        assertEquals(List.of(1, 2, 2), rankings.losses().stream().map(item -> item.rank()).toList());
+    }
+
+    @Test
+    void sharesRankOnlyWhenAllSportingCriteriaAreEqual() {
+        var a = rankedPlayer("A", 10, 8, 5, 0, 0);
+        var b = rankedPlayer("B", 10, 8, 5, 0, 0);
+        assertEquals(List.of(1, 1), service.rankings(List.of(b, a)).goals().stream()
+                .map(item -> item.rank()).toList());
+    }
+
+    private GroupStatisticsModels.StatisticsPlayerResponse rankedPlayer(
+            String name, int goals, int assists, int games, int wins, int losses) {
+        return new GroupStatisticsModels.StatisticsPlayerResponse(UUID.randomUUID(), name, true, false,
+                new GroupStatisticsModels.StatisticsTotalsResponse(games, wins, 0, losses, goals, assists,
+                        0, 0, 0, 0, 0, 0, 0));
     }
 
     private GroupStatisticsModels.StatisticsPlayerResponse statisticsFor(

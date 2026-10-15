@@ -338,6 +338,13 @@ public class MatchController {
                 playerUserId);
     }
 
+    @PutMapping("/api/matches/{matchId}/payments/{playerUserId}/reject")
+    public MatchResponse rejectPayment(Authentication authentication, @PathVariable UUID matchId,
+            @PathVariable UUID playerUserId) {
+        lifecycleService.openDueAttendances();
+        return matchService.rejectPayment(authentication.getName(), matchId, playerUserId);
+    }
+
     @PutMapping("/api/matches/{matchId}/payments/{playerUserId}/settlement")
     public MatchResponse resolvePaymentSettlement(
             Authentication authentication,

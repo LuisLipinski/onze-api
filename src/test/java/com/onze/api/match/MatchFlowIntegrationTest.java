@@ -1511,6 +1511,10 @@ class MatchFlowIntegrationTest extends IntegrationTestSupport {
                 .andExpect(status().isCreated()).andReturn();
         MatchResponse match = jsonMapper.readValue(created.getResponse().getContentAsString(), MatchResponse.class);
         confirmAttendance(match.id(), player, "GOING").andExpect(status().isOk());
+        mockMvc.perform(put("/api/matches/{id}/payments/{user}/reject", match.id(), player.user().id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(player))).andExpect(status().isForbidden());
+        mockMvc.perform(put("/api/matches/{id}/payments/{user}/reject", match.id(), player.user().id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(admin))).andExpect(status().isForbidden());
         mockMvc.perform(post("/api/matches/{id}/payments/{user}/reminder", match.id(), player.user().id())
                         .header(HttpHeaders.AUTHORIZATION, bearer(player))).andExpect(status().isForbidden());
         mockMvc.perform(post("/api/matches/{id}/payments/{user}/reminder", match.id(), player.user().id())
@@ -1539,14 +1543,156 @@ class MatchFlowIntegrationTest extends IntegrationTestSupport {
         mockMvc.perform(post("/api/matches/{id}/payments/{user}/reminder", match.id(), player.user().id())
                         .header(HttpHeaders.AUTHORIZATION, bearer(admin)))
                 .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("PAYMENT_NOT_PENDING"));
+        mockMvc.perform(put("/api/matches/{id}/payments/{user}/reject", match.id(), player.user().id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(admin)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.attendances[0].paymentStatus").value("PENDING"))
+                .andExpect(jsonPath("$.attendances[0].status").value("GOING"));
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT payment_reported_at FROM match_attendances WHERE match_id = ? AND user_id = ?",
+                java.sql.Timestamp.class, match.id(), player.user().id())).isNull();
+        mockMvc.perform(put("/api/matches/{id}/payment/reported", match.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(player)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.myPaymentStatus").value("REPORTED"));
+        assertThat(notificationJobRepository.findAll().stream()
+                .filter(job -> job.getNotificationType() == MatchNotificationType.PAYMENT_REPORTED).toList())
+                .hasSize(4); // Two authorized managers, notified once for each actual report.
         mockMvc.perform(put("/api/matches/{id}/payments/{user}/confirm", match.id(), player.user().id())
                         .header(HttpHeaders.AUTHORIZATION, bearer(admin)))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.attendances[0].paymentStatus").value("PAID"));
         mockMvc.perform(put("/api/matches/{id}/payments/{user}/confirm", match.id(), player.user().id())
                         .header(HttpHeaders.AUTHORIZATION, bearer(admin))).andExpect(status().isOk());
+        mockMvc.perform(put("/api/matches/{id}/payments/{user}/reject", match.id(), player.user().id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(admin)))
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("PAYMENT_NOT_REPORTED"));
         assertThat(notificationJobRepository.findAll().stream()
                 .filter(job -> job.getNotificationType() == MatchNotificationType.PAYMENT_CONFIRMED).toList())
                 .hasSize(1);
+    }
+
+    @Test
+    void shouldFreezeClosedSeasonsKeepGeneralAndCountNewGamesOnlyInCurrentSeason() throws Exception {
+        AuthResponse owner = register("season-owner@example.com", "Artilheiro");
+        AuthResponse viewer = register("season-viewer@example.com", "Jogador");
+        AuthResponse newcomer = register("season-new@example.com", "Novo membro");
+        GroupResponse group = createGroup(owner, "Ranking por temporada");
+        String invite = createInvite(owner, group.id()).code();
+        join(viewer, invite);
+        var initial = mockMvc.perform(get("/api/groups/{id}/statistics", group.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.canManageSeasons").value(true)).andReturn();
+        String firstId = jsonMapper.readTree(initial.getResponse().getContentAsString())
+                .path("seasons").get(0).path("id").asText();
+        var created = mockMvc.perform(post("/api/groups/{groupId}/matches", group.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(matchBody(LocalDate.now(SAO_PAULO).plusDays(3), "NONE", 10)))
+                .andExpect(status().isCreated()).andReturn();
+        MatchResponse match = jsonMapper.readValue(created.getResponse().getContentAsString(), MatchResponse.class);
+        mockMvc.perform(put("/api/matches/{id}/live/start", match.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner))).andExpect(status().isOk());
+        UUID scorer = addPlayer(match.id(), 1, owner.user().id());
+        addPlayer(match.id(), 2, viewer.user().id());
+        mockMvc.perform(post("/api/matches/{id}/live/goals", match.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner)).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"scorerAssignmentId\":\"" + scorer
+                                + "\",\"penalty\":false,\"sideNumber\":1,\"ownGoal\":false}"))
+                .andExpect(status().isCreated());
+        mockMvc.perform(put("/api/matches/{id}/live/finish", match.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner))).andExpect(status().isOk());
+        var next = mockMvc.perform(post("/api/groups/{id}/statistics/seasons", group.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner)).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"expectedCurrentSeasonId\":\"" + firstId + "\"}"))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.number").value(2)).andReturn();
+        String secondId = jsonMapper.readTree(next.getResponse().getContentAsString()).path("id").asText();
+        mockMvc.perform(get("/api/groups/{id}/statistics", group.id()).param("seasonId", secondId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(viewer)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.finishedMatches").value(0))
+                .andExpect(jsonPath("$.currentPlayer.totals.gamesPlayed").value(0));
+        // A correction to an old source changes the general ranking, never the closed snapshot.
+        jdbcTemplate.update("UPDATE match_goal_events SET own_goal = true WHERE match_id = ?", match.id());
+        mockMvc.perform(get("/api/groups/{id}/statistics/players/{user}", group.id(), owner.user().id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(viewer)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.player.totals.goals").value(0))
+                .andExpect(jsonPath("$.player.totals.gamesPlayed").value(1));
+        mockMvc.perform(get("/api/groups/{id}/statistics", group.id()).param("seasonId", firstId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(viewer)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.rankings.goals[0].value").value(1))
+                .andExpect(jsonPath("$.rankings.goals[0].currentUser").value(false))
+                .andExpect(jsonPath("$.currentPlayer.totals.losses").value(1));
+        mockMvc.perform(get("/api/groups/{id}/statistics/players/{user}", group.id(), owner.user().id())
+                        .param("seasonId", firstId).header(HttpHeaders.AUTHORIZATION, bearer(viewer)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.player.totals.goals").value(1))
+                .andExpect(jsonPath("$.matchHistory[0].goals").value(1));
+        join(newcomer, invite);
+        mockMvc.perform(get("/api/groups/{id}/statistics", group.id()).param("seasonId", firstId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(newcomer)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.currentPlayer.totals.goals").value(0))
+                .andExpect(jsonPath("$.players.length()").value(2));
+        var later = mockMvc.perform(post("/api/groups/{id}/matches", group.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner)).contentType(MediaType.APPLICATION_JSON)
+                        .content(matchBody(LocalDate.now(SAO_PAULO).plusDays(4), "NONE", 10)))
+                .andExpect(status().isCreated()).andReturn();
+        MatchResponse newMatch = jsonMapper.readValue(later.getResponse().getContentAsString(), MatchResponse.class);
+        mockMvc.perform(put("/api/matches/{id}/live/start", newMatch.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner))).andExpect(status().isOk());
+        addPlayer(newMatch.id(), 1, owner.user().id());
+        mockMvc.perform(put("/api/matches/{id}/live/finish", newMatch.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner))).andExpect(status().isOk());
+        mockMvc.perform(get("/api/groups/{id}/statistics", group.id()).param("seasonId", secondId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.finishedMatches").value(1));
+        mockMvc.perform(get("/api/groups/{id}/statistics", group.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.finishedMatches").value(2));
+        mockMvc.perform(post("/api/groups/{id}/statistics/seasons", group.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner)).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"expectedCurrentSeasonId\":\"" + firstId + "\"}"))
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("STATISTICS_SEASON_CHANGED"));
+        var third = mockMvc.perform(post("/api/groups/{id}/statistics/seasons", group.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner)).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"expectedCurrentSeasonId\":\"" + secondId + "\"}"))
+                .andExpect(status().isCreated()).andReturn();
+        String thirdId = jsonMapper.readTree(third.getResponse().getContentAsString()).path("id").asText();
+        mockMvc.perform(get("/api/groups/{id}/statistics", group.id()).param("seasonId", thirdId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.finishedMatches").value(0));
+        mockMvc.perform(get("/api/groups/{id}/statistics", group.id()).param("seasonId", secondId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.finishedMatches").value(1));
+    }
+
+    @Test
+    void shouldRestrictSeasonCreationToGroupEditorsAndRejectForeignSeasons() throws Exception {
+        AuthResponse owner = register("season-access-owner@example.com", "Principal");
+        AuthResponse member = register("season-access-member@example.com", "Membro");
+        GroupResponse group = createGroup(owner, "Temporadas protegidas");
+        join(member, createInvite(owner, group.id()).code());
+        UUID firstId = jdbcTemplate.queryForObject(
+                "SELECT id FROM group_ranking_seasons WHERE group_id = ?", UUID.class, group.id());
+        String body = "{\"expectedCurrentSeasonId\":\"" + firstId + "\"}";
+        mockMvc.perform(get("/api/groups/{id}/statistics", group.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(member)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.canManageSeasons").value(false));
+        mockMvc.perform(post("/api/groups/{id}/statistics/seasons", group.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(member)).contentType(MediaType.APPLICATION_JSON)
+                        .content(body)).andExpect(status().isForbidden());
+        GroupMember membership = groupMemberRepository.findByGroupIdAndUserId(group.id(), member.user().id()).orElseThrow();
+        mockMvc.perform(put("/api/groups/{id}/members/{member}/promote", group.id(), membership.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner))).andExpect(status().isOk());
+        setAdminPermissions(owner, group.id(), membership.getId(), "SCHEDULE_GAMES");
+        mockMvc.perform(post("/api/groups/{id}/statistics/seasons", group.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(member)).contentType(MediaType.APPLICATION_JSON)
+                        .content(body)).andExpect(status().isForbidden());
+        setAdminPermissions(owner, group.id(), membership.getId(), "EDIT_GROUP");
+        mockMvc.perform(post("/api/groups/{id}/statistics/seasons", group.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(member)).contentType(MediaType.APPLICATION_JSON)
+                        .content(body)).andExpect(status().isCreated());
+        GroupResponse other = createGroup(owner, "Outro grupo");
+        UUID foreignId = jdbcTemplate.queryForObject(
+                "SELECT id FROM group_ranking_seasons WHERE group_id = ?", UUID.class, other.id());
+        mockMvc.perform(get("/api/groups/{id}/statistics", group.id()).param("seasonId", foreignId.toString())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(member)))
+                .andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("STATISTICS_SEASON_NOT_FOUND"));
     }
 
     @Test

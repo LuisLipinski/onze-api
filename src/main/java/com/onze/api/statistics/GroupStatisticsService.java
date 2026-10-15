@@ -1,5 +1,7 @@
 package com.onze.api.statistics;
 
+import java.time.Clock;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
@@ -13,6 +15,7 @@ import java.util.UUID;
 import java.util.function.ToIntFunction;
 import java.util.stream.Collectors;
 
+import com.onze.api.group.GroupAdminPermission;
 import com.onze.api.group.GroupMember;
 import com.onze.api.group.GroupMemberRepository;
 import com.onze.api.group.GroupRepository;
@@ -39,6 +42,8 @@ import com.onze.api.match.MatchTeamImage;
 import com.onze.api.match.MatchTeamImageRepository;
 import com.onze.api.match.MatchType;
 import com.onze.api.match.TeamParticipantType;
+import com.onze.api.statistics.GroupStatisticsModels.SeasonStatisticsSnapshot;
+import com.onze.api.statistics.GroupStatisticsModels.StatisticsSeasonResponse;
 import com.onze.api.statistics.GroupStatisticsModels.GroupMatchHistoryResponse;
 import com.onze.api.statistics.GroupStatisticsModels.GroupStatisticsResponse;
 import com.onze.api.statistics.GroupStatisticsModels.PlayerMatchHistoryResponse;
@@ -51,6 +56,8 @@ import com.onze.api.statistics.GroupStatisticsModels.StatisticsTeamResponse;
 import com.onze.api.statistics.GroupStatisticsModels.StatisticsTotalsResponse;
 import com.onze.api.user.User;
 import com.onze.api.user.UserRepository;
+
+import tools.jackson.databind.json.JsonMapper;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -72,6 +79,9 @@ public class GroupStatisticsService {
     private final MatchFoulEventRepository foulEventRepository;
     private final MatchTeamImageRepository teamImageRepository;
     private final MatchPenaltyShootoutRepository penaltyShootoutRepository;
+    private final GroupRankingSeasonRepository seasonRepository;
+    private final JsonMapper jsonMapper;
+    private final Clock clock;
 
     public GroupStatisticsService(
             GroupRepository groupRepository,
@@ -84,7 +94,8 @@ public class GroupStatisticsService {
             MatchGoalEventRepository goalEventRepository,
             MatchFoulEventRepository foulEventRepository,
             MatchTeamImageRepository teamImageRepository,
-            MatchPenaltyShootoutRepository penaltyShootoutRepository) {
+            MatchPenaltyShootoutRepository penaltyShootoutRepository,
+            GroupRankingSeasonRepository seasonRepository, JsonMapper jsonMapper, Clock clock) {
         this.groupRepository = groupRepository;
         this.memberRepository = memberRepository;
         this.userRepository = userRepository;
@@ -96,42 +107,123 @@ public class GroupStatisticsService {
         this.foulEventRepository = foulEventRepository;
         this.teamImageRepository = teamImageRepository;
         this.penaltyShootoutRepository = penaltyShootoutRepository;
+        this.seasonRepository = seasonRepository;
+        this.jsonMapper = jsonMapper;
+        this.clock = clock;
     }
 
     @Transactional(readOnly = true)
     public GroupStatisticsResponse getGroup(String authenticatedUserId, UUID groupId) {
+        return getGroup(authenticatedUserId, groupId, null);
+    }
+
+    @Transactional(readOnly = true)
+    public GroupStatisticsResponse getGroup(String authenticatedUserId, UUID groupId, UUID seasonId) {
         UUID currentUserId = requireAccess(authenticatedUserId, groupId);
-        StatisticsSnapshot snapshot = calculate(groupId, currentUserId);
-        StatisticsPlayerResponse currentPlayer = snapshot.players().stream()
-                .filter(player -> player.userId().equals(currentUserId))
-                .findFirst()
-                .orElseThrow(StatisticsPlayerNotFoundException::new);
+        List<GroupRankingSeason> seasons = seasonRepository.findAllByGroupIdOrderByNumberDesc(groupId);
+        SeasonStatisticsSnapshot snapshot = snapshotFor(groupId, currentUserId, seasonId, seasons);
+        List<StatisticsPlayerResponse> players = forViewer(snapshot.players(), groupId, currentUserId);
+        StatisticsPlayerResponse currentPlayer = currentPlayer(players, currentUserId);
         return new GroupStatisticsResponse(
                 groupId,
-                snapshot.matches().size(),
+                seasons.stream().map(this::seasonResponse).toList(),
+                seasonId,
+                memberRepository.findByGroupIdAndUserId(groupId, currentUserId).orElseThrow()
+                        .hasPermission(GroupAdminPermission.EDIT_GROUP),
+                snapshot.matchIds().size(),
                 snapshot.registeredGoals(),
-                (int) snapshot.players().stream().filter(player -> player.totals().gamesPlayed() > 0).count(),
+                (int) players.stream().filter(player -> player.totals().gamesPlayed() > 0).count(),
                 currentPlayer,
-                snapshot.players(),
-                rankings(snapshot.players()),
+                players,
+                rankingsForViewer(snapshot.rankings(), currentUserId),
                 snapshot.groupHistory());
     }
 
     @Transactional(readOnly = true)
+    public PlayerStatisticsResponse getPlayer(String authenticatedUserId, UUID groupId, UUID playerUserId) {
+        return getPlayer(authenticatedUserId, groupId, playerUserId, null);
+    }
+
+    @Transactional(readOnly = true)
     public PlayerStatisticsResponse getPlayer(
-            String authenticatedUserId,
-            UUID groupId,
-            UUID playerUserId) {
+            String authenticatedUserId, UUID groupId, UUID playerUserId, UUID seasonId) {
         UUID currentUserId = requireAccess(authenticatedUserId, groupId);
-        StatisticsSnapshot snapshot = calculate(groupId, currentUserId);
-        StatisticsPlayerResponse player = snapshot.players().stream()
-                .filter(item -> item.userId().equals(playerUserId))
-                .findFirst()
-                .orElseThrow(StatisticsPlayerNotFoundException::new);
+        List<GroupRankingSeason> seasons = seasonRepository.findAllByGroupIdOrderByNumberDesc(groupId);
+        SeasonStatisticsSnapshot snapshot = snapshotFor(groupId, currentUserId, seasonId, seasons);
+        List<StatisticsPlayerResponse> players = forViewer(snapshot.players(), groupId, currentUserId);
+        StatisticsPlayerResponse player = playerUserId.equals(currentUserId)
+                ? currentPlayer(players, currentUserId)
+                : players.stream().filter(item -> item.userId().equals(playerUserId)).findFirst()
+                        .orElseThrow(StatisticsPlayerNotFoundException::new);
         return new PlayerStatisticsResponse(
                 groupId,
+                seasonId == null ? null : seasonResponse(requireSeason(seasons, seasonId)),
                 player,
                 snapshot.playerHistory().getOrDefault(playerUserId, List.of()));
+    }
+
+    @Transactional
+    public StatisticsSeasonResponse startSeason(
+            String authenticatedUserId, UUID groupId, UUID expectedCurrentSeasonId) {
+        UUID currentUserId = requireAccess(authenticatedUserId, groupId);
+        if (!memberRepository.findByGroupIdAndUserId(groupId, currentUserId).orElseThrow()
+                .hasPermission(GroupAdminPermission.EDIT_GROUP)) throw new GroupAccessDeniedException();
+        groupRepository.findByIdForUpdate(groupId).orElseThrow(GroupNotFoundException::new);
+        List<GroupRankingSeason> seasons = seasonRepository.findAllByGroupIdOrderByNumberDesc(groupId);
+        GroupRankingSeason current = seasons.stream().filter(season -> season.getEndedAt() == null)
+                .findFirst().orElseThrow(StatisticsSeasonNotFoundException::new);
+        // A repeated request or an outdated confirmation must not close the next season.
+        if (!current.getId().equals(expectedCurrentSeasonId)) throw new StatisticsSeasonChangedException();
+        SeasonStatisticsSnapshot snapshot = calculate(groupId, currentUserId, frozenMatchIds(seasons));
+        Instant now = clock.instant();
+        current.close(now, jsonMapper.writeValueAsString(snapshot));
+        seasonRepository.flush();
+        return seasonResponse(seasonRepository.save(new GroupRankingSeason(groupId, current.getNumber() + 1, now)));
+    }
+
+    private StatisticsSeasonResponse seasonResponse(GroupRankingSeason season) {
+        return new StatisticsSeasonResponse(season.getId(), season.getNumber(), season.getStartedAt(), season.getEndedAt());
+    }
+
+    private GroupRankingSeason requireSeason(List<GroupRankingSeason> seasons, UUID seasonId) {
+        return seasons.stream().filter(season -> season.getId().equals(seasonId)).findFirst()
+                .orElseThrow(StatisticsSeasonNotFoundException::new);
+    }
+
+    private SeasonStatisticsSnapshot snapshotFor(
+            UUID groupId, UUID currentUserId, UUID seasonId, List<GroupRankingSeason> seasons) {
+        if (seasonId == null) return calculate(groupId, currentUserId, Set.of());
+        GroupRankingSeason selected = requireSeason(seasons, seasonId);
+        if (selected.getEndedAt() != null) return readSnapshot(selected);
+        return calculate(groupId, currentUserId, frozenMatchIds(seasons));
+    }
+
+    private SeasonStatisticsSnapshot readSnapshot(GroupRankingSeason season) {
+        return jsonMapper.readValue(season.getClosedSnapshot(), SeasonStatisticsSnapshot.class);
+    }
+
+    private Set<UUID> frozenMatchIds(List<GroupRankingSeason> seasons) {
+        // Capture committed matches, rather than a timestamp cutoff: a concurrent finish
+        // remains eligible for the new season if it was not included in the closed snapshot.
+        return seasons.stream().filter(season -> season.getEndedAt() != null)
+                .flatMap(season -> readSnapshot(season).matchIds().stream()).collect(Collectors.toSet());
+    }
+
+    private List<StatisticsPlayerResponse> forViewer(
+            List<StatisticsPlayerResponse> players, UUID groupId, UUID currentUserId) {
+        Set<UUID> memberIds = memberRepository.findAllByGroupIdOrderByCreatedAtAsc(groupId).stream()
+                .map(GroupMember::getUserId).collect(Collectors.toSet());
+        return players.stream().map(player -> new StatisticsPlayerResponse(
+                player.userId(), player.displayName(), memberIds.contains(player.userId()),
+                player.userId().equals(currentUserId), player.totals())).toList();
+    }
+
+    private StatisticsPlayerResponse currentPlayer(List<StatisticsPlayerResponse> players, UUID currentUserId) {
+        return players.stream().filter(player -> player.userId().equals(currentUserId)).findFirst()
+                .orElseGet(() -> new StatisticsPlayerResponse(
+                        currentUserId, userRepository.findById(currentUserId)
+                                .map(User::getDisplayName).orElse("Jogador"), true, true,
+                        new StatisticsTotalsResponse(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)));
     }
 
     private UUID requireAccess(String authenticatedUserId, UUID groupId) {
@@ -150,9 +242,10 @@ public class GroupStatisticsService {
         return userId;
     }
 
-    private StatisticsSnapshot calculate(UUID groupId, UUID currentUserId) {
+    private SeasonStatisticsSnapshot calculate(UUID groupId, UUID currentUserId, Set<UUID> excludedMatchIds) {
         List<FootballMatch> matches = matchRepository
-                .findAllByGroupIdAndStatusOrderByFinishedAtDescStartsAtDesc(groupId, MatchStatus.FINISHED);
+                .findAllByGroupIdAndStatusOrderByFinishedAtDescStartsAtDesc(groupId, MatchStatus.FINISHED)
+                .stream().filter(match -> !excludedMatchIds.contains(match.getId())).toList();
         List<UUID> matchIds = matches.stream().map(FootballMatch::getId).toList();
         List<UUID> internalMatchIds = matches.stream()
                 .filter(match -> match.getMatchType() == MatchType.INTERNAL)
@@ -330,10 +423,11 @@ public class GroupStatisticsService {
                 .map(MutablePlayerStatistics::response)
                 .sorted(PLAYER_NAME_ORDER)
                 .toList();
-        return new StatisticsSnapshot(
-                matches,
+        return new SeasonStatisticsSnapshot(
+                matchIds,
                 goals.size(),
                 players,
+                rankings(players),
                 List.copyOf(groupHistory),
                 immutableHistory(playerHistory));
     }
@@ -471,12 +565,32 @@ public class GroupStatisticsService {
                 : 2;
     }
 
-    private StatisticsRankingsResponse rankings(List<StatisticsPlayerResponse> players) {
+    private StatisticsRankingsResponse rankingsForViewer(StatisticsRankingsResponse saved, UUID userId) {
         return new StatisticsRankingsResponse(
-                ranking(players, player -> player.totals().goals()),
-                ranking(players, player -> player.totals().assists()),
-                ranking(players, player -> player.totals().gamesPlayed()),
-                ranking(players, player -> player.totals().wins()),
+                rankingForViewer(saved.goals(), userId), rankingForViewer(saved.assists(), userId),
+                rankingForViewer(saved.gamesPlayed(), userId), rankingForViewer(saved.wins(), userId),
+                rankingForViewer(saved.losses(), userId), rankingForViewer(saved.foulsCommitted(), userId),
+                rankingForViewer(saved.foulsSuffered(), userId), rankingForViewer(saved.penaltiesCommitted(), userId),
+                rankingForViewer(saved.penaltiesWon(), userId), rankingForViewer(saved.penaltiesTaken(), userId),
+                rankingForViewer(saved.penaltiesScored(), userId), rankingForViewer(saved.penaltiesMissed(), userId));
+    }
+
+    private List<RankingEntryResponse> rankingForViewer(List<RankingEntryResponse> entries, UUID userId) {
+        return entries.stream().map(entry -> new RankingEntryResponse(
+                entry.rank(), entry.userId(), entry.displayName(), entry.userId().equals(userId), entry.value())).toList();
+    }
+
+    StatisticsRankingsResponse rankings(List<StatisticsPlayerResponse> players) {
+        return new StatisticsRankingsResponse(
+                ranking(players, player -> player.totals().goals(),
+                        descending(player -> player.totals().assists())
+                                .thenComparing(descending(player -> player.totals().gamesPlayed()))),
+                ranking(players, player -> player.totals().assists(),
+                        descending(player -> player.totals().goals())
+                                .thenComparing(descending(player -> player.totals().gamesPlayed()))),
+                ranking(players, player -> player.totals().gamesPlayed(), descending(player -> player.totals().wins())),
+                ranking(players, player -> player.totals().wins(), descending(player -> player.totals().gamesPlayed())),
+                ranking(players, player -> player.totals().losses(), descending(player -> player.totals().gamesPlayed())),
                 ranking(players, player -> player.totals().foulsCommitted()),
                 ranking(players, player -> player.totals().foulsSuffered()),
                 ranking(players, player -> player.totals().penaltiesCommitted()),
@@ -489,20 +603,29 @@ public class GroupStatisticsService {
     private List<RankingEntryResponse> ranking(
             List<StatisticsPlayerResponse> players,
             ToIntFunction<StatisticsPlayerResponse> valueExtractor) {
+        return ranking(players, valueExtractor, (first, second) -> 0);
+    }
+
+    private Comparator<StatisticsPlayerResponse> descending(ToIntFunction<StatisticsPlayerResponse> value) {
+        return Comparator.comparingInt(value).reversed();
+    }
+
+    private List<RankingEntryResponse> ranking(
+            List<StatisticsPlayerResponse> players,
+            ToIntFunction<StatisticsPlayerResponse> valueExtractor,
+            Comparator<StatisticsPlayerResponse> tieBreak) {
+        Comparator<StatisticsPlayerResponse> criteria = descending(valueExtractor).thenComparing(tieBreak);
         List<StatisticsPlayerResponse> ordered = players.stream()
-                .sorted(Comparator
-                        .comparingInt(valueExtractor).reversed()
-                        .thenComparing(PLAYER_NAME_ORDER))
-                .toList();
+                .sorted(criteria.thenComparing(PLAYER_NAME_ORDER)).toList();
         List<RankingEntryResponse> result = new ArrayList<>(ordered.size());
-        Integer previousValue = null;
+        StatisticsPlayerResponse previous = null;
         int rank = 0;
         for (int index = 0; index < ordered.size(); index++) {
             StatisticsPlayerResponse player = ordered.get(index);
             int value = valueExtractor.applyAsInt(player);
-            if (previousValue == null || value != previousValue) {
+            if (previous == null || criteria.compare(previous, player) != 0) {
                 rank = index + 1;
-                previousValue = value;
+                previous = player;
             }
             result.add(new RankingEntryResponse(
                     rank,
@@ -594,14 +717,10 @@ public class GroupStatisticsService {
         }
     }
 
-    private record StatisticsSnapshot(
-            List<FootballMatch> matches,
-            int registeredGoals,
-            List<StatisticsPlayerResponse> players,
-            List<GroupMatchHistoryResponse> groupHistory,
-            Map<UUID, List<PlayerMatchHistoryResponse>> playerHistory) { }
-
     private record Participation(UUID matchId, UUID userId, int teamNumber) { }
+
+    public static final class StatisticsSeasonNotFoundException extends RuntimeException { }
+    public static final class StatisticsSeasonChangedException extends RuntimeException { }
 
     public static final class StatisticsPlayerNotFoundException extends RuntimeException {
         private static final long serialVersionUID = 1L;

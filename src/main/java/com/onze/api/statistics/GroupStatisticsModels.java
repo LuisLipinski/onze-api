@@ -2,7 +2,10 @@ package com.onze.api.statistics;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+
+import jakarta.validation.constraints.NotNull;
 
 public final class GroupStatisticsModels {
     private GroupStatisticsModels() { }
@@ -47,6 +50,7 @@ public final class GroupStatisticsModels {
             List<RankingEntryResponse> assists,
             List<RankingEntryResponse> gamesPlayed,
             List<RankingEntryResponse> wins,
+            List<RankingEntryResponse> losses,
             List<RankingEntryResponse> foulsCommitted,
             List<RankingEntryResponse> foulsSuffered,
             List<RankingEntryResponse> penaltiesCommitted,
@@ -99,6 +103,9 @@ public final class GroupStatisticsModels {
 
     public record GroupStatisticsResponse(
             UUID groupId,
+            List<StatisticsSeasonResponse> seasons,
+            UUID selectedSeasonId,
+            boolean canManageSeasons,
             int finishedMatches,
             int registeredGoals,
             int playersWithMatches,
@@ -109,6 +116,19 @@ public final class GroupStatisticsModels {
 
     public record PlayerStatisticsResponse(
             UUID groupId,
+            StatisticsSeasonResponse season,
             StatisticsPlayerResponse player,
             List<PlayerMatchHistoryResponse> matchHistory) { }
+
+    public record StatisticsSeasonResponse(UUID id, int number, Instant startedAt, Instant endedAt) { }
+
+    public record StartStatisticsSeasonRequest(@NotNull UUID expectedCurrentSeasonId) { }
+
+    public record SeasonStatisticsSnapshot(
+            List<UUID> matchIds,
+            int registeredGoals,
+            List<StatisticsPlayerResponse> players,
+            StatisticsRankingsResponse rankings,
+            List<GroupMatchHistoryResponse> groupHistory,
+            Map<UUID, List<PlayerMatchHistoryResponse>> playerHistory) { }
 }
