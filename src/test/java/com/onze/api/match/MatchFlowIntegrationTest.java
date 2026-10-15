@@ -1609,7 +1609,8 @@ class MatchFlowIntegrationTest extends IntegrationTestSupport {
                 .andExpect(status().isOk()).andExpect(jsonPath("$.finishedMatches").value(0))
                 .andExpect(jsonPath("$.currentPlayer.totals.gamesPlayed").value(0));
         // A correction to an old source changes the general ranking, never the closed snapshot.
-        jdbcTemplate.update("UPDATE match_goal_events SET own_goal = true WHERE match_id = ?", match.id());
+        jdbcTemplate.update("DELETE FROM match_goal_events WHERE match_id = ?", match.id());
+        jdbcTemplate.update("UPDATE live_match_scores SET score = 0 WHERE match_id = ?", match.id());
         mockMvc.perform(get("/api/groups/{id}/statistics/players/{user}", group.id(), owner.user().id())
                         .header(HttpHeaders.AUTHORIZATION, bearer(viewer)))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.player.totals.goals").value(0))

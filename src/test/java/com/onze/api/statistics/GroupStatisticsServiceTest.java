@@ -261,8 +261,7 @@ class GroupStatisticsServiceTest {
         assertEquals(4, response.players().size());
         assertEquals(0, response.currentPlayer().totals().gamesPlayed());
         assertTrue(response.matchHistory().isEmpty());
-        verifyNoInteractions(assignments, attendances, scores, goals, teamImages, penaltyShootouts, mock(GroupRankingSeasonRepository.class),
-                JsonMapper.builder().build(), Clock.systemUTC());
+        verifyNoInteractions(assignments, attendances, scores, goals, teamImages, penaltyShootouts);
     }
 
     @Test
