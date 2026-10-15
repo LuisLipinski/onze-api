@@ -68,7 +68,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 @Order(Ordered.HIGHEST_PRECEDENCE)
 @RestControllerAdvice(assignableTypes = {
-        MatchController.class, MatchTeamReserveController.class, PushDeviceController.class})
+        MatchController.class, MatchShareController.class, MatchTeamReserveController.class, PushDeviceController.class})
 public class MatchExceptionHandler {
 
     @ExceptionHandler(InvalidLiveMatchTransitionException.class)
@@ -469,6 +469,18 @@ public class MatchExceptionHandler {
                 .body(new ApiErrorResponse(
                         "PAYMENT_NOT_REQUIRED",
                         "Este jogo não possui cobrança configurada."));
+    }
+
+    @ExceptionHandler(MatchService.PaymentNotReportedException.class)
+    ResponseEntity<ApiErrorResponse> paymentNotReported() {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(new ApiErrorResponse(
+                "PAYMENT_NOT_REPORTED", "O jogador precisa informar que pagou antes da confirmação de recebimento."));
+    }
+
+    @ExceptionHandler(MatchService.PaymentNotPendingException.class)
+    ResponseEntity<ApiErrorResponse> paymentNotPending() {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(new ApiErrorResponse(
+                "PAYMENT_NOT_PENDING", "Este jogador não tem um pagamento pendente de informação."));
     }
 
     @ExceptionHandler(PaymentRequiresAttendanceException.class)

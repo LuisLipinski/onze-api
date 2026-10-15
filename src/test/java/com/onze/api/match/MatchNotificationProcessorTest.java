@@ -5,6 +5,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.time.Clock;
@@ -26,6 +28,7 @@ class MatchNotificationProcessorTest {
 
     private MatchNotificationJobRepository jobs;
     private FootballMatchRepository matches;
+    private MatchAttendanceRepository attendances;
     private ExpoPushNotificationSender sender;
     private MatchNotificationProcessor processor;
     private MatchNotificationJob job;
@@ -35,11 +38,12 @@ class MatchNotificationProcessorTest {
     void setUp() {
         jobs = mock(MatchNotificationJobRepository.class);
         matches = mock(FootballMatchRepository.class);
+        attendances = mock(MatchAttendanceRepository.class);
         sender = mock(ExpoPushNotificationSender.class);
         processor = new MatchNotificationProcessor(
                 jobs,
                 matches,
-                mock(MatchAttendanceRepository.class),
+                attendances,
                 mock(MatchCapacityService.class),
                 sender,
                 Clock.fixed(NOW, ZoneOffset.UTC));
@@ -63,6 +67,46 @@ class MatchNotificationProcessorTest {
         assertEquals(1, processor.processPending());
         assertEquals(MatchNotificationStatus.SENT, job.getStatus());
         assertEquals(0, job.getAttempts());
+    }
+
+    @Test
+    void skipsPaymentReminderAfterPlayerReportsPayment() {
+        paymentReminder(PaymentStatus.REPORTED);
+        when(match.isPaymentOpen(NOW)).thenReturn(true);
+
+        assertEquals(1, processor.processPending());
+        assertEquals(MatchNotificationStatus.SENT, job.getStatus());
+        verify(sender, never()).send(any(), any(), any());
+    }
+
+    @Test
+    void sendsPaymentReminderToLateReplacementWhileTheirPaymentWindowRemainsOpen() {
+        MatchAttendance attendance = paymentReminder(PaymentStatus.PENDING);
+        when(match.isPaymentOpen(NOW)).thenReturn(false);
+        when(match.getPaymentDeadline()).thenReturn(NOW.minusSeconds(3600));
+        when(attendance.getAddedAsReplacementAt()).thenReturn(NOW.minusSeconds(600));
+
+        assertEquals(1, processor.processPending());
+        assertEquals(MatchNotificationStatus.SENT, job.getStatus());
+        verify(sender).send(any(), any(), any());
+    }
+
+    private MatchAttendance paymentReminder(PaymentStatus paymentStatus) {
+        UUID matchId = job.getMatchId();
+        job = new MatchNotificationJob(matchId, UUID.randomUUID(),
+                MatchNotificationType.PAYMENT_REMINDER, "test-manual-payment", NOW);
+        when(jobs.findTop25ByStatusAndNextAttemptAtLessThanEqualOrderByCreatedAtAsc(any(), any()))
+                .thenReturn(List.of(job));
+        when(match.getId()).thenReturn(matchId);
+        when(match.getStatus()).thenReturn(MatchStatus.SCHEDULED);
+        when(match.isAttendanceOpen(NOW)).thenReturn(true);
+        when(match.isPaymentRequired()).thenReturn(true);
+        MatchAttendance attendance = mock(MatchAttendance.class);
+        when(attendance.getStatus()).thenReturn(AttendanceStatus.GOING);
+        when(attendance.getPaymentStatus()).thenReturn(paymentStatus);
+        when(attendances.findByMatchIdAndUserId(matchId, job.getRecipientUserId()))
+                .thenReturn(Optional.of(attendance));
+        return attendance;
     }
 
     @Test

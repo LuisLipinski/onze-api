@@ -319,6 +319,13 @@ public class MatchController {
         return matchService.reportPayment(authentication.getName(), matchId);
     }
 
+    @PostMapping("/api/matches/{matchId}/payments/{playerUserId}/reminder")
+    public MatchResponse requestPaymentReminder(Authentication authentication, @PathVariable UUID matchId,
+            @PathVariable UUID playerUserId) {
+        lifecycleService.openDueAttendances();
+        return matchService.requestPaymentReminder(authentication.getName(), matchId, playerUserId);
+    }
+
     @PutMapping("/api/matches/{matchId}/payments/{playerUserId}/confirm")
     public MatchResponse confirmPayment(
             Authentication authentication,

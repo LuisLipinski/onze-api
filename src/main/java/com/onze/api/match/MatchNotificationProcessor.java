@@ -181,7 +181,7 @@ public class MatchNotificationProcessor {
         }
         return job.getNotificationType() == MatchNotificationType.PAYMENT_REMINDER
                 && (!MatchPaymentPolicy.requiresPayment(match, attendance)
-                        || !match.isPaymentOpen(now)
+                        || !MatchPaymentPolicy.paymentWindowOpen(match, attendance, now)
                         || attendance.getPaymentStatus() != PaymentStatus.PENDING);
     }
 }
