@@ -268,7 +268,7 @@ class GroupSportsProfileIntegrationTest extends IntegrationTestSupport {
     }
 
     @Test
-    void shouldKeepTechnicalRatingsPrivateAndPreserveNullSkills() throws Exception {
+    void shouldRestrictAdministrativeRatingsAndPreserveNullSkills() throws Exception {
         AuthResponse primary = register("ratings-primary@example.com", "Principal Avaliação");
         AuthResponse admin = register("ratings-admin@example.com", "Admin Avaliação");
         AuthResponse player = register("ratings-player@example.com", "Jogador Avaliado");
@@ -330,6 +330,120 @@ class GroupSportsProfileIntegrationTest extends IntegrationTestSupport {
                         .header(HttpHeaders.AUTHORIZATION, bearer(primary)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.ratings.PASSING").value(10));
+    }
+
+    @Test
+    void shouldLetMembersReadOwnTechnicalRatingsWithoutEditing() throws Exception {
+        AuthResponse primary = register("own-ratings-primary@example.com", "Principal");
+        AuthResponse player = register("own-ratings-player@example.com", "Jogador");
+        GroupResponse group = createGroup(primary, "Consulta da própria avaliação");
+        join(player, createInvite(primary, group.id()).code());
+        GroupMember member = membership(group.id(), player);
+
+        mockMvc.perform(put("/api/groups/{groupId}/members/{memberId}/technical-profile",
+                        group.id(), member.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(primary))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"ratings": {"PASSING": 10, "FINISHING": 2}}
+                                """))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/groups/{groupId}/members/me/technical-profile", group.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(player)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.membershipId").value(member.getId().toString()))
+                .andExpect(jsonPath("$.userId").value(player.user().id().toString()))
+                .andExpect(jsonPath("$.ratings.PASSING").value(10))
+                .andExpect(jsonPath("$.ratings.FINISHING").value(2))
+                .andExpect(jsonPath("$.generalOverall.overall").value(30));
+
+        mockMvc.perform(put("/api/groups/{groupId}/members/{memberId}/technical-profile",
+                        group.id(), member.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(player))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"ratings": {"PASSING": 1}}
+                                """))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(get("/api/groups/{groupId}/members/me/technical-profile", group.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(player)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.ratings.PASSING").value(10));
+    }
+
+    @Test
+    void shouldRejectOtherMembersRatingsCrossGroupAccessAndUnauthenticatedSelfRead() throws Exception {
+        AuthResponse primary = register("ratings-access-primary@example.com", "Principal");
+        AuthResponse player = register("ratings-access-player@example.com", "Jogador");
+        GroupResponse group = createGroup(primary, "Grupo do jogador");
+        GroupResponse otherGroup = createGroup(primary, "Outro grupo");
+        join(player, createInvite(primary, group.id()).code());
+
+        mockMvc.perform(get("/api/groups/{groupId}/members/{memberId}/technical-profile",
+                        group.id(), membership(group.id(), primary).getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(player)))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(get("/api/groups/{groupId}/members/me/technical-profile", otherGroup.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(player)))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(get("/api/groups/{groupId}/members/me/technical-profile", group.id()))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void shouldLetAdminWithoutProfilePermissionReadOnlyOwnTechnicalRatings() throws Exception {
+        AuthResponse primary = register("own-admin-primary@example.com", "Principal");
+        AuthResponse admin = register("own-admin-reader@example.com", "Administrador");
+        GroupResponse group = createGroup(primary, "Admin sem permissão de avaliação");
+        join(admin, createInvite(primary, group.id()).code());
+        GroupMember member = membership(group.id(), admin);
+        promote(primary, group.id(), member.getId());
+
+        mockMvc.perform(put("/api/groups/{groupId}/members/{memberId}/technical-profile",
+                        group.id(), member.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(primary))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"ratings": {"PASSING": 8}}
+                                """))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/groups/{groupId}/members/me/technical-profile", group.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(admin)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.membershipId").value(member.getId().toString()))
+                .andExpect(jsonPath("$.ratings.PASSING").value(8));
+
+        mockMvc.perform(put("/api/groups/{groupId}/members/{memberId}/technical-profile",
+                        group.id(), member.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(admin))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"ratings": {"PASSING": 10}}
+                                """))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(get("/api/groups/{groupId}/members/{memberId}/technical-profile",
+                        group.id(), membership(group.id(), primary).getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(admin)))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void shouldReturnUnratedOwnTechnicalProfileWithoutInventingRatings() throws Exception {
+        AuthResponse primary = register("unrated-own@example.com", "Sem avaliação");
+        GroupResponse group = createGroup(primary, "Avaliação ainda não preenchida");
+
+        mockMvc.perform(get("/api/groups/{groupId}/members/me/technical-profile", group.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(primary)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.ratings").isEmpty())
+                .andExpect(jsonPath("$.generalOverall.overall").doesNotExist())
+                .andExpect(jsonPath("$.generalOverall.coverage").value(0));
     }
 
     @Test

@@ -180,6 +180,13 @@ public class GroupController {
                 request.technicalLevel());
     }
 
+    @GetMapping("/{groupId}/members/me/technical-profile")
+    public TechnicalProfileResponse getOwnTechnicalProfile(
+            Authentication authentication,
+            @PathVariable UUID groupId) {
+        return technicalProfileService.getOwn(authentication.getName(), groupId);
+    }
+
     @GetMapping("/{groupId}/members/{memberId}/technical-profile")
     public TechnicalProfileResponse getMemberTechnicalProfile(
             Authentication authentication,

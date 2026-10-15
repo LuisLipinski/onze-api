@@ -47,6 +47,11 @@ public class TechnicalProfileService {
     }
 
     @Transactional(readOnly = true)
+    public TechnicalProfileResponse getOwn(String authenticatedUserId, UUID groupId) {
+        return response(requireActor(authenticatedUserId, groupId));
+    }
+
+    @Transactional(readOnly = true)
     public TechnicalProfileResponse get(
             String authenticatedUserId,
             UUID groupId,
@@ -142,15 +147,19 @@ public class TechnicalProfileService {
     }
 
     private void requirePermission(String authenticatedUserId, UUID groupId) {
+        GroupMember actor = requireActor(authenticatedUserId, groupId);
+        if (!actor.hasPermission(GroupAdminPermission.EDIT_PLAYER_PROFILES)) {
+            throw new GroupService.GroupAccessDeniedException();
+        }
+    }
+
+    private GroupMember requireActor(String authenticatedUserId, UUID groupId) {
         UUID userId = parseUserId(authenticatedUserId);
         if (!groupRepository.existsById(groupId)) {
             throw new GroupService.GroupNotFoundException();
         }
-        GroupMember actor = memberRepository.findByGroupIdAndUserId(groupId, userId)
+        return memberRepository.findByGroupIdAndUserId(groupId, userId)
                 .orElseThrow(GroupService.GroupAccessDeniedException::new);
-        if (!actor.hasPermission(GroupAdminPermission.EDIT_PLAYER_PROFILES)) {
-            throw new GroupService.GroupAccessDeniedException();
-        }
     }
 
     private GroupMember requireMember(UUID groupId, UUID membershipId) {
