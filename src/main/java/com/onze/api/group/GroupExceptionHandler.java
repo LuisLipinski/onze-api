@@ -18,6 +18,8 @@ import com.onze.api.group.GroupService.PhotoUploadFailedException;
 import com.onze.api.technical.TechnicalRatings.InvalidTechnicalRatingException;
 import com.onze.api.web.ApiErrorResponse;
 import com.onze.api.statistics.GroupStatisticsService.StatisticsPlayerNotFoundException;
+import com.onze.api.statistics.GroupStatisticsService.StatisticsSeasonNotFoundException;
+import com.onze.api.statistics.GroupStatisticsService.StatisticsSeasonChangedException;
 
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
@@ -29,6 +31,19 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 @Order(Ordered.HIGHEST_PRECEDENCE)
 @RestControllerAdvice(assignableTypes = GroupController.class)
 public class GroupExceptionHandler {
+
+    @ExceptionHandler(StatisticsSeasonNotFoundException.class)
+    ResponseEntity<ApiErrorResponse> statisticsSeasonNotFound() {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(new ApiErrorResponse("STATISTICS_SEASON_NOT_FOUND", "Temporada não encontrada neste grupo."));
+    }
+
+    @ExceptionHandler(StatisticsSeasonChangedException.class)
+    ResponseEntity<ApiErrorResponse> statisticsSeasonChanged() {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(new ApiErrorResponse("STATISTICS_SEASON_CHANGED",
+                        "Uma nova temporada já foi iniciada. Atualize o ranking antes de continuar."));
+    }
 
     @ExceptionHandler(GroupNotFoundException.class)
     ResponseEntity<ApiErrorResponse> groupNotFound() {

@@ -21,6 +21,8 @@ import com.onze.api.technical.TechnicalProfileModels.UpdateTechnicalProfileReque
 import com.onze.api.technical.TechnicalProfileService;
 import com.onze.api.statistics.GroupStatisticsModels.GroupStatisticsResponse;
 import com.onze.api.statistics.GroupStatisticsModels.PlayerStatisticsResponse;
+import com.onze.api.statistics.GroupStatisticsModels.StartStatisticsSeasonRequest;
+import com.onze.api.statistics.GroupStatisticsModels.StatisticsSeasonResponse;
 import com.onze.api.statistics.GroupStatisticsService;
 
 import jakarta.validation.Valid;
@@ -30,6 +32,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -120,16 +123,26 @@ public class GroupController {
     @GetMapping("/{groupId}/statistics")
     public GroupStatisticsResponse getStatistics(
             Authentication authentication,
-            @PathVariable UUID groupId) {
-        return groupStatisticsService.getGroup(authentication.getName(), groupId);
+            @PathVariable UUID groupId,
+            @RequestParam(required = false) UUID seasonId) {
+        return groupStatisticsService.getGroup(authentication.getName(), groupId, seasonId);
+    }
+
+    @PostMapping("/{groupId}/statistics/seasons")
+    public ResponseEntity<StatisticsSeasonResponse> startStatisticsSeason(
+            Authentication authentication, @PathVariable UUID groupId,
+            @Valid @RequestBody StartStatisticsSeasonRequest request) {
+        return ResponseEntity.status(201).body(groupStatisticsService.startSeason(
+                authentication.getName(), groupId, request.expectedCurrentSeasonId()));
     }
 
     @GetMapping("/{groupId}/statistics/players/{userId}")
     public PlayerStatisticsResponse getPlayerStatistics(
             Authentication authentication,
             @PathVariable UUID groupId,
-            @PathVariable UUID userId) {
-        return groupStatisticsService.getPlayer(authentication.getName(), groupId, userId);
+            @PathVariable UUID userId,
+            @RequestParam(required = false) UUID seasonId) {
+        return groupStatisticsService.getPlayer(authentication.getName(), groupId, userId, seasonId);
     }
 
     @GetMapping("/{groupId}/members/me/sports-profile")

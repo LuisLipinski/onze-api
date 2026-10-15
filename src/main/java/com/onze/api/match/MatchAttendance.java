@@ -365,6 +365,15 @@ public class MatchAttendance {
         paymentConfirmedAt = now;
     }
 
+    public void rejectPaymentReport() {
+        if (paymentStatus != PaymentStatus.REPORTED) {
+            throw new IllegalStateException("Payment report is not awaiting review");
+        }
+        paymentStatus = PaymentStatus.PENDING;
+        paymentReportedAt = null;
+        paymentConfirmedAt = null;
+    }
+
     public void resolveSettlement(
             PaymentSettlementResolution resolution,
             BigDecimal settlementAmount,

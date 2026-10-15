@@ -474,7 +474,7 @@ public class MatchExceptionHandler {
     @ExceptionHandler(MatchService.PaymentNotReportedException.class)
     ResponseEntity<ApiErrorResponse> paymentNotReported() {
         return ResponseEntity.status(HttpStatus.CONFLICT).body(new ApiErrorResponse(
-                "PAYMENT_NOT_REPORTED", "O jogador precisa informar que pagou antes da confirmação de recebimento."));
+                "PAYMENT_NOT_REPORTED", "Este jogador não possui um pagamento informado aguardando conferência."));
     }
 
     @ExceptionHandler(MatchService.PaymentNotPendingException.class)

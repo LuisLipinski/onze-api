@@ -789,7 +789,7 @@ public class MatchService {
             enqueueForManagers(
                     match,
                     MatchNotificationType.PAYMENT_REPORTED,
-                    "payment-reported:" + userId,
+                    "payment-reported:" + userId + ":" + UUID.randomUUID(),
                     now);
         }
 
@@ -906,6 +906,25 @@ public class MatchService {
         notificationQueue.enqueue(matchId, playerUserId, MatchNotificationType.PAYMENT_REMINDER,
                 "match:" + matchId + ":manual-payment-reminder:" + playerUserId + ":" + now.getEpochSecond() / 300,
                 now);
+        return toResponse(match, group, membership, now);
+    }
+
+    @Transactional
+    public MatchResponse rejectPayment(String authenticatedUserId, UUID matchId, UUID playerUserId) {
+        UUID adminUserId = parseUserId(authenticatedUserId);
+        FootballMatch match = matchRepository.findByIdForUpdate(matchId).orElseThrow(MatchNotFoundException::new);
+        Group group = requireGroup(match.getGroupId());
+        GroupMember membership = requireMembership(match.getGroupId(), adminUserId);
+        requirePermission(membership, GroupAdminPermission.MANAGE_PAYMENTS);
+        Instant now = clock.instant();
+        requireOpenMatch(match, now);
+        requirePayment(match);
+        MatchAttendance attendance = attendanceRepository.findByMatchIdAndUserId(matchId, playerUserId)
+                .orElseThrow(PaymentRequiresAttendanceException::new);
+        if (attendance.getStatus() != AttendanceStatus.GOING) throw new PaymentRequiresAttendanceException();
+        requireParticipantPayment(match, attendance);
+        if (attendance.getPaymentStatus() != PaymentStatus.REPORTED) throw new PaymentNotReportedException();
+        attendance.rejectPaymentReport();
         return toResponse(match, group, membership, now);
     }
 
