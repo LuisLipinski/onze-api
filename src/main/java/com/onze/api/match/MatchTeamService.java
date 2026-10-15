@@ -104,7 +104,7 @@ public class MatchTeamService {
         FootballMatch match = matchRepository.findByIdForUpdate(matchId)
                 .orElseThrow(MatchService.MatchNotFoundException::new);
         GroupMember actor = requireMembership(authenticatedUserId, match.getGroupId());
-        requireTechnicalPermission(actor);
+        requireTeamPermission(actor);
         if (match.getStatus() == MatchStatus.CANCELLED) {
             throw new MatchService.MatchCancelledException();
         }
@@ -226,7 +226,7 @@ public class MatchTeamService {
         FootballMatch match = matchRepository.findByIdForUpdate(matchId)
                 .orElseThrow(MatchService.MatchNotFoundException::new);
         GroupMember actor = requireMembership(authenticatedUserId, match.getGroupId());
-        requireTechnicalPermission(actor);
+        requireTeamPermission(actor);
         if (match.getMatchType() != MatchType.INTERNAL
                 || teamNumber < 1
                 || teamNumber > match.getTeamCount()) {
@@ -700,6 +700,8 @@ public class MatchTeamService {
                 match.getIdealPlayers(),
                 participants.size() < match.getIdealPlayers(),
                 technicalVisible,
+                actor.hasPermission(GroupAdminPermission.MANAGE_TEAMS),
+                actor.hasPermission(GroupAdminPermission.MANAGE_TEST_DATA),
                 generationNotice,
                 teams);
     }
@@ -818,8 +820,8 @@ public class MatchTeamService {
                 .orElseThrow(GroupService.GroupAccessDeniedException::new);
     }
 
-    private void requireTechnicalPermission(GroupMember actor) {
-        if (!actor.hasPermission(GroupAdminPermission.EDIT_PLAYER_PROFILES)) {
+    private void requireTeamPermission(GroupMember actor) {
+        if (!actor.hasPermission(GroupAdminPermission.MANAGE_TEAMS)) {
             throw new GroupService.GroupAccessDeniedException();
         }
     }

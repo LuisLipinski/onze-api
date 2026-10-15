@@ -56,6 +56,8 @@ public final class TeamModels {
             int idealPlayers,
             boolean reducedTeams,
             boolean technicalDetailsVisible,
+            boolean canManageTeams,
+            boolean canManageTestData,
             String generationNotice,
             List<TeamResponse> teams) {
     }

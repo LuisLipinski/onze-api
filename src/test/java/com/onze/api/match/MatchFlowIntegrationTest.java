@@ -605,7 +605,7 @@ class MatchFlowIntegrationTest extends IntegrationTestSupport {
                         .header(HttpHeaders.AUTHORIZATION, bearer(creator))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"permissions": ["SCHEDULE_GAMES"]}
+                                {"permissions": ["SCHEDULE_GAMES", "CANCEL_GAMES"]}
                                 """))
                 .andExpect(status().isOk());
 
@@ -1350,6 +1350,115 @@ class MatchFlowIntegrationTest extends IntegrationTestSupport {
         assertThat(notificationJobRepository.findAll())
                 .extracting(MatchNotificationJob::getNotificationType)
                 .contains(MatchNotificationType.PAYMENT_DEADLINE_REMOVAL);
+    }
+
+    @Test
+    void shouldIsolateOperationalPermissionsAndApplyRevocationImmediately() throws Exception {
+        AuthResponse primary = register("scopes-primary@example.com", "Principal");
+        AuthResponse admin = register("scopes-admin@example.com", "Admin");
+        AuthResponse player = register("scopes-player@example.com", "Jogador");
+        GroupResponse group = createGroup(primary, "Permissões por área");
+        String code = createInvite(primary, group.id()).code();
+        join(admin, code);
+        join(player, code);
+        GroupMember membership = groupMemberRepository
+                .findByGroupIdAndUserId(group.id(), admin.user().id()).orElseThrow();
+        mockMvc.perform(put("/api/groups/{groupId}/members/{memberId}/promote", group.id(), membership.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(primary)))
+                .andExpect(status().isOk());
+        setAdminPermissions(primary, group.id(), membership.getId(), "SCHEDULE_GAMES");
+        var created = mockMvc.perform(post("/api/groups/{groupId}/matches", group.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(admin))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(paidMatchBody(LocalDate.now(SAO_PAULO).plusDays(3), 14)
+                                .replace("\"paymentRequired\": true", "\"paymentRequired\": true, \"paymentAmount\": 20, \"pixKey\": \"pix@example.com\"")))
+                .andExpect(status().isCreated()).andReturn();
+        MatchResponse match = jsonMapper.readValue(created.getResponse().getContentAsString(), MatchResponse.class);
+        confirmAttendance(match.id(), player, "GOING").andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/matches/{matchId}", match.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(admin)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.canManage").value(true))
+                .andExpect(jsonPath("$.canManagePlayers").value(false))
+                .andExpect(jsonPath("$.canManagePayments").value(false))
+                .andExpect(jsonPath("$.canManageLive").value(false))
+                .andExpect(jsonPath("$.canCancel").value(false))
+                .andExpect(jsonPath("$.attendances[0].paymentStatus").doesNotExist());
+        mockMvc.perform(delete("/api/matches/{matchId}", match.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(admin))).andExpect(status().isForbidden());
+        mockMvc.perform(put("/api/matches/{matchId}/live/start", match.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(admin))).andExpect(status().isForbidden());
+        mockMvc.perform(put("/api/matches/{matchId}/payments/{userId}/confirm", match.id(), player.user().id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(admin))).andExpect(status().isForbidden());
+
+        setAdminPermissions(primary, group.id(), membership.getId(), "MANAGE_MATCH_PLAYERS");
+        mockMvc.perform(post("/api/matches/{matchId}/rental-goalkeepers", match.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(admin))
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"displayName\":\"Goleiro convidado\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.canManage").value(false))
+                .andExpect(jsonPath("$.canManagePlayers").value(true));
+        setAdminPermissions(primary, group.id(), membership.getId(), "MANAGE_PAYMENTS");
+        mockMvc.perform(post("/api/matches/{matchId}/rental-goalkeepers", match.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(admin))
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"displayName\":\"Sem acesso\"}"))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(put("/api/matches/{matchId}/payments/{userId}/confirm", match.id(), player.user().id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(admin)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.canManagePayments").value(true))
+                .andExpect(jsonPath("$.attendances[0].paymentStatus").value("PAID"));
+
+        confirmAttendance(match.id(), player, "NOT_GOING").andExpect(status().isOk());
+        setAdminPermissions(primary, group.id(), membership.getId(), "MANAGE_MATCH_PLAYERS");
+        mockMvc.perform(get("/api/matches/{matchId}", match.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(admin)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.attendances[0].replacementRequiredAt").exists())
+                .andExpect(jsonPath("$.attendances[0].paymentStatus").doesNotExist())
+                .andExpect(jsonPath("$.attendances[0].creditAppliedAmount").doesNotExist());
+        mockMvc.perform(put("/api/matches/{matchId}/replacements/{departedUserId}", match.id(), player.user().id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(admin))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"replacementUserId\":\"" + admin.user().id() + "\"}"))
+                .andExpect(status().isOk());
+
+        setAdminPermissions(primary, group.id(), membership.getId(), "MANAGE_TEAMS");
+        mockMvc.perform(get("/api/matches/{matchId}/teams", match.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(admin)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.canManageTeams").value(true))
+                .andExpect(jsonPath("$.technicalDetailsVisible").value(false));
+        setAdminPermissions(primary, group.id(), membership.getId(), "EDIT_PLAYER_PROFILES");
+        mockMvc.perform(post("/api/matches/{matchId}/teams/generate", match.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(admin))).andExpect(status().isForbidden());
+
+        setAdminPermissions(primary, group.id(), membership.getId(), "MANAGE_LIVE_MATCH");
+        mockMvc.perform(get("/api/matches/{matchId}", match.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(admin)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.canManageLive").value(true))
+                .andExpect(jsonPath("$.canManagePayments").value(false))
+                .andExpect(jsonPath("$.attendances[0].paymentStatus").doesNotExist());
+        mockMvc.perform(put("/api/matches/{matchId}/live/start", match.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(admin))).andExpect(status().isOk());
+        setAdminPermissions(primary, group.id(), membership.getId());
+        mockMvc.perform(put("/api/matches/{matchId}/live/finish", match.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(admin))).andExpect(status().isForbidden());
+        mockMvc.perform(put("/api/matches/{matchId}/live/finish", match.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(primary))).andExpect(status().isOk());
+    }
+
+    private void setAdminPermissions(AuthResponse primary, UUID groupId, UUID memberId, String... permissions)
+            throws Exception {
+        String body = java.util.Arrays.stream(permissions)
+                .map(permission -> "\"" + permission + "\"")
+                .collect(java.util.stream.Collectors.joining(",", "{\"permissions\":[", "]}"));
+        mockMvc.perform(put("/api/groups/{groupId}/members/{memberId}/permissions", groupId, memberId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(primary))
+                        .contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isOk());
     }
 
     private org.springframework.test.web.servlet.ResultActions confirmAttendance(

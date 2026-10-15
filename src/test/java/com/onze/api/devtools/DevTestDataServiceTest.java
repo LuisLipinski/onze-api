@@ -10,10 +10,12 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Set;
 import java.util.Optional;
 import java.util.UUID;
 
 import com.onze.api.group.GroupMember;
+import com.onze.api.group.GroupAdminPermission;
 import com.onze.api.group.GroupMemberRepository;
 import com.onze.api.group.GroupRepository;
 import com.onze.api.group.GroupRole;
@@ -92,6 +94,21 @@ class DevTestDataServiceTest {
         when(testUser.getDisplayName()).thenReturn("Teste 01");
         when(members.findAllByGroupIdOrderByCreatedAtAsc(groupId)).thenReturn(List.of(testMember));
         when(users.findById(testUserId)).thenReturn(Optional.of(testUser));
+    }
+
+    @Test
+    void testToolsRequireExplicitDelegationAndRevocationStopsGeneration() {
+        GroupMember admin = new GroupMember(groupId, adminId, GroupRole.ADMIN);
+        admin.replacePermissions(Set.of(GroupAdminPermission.MANAGE_TEAMS));
+        when(members.findByGroupIdAndUserId(groupId, adminId)).thenReturn(Optional.of(admin));
+        org.junit.jupiter.api.Assertions.assertThrows(org.springframework.web.server.ResponseStatusException.class,
+                () -> service.status(adminId.toString(), matchId));
+        admin.replacePermissions(Set.of(GroupAdminPermission.MANAGE_TEST_DATA));
+        org.junit.jupiter.api.Assertions.assertDoesNotThrow(() -> service.status(adminId.toString(), matchId));
+        admin.replacePermissions(Set.of());
+        org.junit.jupiter.api.Assertions.assertThrows(org.springframework.web.server.ResponseStatusException.class,
+                () -> service.generate(adminId.toString(), matchId, 0));
+        org.mockito.Mockito.verify(users, org.mockito.Mockito.never()).deleteAllInBatch(org.mockito.ArgumentMatchers.anyList());
     }
 
     @Test

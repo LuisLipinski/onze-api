@@ -14,6 +14,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.HttpHeaders;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.core.io.ClassPathResource;
+import java.nio.charset.StandardCharsets;
+import java.util.Set;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -37,6 +41,9 @@ class GroupAdminIntegrationTest extends IntegrationTestSupport {
 
     @Autowired
     private MockMvc mockMvc;
+
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
 
     @Autowired
     private JsonMapper jsonMapper;
@@ -287,6 +294,68 @@ class GroupAdminIntegrationTest extends IntegrationTestSupport {
                         .header(HttpHeaders.AUTHORIZATION, bearer(admin)))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("MEMBER_ROLE_REQUIRED"));
+    }
+
+    @Test
+    void shouldConfigureEveryOperationalPermissionWithoutDelegatingOwnership() throws Exception {
+        AuthResponse primary = register("all-primary@example.com", "Principal");
+        AuthResponse admin = register("all-admin@example.com", "Admin");
+        GroupResponse group = createGroup(primary, "Todas as permissões");
+        join(admin, createInvite(primary, group.id()).code());
+        GroupMember target = membership(group.id(), admin);
+        mockMvc.perform(put("/api/groups/{groupId}/members/{memberId}/promote", group.id(), target.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(primary))).andExpect(status().isOk());
+        String body = jsonMapper.writeValueAsString(java.util.Map.of(
+                "permissions", Set.of(GroupAdminPermission.values())));
+        mockMvc.perform(put("/api/groups/{groupId}/members/{memberId}/permissions", group.id(), target.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(primary))
+                        .contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.permissions.length()").value(GroupAdminPermission.values().length));
+        assertThat(membership(group.id(), admin).getPermissions()).containsExactlyInAnyOrder(GroupAdminPermission.values());
+        mockMvc.perform(put("/api/groups/{groupId}/members/{memberId}/permissions", group.id(), target.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(admin))
+                        .contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(put("/api/groups/{groupId}/members/{memberId}/demote", group.id(), membership(group.id(), primary).getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(admin))).andExpect(status().isForbidden());
+    }
+
+    @Test
+    void shouldMigrateExistingDelegationsWithoutGrantingAccessToOrdinaryMembers() throws Exception {
+        AuthResponse primary = register("migration-primary@example.com", "Principal");
+        AuthResponse scheduler = register("migration-scheduler@example.com", "Organizador");
+        AuthResponse evaluator = register("migration-evaluator@example.com", "Avaliador");
+        AuthResponse member = register("migration-member@example.com", "Membro");
+        GroupResponse group = createGroup(primary, "Migração de permissões");
+        String code = createInvite(primary, group.id()).code();
+        join(scheduler, code);
+        join(evaluator, code);
+        join(member, code);
+        GroupMember scheduled = membership(group.id(), scheduler);
+        scheduled.changeRole(GroupRole.ADMIN);
+        scheduled.replacePermissions(Set.of(GroupAdminPermission.SCHEDULE_GAMES));
+        groupMemberRepository.saveAndFlush(scheduled);
+        GroupMember evaluated = membership(group.id(), evaluator);
+        evaluated.changeRole(GroupRole.ADMIN);
+        evaluated.replacePermissions(Set.of(GroupAdminPermission.EDIT_PLAYER_PROFILES));
+        groupMemberRepository.saveAndFlush(evaluated);
+        jdbcTemplate.update("INSERT INTO group_admin_permissions (group_member_id, permission) VALUES (?, 'SCHEDULE_GAMES')",
+                membership(group.id(), member).getId());
+        String sql = new ClassPathResource("db/migration/V35__split_operational_admin_permissions.sql")
+                .getContentAsString(StandardCharsets.UTF_8);
+        jdbcTemplate.execute(sql);
+        jdbcTemplate.execute(sql);
+        assertThat(membership(group.id(), scheduler).getPermissions()).containsExactlyInAnyOrder(
+                GroupAdminPermission.SCHEDULE_GAMES, GroupAdminPermission.CANCEL_GAMES,
+                GroupAdminPermission.MANAGE_MATCH_PLAYERS, GroupAdminPermission.MANAGE_PAYMENTS,
+                GroupAdminPermission.MANAGE_LIVE_MATCH);
+        assertThat(membership(group.id(), evaluator).getPermissions()).containsExactlyInAnyOrder(
+                GroupAdminPermission.EDIT_PLAYER_PROFILES, GroupAdminPermission.MANAGE_TEAMS);
+        assertThat(membership(group.id(), member).getPermissions()).isEmpty();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM group_admin_permissions WHERE group_member_id = ?", Long.class,
+                membership(group.id(), member).getId())).isEqualTo(1L);
     }
 
     private GroupMember membership(java.util.UUID groupId, AuthResponse user) {

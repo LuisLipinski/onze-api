@@ -184,6 +184,12 @@ public final class MatchModels {
             List<GuestResponse> guests,
             boolean teamsGenerated,
             boolean canViewTechnical,
+            boolean canManagePlayers,
+            boolean canManagePayments,
+            boolean canManageTeams,
+            boolean canManageLive,
+            boolean canCancel,
+            boolean canManageTestData,
             boolean canManage) {
     }
 

@@ -15,6 +15,7 @@ import com.onze.api.devtools.DevTestDataModels.StatusResponse;
 import com.onze.api.group.GroupMember;
 import com.onze.api.group.GroupMemberRepository;
 import com.onze.api.group.GroupRepository;
+import com.onze.api.group.GroupAdminPermission;
 import com.onze.api.group.GroupRole;
 import com.onze.api.match.AttendanceStatus;
 import com.onze.api.match.FootballMatch;
@@ -81,7 +82,7 @@ public class DevTestDataService {
     @Transactional(readOnly = true)
     public StatusResponse status(String authenticatedUserId, UUID matchId) {
         FootballMatch match = requireMatch(matchId);
-        requirePrimaryAdmin(authenticatedUserId, match.getGroupId());
+        requireTestDataPermission(authenticatedUserId, match.getGroupId());
         List<TestMember> testMembers = testMembers(match.getGroupId());
         Set<UUID> testUserIds = testUserIds(testMembers);
         int going = (int) attendanceRepository.findAllByMatchIdOrderByCreatedAtAsc(matchId).stream()
@@ -104,7 +105,7 @@ public class DevTestDataService {
             UUID matchId,
             int requestedCount) {
         FootballMatch match = requireMatch(matchId);
-        requirePrimaryAdmin(authenticatedUserId, match.getGroupId());
+        requireTestDataPermission(authenticatedUserId, match.getGroupId());
 
         int created = 0;
         int reused = 0;
@@ -137,7 +138,7 @@ public class DevTestDataService {
             UUID matchId,
             DevTestDataScenario scenario) {
         FootballMatch match = requireMatch(matchId);
-        requirePrimaryAdmin(authenticatedUserId, match.getGroupId());
+        requireTestDataPermission(authenticatedUserId, match.getGroupId());
         List<TestMember> testMembers = testMembers(match.getGroupId());
         int idealPlayers = idealPlayers(match);
 
@@ -159,7 +160,7 @@ public class DevTestDataService {
     @Transactional
     public MatchAttendanceResponse addToMatch(String authenticatedUserId, UUID matchId) {
         FootballMatch match = requireScheduledMatch(matchId);
-        requirePrimaryAdmin(authenticatedUserId, match.getGroupId());
+        requireTestDataPermission(authenticatedUserId, match.getGroupId());
         List<TestMember> testMembers = testMembers(match.getGroupId());
         long occupied = capacityService.occupiedSpots(matchId);
         int added = 0;
@@ -213,7 +214,7 @@ public class DevTestDataService {
     @Transactional
     public MatchAttendanceResponse removeFromMatch(String authenticatedUserId, UUID matchId) {
         FootballMatch match = requireMatch(matchId);
-        requirePrimaryAdmin(authenticatedUserId, match.getGroupId());
+        requireTestDataPermission(authenticatedUserId, match.getGroupId());
         Set<UUID> testUserIds = testUserIds(testMembers(match.getGroupId()));
         int removed = 0;
 
@@ -317,7 +318,7 @@ public class DevTestDataService {
         return match;
     }
 
-    private void requirePrimaryAdmin(String authenticatedUserId, UUID groupId) {
+    private void requireTestDataPermission(String authenticatedUserId, UUID groupId) {
         UUID userId = parseUserId(authenticatedUserId);
         if (!groupRepository.existsById(groupId)) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Grupo não encontrado.");
@@ -325,10 +326,10 @@ public class DevTestDataService {
         GroupMember actor = memberRepository.findByGroupIdAndUserId(groupId, userId)
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.FORBIDDEN, "Acesso negado."));
-        if (actor.getRole() != GroupRole.PRIMARY_ADMIN) {
+        if (!actor.hasPermission(GroupAdminPermission.MANAGE_TEST_DATA)) {
             throw new ResponseStatusException(
                     HttpStatus.FORBIDDEN,
-                    "Ferramentas de teste são exclusivas do Administrador Principal.");
+                    "Sem permissão para usar as ferramentas de teste.");
         }
     }
 
