@@ -775,8 +775,7 @@ public class MatchService {
             throw new PaymentRequiresAttendanceException();
         }
         requireParticipantPayment(match, attendance);
-        if (!match.isPaymentOpen(now)
-                && !wasAddedAfterPaymentDeadline(match, attendance)) {
+        if (!MatchPaymentPolicy.paymentWindowOpen(match, attendance, now)) {
             throw new PaymentDeadlinePassedException();
         }
 
@@ -885,6 +884,28 @@ public class MatchService {
     }
 
     @Transactional
+    public MatchResponse requestPaymentReminder(String authenticatedUserId, UUID matchId, UUID playerUserId) {
+        UUID adminUserId = parseUserId(authenticatedUserId);
+        FootballMatch match = matchRepository.findByIdForUpdate(matchId).orElseThrow(MatchNotFoundException::new);
+        Group group = requireGroup(match.getGroupId());
+        GroupMember membership = requireMembership(match.getGroupId(), adminUserId);
+        requirePermission(membership, GroupAdminPermission.MANAGE_PAYMENTS);
+        Instant now = clock.instant();
+        requireOpenMatch(match, now);
+        requirePayment(match);
+        MatchAttendance attendance = attendanceRepository.findByMatchIdAndUserId(matchId, playerUserId)
+                .orElseThrow(PaymentRequiresAttendanceException::new);
+        if (attendance.getStatus() != AttendanceStatus.GOING) throw new PaymentRequiresAttendanceException();
+        requireParticipantPayment(match, attendance);
+        if (attendance.getPaymentStatus() != PaymentStatus.PENDING) throw new PaymentNotPendingException();
+        if (!canReportPayment(match, attendance, now)) throw new PaymentDeadlinePassedException();
+        notificationQueue.enqueue(matchId, playerUserId, MatchNotificationType.PAYMENT_REMINDER,
+                "match:" + matchId + ":manual-payment-reminder:" + playerUserId + ":" + now.getEpochSecond() / 300,
+                now);
+        return toResponse(match, group, membership, now);
+    }
+
+    @Transactional
     public MatchResponse confirmPayment(
             String authenticatedUserId,
             UUID matchId,
@@ -905,20 +926,20 @@ public class MatchService {
             throw new PaymentRequiresAttendanceException();
         }
         requireParticipantPayment(match, attendance);
-        if (attendance.getPaymentStatus() == null) {
-            throw new PaymentRequiresAttendanceException();
+        if (attendance.getPaymentStatus() == PaymentStatus.PAID) {
+            return toResponse(match, group, membership, now);
+        }
+        if (attendance.getPaymentStatus() != PaymentStatus.REPORTED) {
+            throw new PaymentNotReportedException();
         }
 
-        boolean changed = attendance.getPaymentStatus() != PaymentStatus.PAID;
         attendance.confirmPayment(now);
-        if (changed) {
-            notificationQueue.enqueue(
-                    match.getId(),
-                    playerUserId,
-                    MatchNotificationType.PAYMENT_CONFIRMED,
-                    "match:" + match.getId() + ":payment-confirmed:" + playerUserId,
-                    now);
-        }
+        notificationQueue.enqueue(
+                match.getId(),
+                playerUserId,
+                MatchNotificationType.PAYMENT_CONFIRMED,
+                "match:" + match.getId() + ":payment-confirmed:" + playerUserId,
+                now);
 
         return toResponse(match, group, membership, now);
     }
@@ -1299,8 +1320,7 @@ public class MatchService {
                 && attendance.getStatus() == AttendanceStatus.GOING
                 && MatchPaymentPolicy.requiresPayment(match, attendance)
                 && attendance.getPaymentStatus() == PaymentStatus.PENDING
-                && (match.isPaymentOpen(now)
-                        || wasAddedAfterPaymentDeadline(match, attendance));
+                && MatchPaymentPolicy.paymentWindowOpen(match, attendance, now);
     }
 
     private boolean hasProtectedPayment(MatchAttendance attendance) {
@@ -1311,14 +1331,6 @@ public class MatchService {
     private boolean settlementAvailable(FootballMatch match, MatchAttendance attendance) {
         return match.getStatus() == MatchStatus.CANCELLED
                 || !attendance.isAwaitingReplacement();
-    }
-
-    private boolean wasAddedAfterPaymentDeadline(
-            FootballMatch match,
-            MatchAttendance attendance) {
-        return match.getPaymentDeadline() != null
-                && attendance.getAddedAsReplacementAt() != null
-                && !attendance.getAddedAsReplacementAt().isBefore(match.getPaymentDeadline());
     }
 
     private void fillOldestReplacementVacancy(
@@ -1614,6 +1626,14 @@ public class MatchService {
     }
 
     public static final class PaymentNotRequiredException extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+    }
+
+    public static final class PaymentNotReportedException extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+    }
+
+    public static final class PaymentNotPendingException extends RuntimeException {
         private static final long serialVersionUID = 1L;
     }
 

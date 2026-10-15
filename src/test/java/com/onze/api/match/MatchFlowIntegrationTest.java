@@ -1404,6 +1404,9 @@ class MatchFlowIntegrationTest extends IntegrationTestSupport {
                         .header(HttpHeaders.AUTHORIZATION, bearer(admin))
                         .contentType(MediaType.APPLICATION_JSON).content("{\"displayName\":\"Sem acesso\"}"))
                 .andExpect(status().isForbidden());
+        mockMvc.perform(put("/api/matches/{matchId}/payment/reported", match.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(player)))
+                .andExpect(status().isOk());
         mockMvc.perform(put("/api/matches/{matchId}/payments/{userId}/confirm", match.id(), player.user().id())
                         .header(HttpHeaders.AUTHORIZATION, bearer(admin)))
                 .andExpect(status().isOk())
@@ -1448,6 +1451,101 @@ class MatchFlowIntegrationTest extends IntegrationTestSupport {
                         .header(HttpHeaders.AUTHORIZATION, bearer(admin))).andExpect(status().isForbidden());
         mockMvc.perform(put("/api/matches/{matchId}/live/finish", match.id())
                         .header(HttpHeaders.AUTHORIZATION, bearer(primary))).andExpect(status().isOk());
+    }
+
+    @Test
+    void shouldLetMembersShareMatchesWithoutGrantingPublicMembershipOrPrivateData() throws Exception {
+        AuthResponse primary = register("share-primary@example.com", "Principal");
+        AuthResponse member = register("share-member@example.com", "Membro");
+        AuthResponse outsider = register("share-outsider@example.com", "Visitante");
+        GroupResponse group = createGroup(primary, "Grupo privado compartilhado");
+        join(member, createInvite(primary, group.id()).code());
+        var created = mockMvc.perform(post("/api/groups/{groupId}/matches", group.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(primary))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(matchBody(LocalDate.now(SAO_PAULO).plusDays(3), "NONE", 14)))
+                .andExpect(status().isCreated()).andReturn();
+        MatchResponse match = jsonMapper.readValue(created.getResponse().getContentAsString(), MatchResponse.class);
+        mockMvc.perform(get("/api/matches/{id}/share", match.id()))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/matches/{id}/share", match.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(outsider)))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/matches/{id}/share", match.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(member)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.shareUrl").value(org.hamcrest.Matchers.endsWith("/m/" + match.id())));
+        var landing = mockMvc.perform(get("/m/{id}", match.id()))
+                .andExpect(status().isOk()).andReturn();
+        assertThat(landing.getResponse().getContentType()).startsWith("text/html");
+        assertThat(landing.getResponse().getContentAsString())
+                .contains("onze://match?matchId=" + match.id(), "Abrir no Onze")
+                .doesNotContain(group.name(), "Arena Onze", "Levar colete verde");
+        assertThat(groupMemberRepository.findByGroupIdAndUserId(group.id(), outsider.user().id())).isEmpty();
+        mockMvc.perform(get("/api/matches/{id}", match.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(outsider)))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(get("/m/{id}", UUID.randomUUID())).andExpect(status().isNotFound());
+    }
+
+    @Test
+    void shouldRemindPendingPlayerAndRequireTheirReportBeforeConfirmingReceipt() throws Exception {
+        AuthResponse primary = register("remind-primary@example.com", "Principal");
+        AuthResponse admin = register("remind-admin@example.com", "Financeiro");
+        AuthResponse player = register("remind-player@example.com", "Jogador");
+        GroupResponse group = createGroup(primary, "Cobrança por jogador");
+        String code = createInvite(primary, group.id()).code();
+        join(admin, code);
+        join(player, code);
+        GroupMember membership = groupMemberRepository
+                .findByGroupIdAndUserId(group.id(), admin.user().id()).orElseThrow();
+        mockMvc.perform(put("/api/groups/{groupId}/members/{memberId}/promote", group.id(), membership.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(primary))).andExpect(status().isOk());
+        setAdminPermissions(primary, group.id(), membership.getId(), "SCHEDULE_GAMES");
+        var created = mockMvc.perform(post("/api/groups/{groupId}/matches", group.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(primary))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(paidMatchBody(LocalDate.now(SAO_PAULO).plusDays(3), 14)
+                                .replace("\"paymentRequired\": true", "\"paymentRequired\": true, \"paymentAmount\": 20, \"pixKey\": \"pix@example.com\"")))
+                .andExpect(status().isCreated()).andReturn();
+        MatchResponse match = jsonMapper.readValue(created.getResponse().getContentAsString(), MatchResponse.class);
+        confirmAttendance(match.id(), player, "GOING").andExpect(status().isOk());
+        mockMvc.perform(post("/api/matches/{id}/payments/{user}/reminder", match.id(), player.user().id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(player))).andExpect(status().isForbidden());
+        mockMvc.perform(post("/api/matches/{id}/payments/{user}/reminder", match.id(), player.user().id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(admin))).andExpect(status().isForbidden());
+        setAdminPermissions(primary, group.id(), membership.getId(), "MANAGE_PAYMENTS");
+        mockMvc.perform(put("/api/matches/{id}/payments/{user}/confirm", match.id(), player.user().id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(admin)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("PAYMENT_NOT_REPORTED"));
+        for (int attempt = 0; attempt < 2; attempt++) {
+            mockMvc.perform(post("/api/matches/{id}/payments/{user}/reminder", match.id(), player.user().id())
+                            .header(HttpHeaders.AUTHORIZATION, bearer(admin)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.attendances[0].paymentStatus").value("PENDING"));
+        }
+        assertThat(notificationJobRepository.findAll().stream()
+                .filter(job -> job.getNotificationType() == MatchNotificationType.PAYMENT_REMINDER)
+                .toList()).singleElement().satisfies(job -> {
+                    assertThat(job.getMatchId()).isEqualTo(match.id());
+                    assertThat(job.getRecipientUserId()).isEqualTo(player.user().id());
+                    assertThat(job.getStatus()).isEqualTo(MatchNotificationStatus.PENDING);
+                });
+        mockMvc.perform(put("/api/matches/{id}/payment/reported", match.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(player)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.myPaymentStatus").value("REPORTED"));
+        mockMvc.perform(post("/api/matches/{id}/payments/{user}/reminder", match.id(), player.user().id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(admin)))
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("PAYMENT_NOT_PENDING"));
+        mockMvc.perform(put("/api/matches/{id}/payments/{user}/confirm", match.id(), player.user().id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(admin)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.attendances[0].paymentStatus").value("PAID"));
+        mockMvc.perform(put("/api/matches/{id}/payments/{user}/confirm", match.id(), player.user().id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(admin))).andExpect(status().isOk());
+        assertThat(notificationJobRepository.findAll().stream()
+                .filter(job -> job.getNotificationType() == MatchNotificationType.PAYMENT_CONFIRMED).toList())
+                .hasSize(1);
     }
 
     private void setAdminPermissions(AuthResponse primary, UUID groupId, UUID memberId, String... permissions)
