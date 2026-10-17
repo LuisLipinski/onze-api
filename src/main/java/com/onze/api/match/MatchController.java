@@ -311,6 +311,22 @@ public class MatchController {
         return matchService.updateAttendance(authentication.getName(), matchId, request.status());
     }
 
+    @PostMapping("/api/matches/{matchId}/waitlist/guest-preference")
+    public MatchResponse decideWaitlistGuestPreference(
+            Authentication authentication, @PathVariable UUID matchId,
+            @Valid @RequestBody MatchModels.WaitlistGuestDecisionRequest request) {
+        lifecycleService.openDueAttendances();
+        return matchService.decideWaitlistGuestPreference(authentication.getName(), matchId, request);
+    }
+
+    @PostMapping("/api/matches/{matchId}/waitlist/goalkeeper")
+    public MatchResponse useWaitlistGoalkeeper(
+            Authentication authentication, @PathVariable UUID matchId,
+            @Valid @RequestBody MatchModels.WaitlistGoalkeeperDecisionRequest request) {
+        lifecycleService.openDueAttendances();
+        return matchService.useWaitlistGoalkeeper(authentication.getName(), matchId, request.expectedFirstUserId());
+    }
+
     @PutMapping("/api/matches/{matchId}/payment/reported")
     public MatchResponse reportPayment(
             Authentication authentication,

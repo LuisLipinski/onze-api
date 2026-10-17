@@ -153,6 +153,20 @@ public class MatchNotificationProcessor {
             return !capacityService.isFull(match);
         }
 
+        if (job.getNotificationType() == MatchNotificationType.WAITLIST_PROMOTED) {
+            return job.getRecipientUserId() == null || attendanceRepository
+                    .findByMatchIdAndUserId(match.getId(), job.getRecipientUserId())
+                    .map(attendance -> attendance.getStatus() != AttendanceStatus.GOING).orElse(true);
+        }
+        if (job.getNotificationType() == MatchNotificationType.WAITLIST_GOALKEEPER_DECISION) {
+            return match.getStatus() != MatchStatus.SCHEDULED
+                    || capacityService.reservedGoalkeeperSlots(match) == 0;
+        }
+        if (job.getNotificationType() == MatchNotificationType.WAITLIST_GUEST_DECISION) {
+            return match.getStatus() != MatchStatus.SCHEDULED
+                    || attendanceRepository.countByMatchIdAndStatus(match.getId(), AttendanceStatus.WAITLISTED) == 0;
+        }
+
         if (job.getNotificationType() == MatchNotificationType.CREDIT_APPLIED) {
             return job.getRecipientUserId() == null
                     || attendanceRepository

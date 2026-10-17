@@ -81,6 +81,7 @@ public class PlayerCreditService {
             }
             if (attendance == null
                     || (attendance.getStatus() != AttendanceStatus.NOT_GOING
+                            && attendance.getStatus() != AttendanceStatus.WAITLISTED
                             && !attendance.hasActiveCredit()
                             && attendance.getPaymentStatus() != PaymentStatus.PAID
                             && attendance.getPaymentStatus() != PaymentStatus.REPORTED)) {
@@ -100,6 +101,7 @@ public class PlayerCreditService {
             }
             if (attendance != null
                     && (attendance.getStatus() == AttendanceStatus.NOT_GOING
+                            || attendance.getStatus() == AttendanceStatus.WAITLISTED
                             || attendance.hasActiveCredit()
                             || attendance.getPaymentStatus() == PaymentStatus.PAID
                             || attendance.getPaymentStatus() == PaymentStatus.REPORTED)) {

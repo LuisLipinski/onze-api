@@ -30,6 +30,7 @@ public class MatchLifecycleService {
     private final PlayerCreditService playerCreditService;
     private final MatchGoalkeeperService goalkeeperService;
     private final WeeklyMatchWindowService weeklyMatchWindowService;
+    private final MatchWaitlistService waitlistService;
     private final Clock clock;
 
     public MatchLifecycleService(
@@ -40,6 +41,7 @@ public class MatchLifecycleService {
             PlayerCreditService playerCreditService,
             MatchGoalkeeperService goalkeeperService,
             WeeklyMatchWindowService weeklyMatchWindowService,
+            MatchWaitlistService waitlistService,
             Clock clock) {
         this.matchRepository = matchRepository;
         this.attendanceRepository = attendanceRepository;
@@ -48,6 +50,7 @@ public class MatchLifecycleService {
         this.playerCreditService = playerCreditService;
         this.goalkeeperService = goalkeeperService;
         this.weeklyMatchWindowService = weeklyMatchWindowService;
+        this.waitlistService = waitlistService;
         this.clock = clock;
     }
 
@@ -169,6 +172,7 @@ public class MatchLifecycleService {
             for (UUID userId : releasedCreditUsers.stream().distinct().toList()) {
                 playerCreditService.reserveForNextMatch(match.getGroupId(), userId, now);
             }
+            waitlistService.reconcile(match, now);
         }
     }
 

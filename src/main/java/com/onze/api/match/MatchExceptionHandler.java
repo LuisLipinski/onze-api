@@ -71,6 +71,12 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
         MatchController.class, MatchShareController.class, MatchTeamReserveController.class, PushDeviceController.class})
 public class MatchExceptionHandler {
 
+    @ExceptionHandler(MatchWaitlistService.WaitlistConflictException.class)
+    ResponseEntity<ApiErrorResponse> waitlistConflict(MatchWaitlistService.WaitlistConflictException exception) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(new ApiErrorResponse("WAITLIST_CONFLICT", exception.getMessage()));
+    }
+
     @ExceptionHandler(InvalidLiveMatchTransitionException.class)
     ResponseEntity<ApiErrorResponse> invalidLiveTransition() {
         return ResponseEntity.status(HttpStatus.CONFLICT)

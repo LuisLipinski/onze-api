@@ -57,6 +57,7 @@ public class MatchService {
     private final MatchNotificationQueue notificationQueue;
     private final PlayerCreditService playerCreditService;
     private final WeeklyMatchWindowService weeklyMatchWindowService;
+    private final MatchWaitlistService waitlistService;
     private final GroupRepository groupRepository;
     private final GroupMemberRepository groupMemberRepository;
     private final UserRepository userRepository;
@@ -76,6 +77,7 @@ public class MatchService {
             MatchNotificationQueue notificationQueue,
             PlayerCreditService playerCreditService,
             WeeklyMatchWindowService weeklyMatchWindowService,
+            MatchWaitlistService waitlistService,
             GroupRepository groupRepository,
             GroupMemberRepository groupMemberRepository,
             UserRepository userRepository,
@@ -93,6 +95,7 @@ public class MatchService {
         this.notificationQueue = notificationQueue;
         this.playerCreditService = playerCreditService;
         this.weeklyMatchWindowService = weeklyMatchWindowService;
+        this.waitlistService = waitlistService;
         this.groupRepository = groupRepository;
         this.groupMemberRepository = groupMemberRepository;
         this.userRepository = userRepository;
@@ -350,8 +353,17 @@ public class MatchService {
 
         requireOpenMatch(match, now);
 
+        if (requestedStatus != AttendanceStatus.GOING && requestedStatus != AttendanceStatus.NOT_GOING) {
+            throw new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.BAD_REQUEST);
+        }
         MatchAttendance attendance = attendanceRepository.findByMatchIdAndUserId(matchId, userId)
                 .orElse(null);
+        if (requestedStatus == AttendanceStatus.GOING && attendance != null
+                && attendance.getStatus() == AttendanceStatus.WAITLISTED) {
+            waitlistService.reconcile(match, now);
+            return toResponse(match, group, membership, now);
+        }
         boolean joining = requestedStatus == AttendanceStatus.GOING
                 && (attendance == null || attendance.getStatus() != AttendanceStatus.GOING);
         boolean withdrawing = requestedStatus == AttendanceStatus.NOT_GOING
@@ -364,10 +376,18 @@ public class MatchService {
         if (joining && !match.isSignupOpen(now)) {
             throw new SignupDeadlinePassedException();
         }
-        long occupiedBefore = capacityService.occupiedSpots(matchId);
-        if (joining && occupiedBefore >= match.getMaxPlayers()) {
-            throw new MatchFullException();
+        if (joining) {
+            waitlistService.reconcile(match, now);
+            if (!waitlistService.canAdmit(match, membership)) {
+                if (attendance == null) {
+                    attendance = attendanceRepository.save(new MatchAttendance(
+                            matchId, userId, AttendanceStatus.NOT_GOING, null));
+                }
+                waitlistService.join(match, attendance, now);
+                return toResponse(match, group, membership, now);
+            }
         }
+        long occupiedBefore = capacityService.occupiedSpots(matchId);
 
         boolean creditReleased = false;
         if (attendance == null) {
@@ -429,6 +449,7 @@ public class MatchService {
 
         if (joining || withdrawing) {
             invalidateTeams(matchId);
+            waitlistService.reconcile(match, now);
         }
 
         return toResponse(match, group, membership, now);
@@ -458,6 +479,11 @@ public class MatchService {
             throw new ReplacementVacancyNotOpenException();
         }
         GroupMember replacementMember = requireMembership(match.getGroupId(), replacementUserId);
+        waitlistService.requireQueuePriority(match, replacementUserId);
+        if (!waitlistService.canAdmit(match, replacementMember)) {
+            throw new MatchWaitlistService.WaitlistConflictException(
+                    "As vagas restantes estão reservadas para goleiros.");
+        }
 
         long occupiedBefore = capacityService.occupiedSpots(matchId);
         if (occupiedBefore >= match.getMaxPlayers()) {
@@ -533,6 +559,37 @@ public class MatchService {
     }
 
     @Transactional
+    public MatchResponse decideWaitlistGuestPreference(
+            String authenticatedUserId, UUID matchId, MatchModels.WaitlistGuestDecisionRequest request) {
+        UUID userId = parseUserId(authenticatedUserId);
+        FootballMatch match = matchRepository.findByIdForUpdate(matchId)
+                .orElseThrow(MatchNotFoundException::new);
+        Group group = requireGroup(match.getGroupId());
+        GroupMember membership = requireMembership(match.getGroupId(), userId);
+        requirePermission(membership, GroupAdminPermission.MANAGE_MATCH_PLAYERS);
+        Instant now = clock.instant();
+        requireOpenMatch(match, now);
+        waitlistService.decideGuestPreference(match, request.expectedFirstUserId(), request.guestId(),
+                request.action() == MatchModels.GuestPreferenceAction.KEEP_GUESTS, now);
+        return toResponse(match, group, membership, now);
+    }
+
+    @Transactional
+    public MatchResponse useWaitlistGoalkeeper(
+            String authenticatedUserId, UUID matchId, UUID expectedFirstUserId) {
+        UUID userId = parseUserId(authenticatedUserId);
+        FootballMatch match = matchRepository.findByIdForUpdate(matchId)
+                .orElseThrow(MatchNotFoundException::new);
+        Group group = requireGroup(match.getGroupId());
+        GroupMember membership = requireMembership(match.getGroupId(), userId);
+        requirePermission(membership, GroupAdminPermission.MANAGE_MATCH_PLAYERS);
+        Instant now = clock.instant();
+        requireOpenMatch(match, now);
+        waitlistService.useFirstAsGoalkeeper(match, expectedFirstUserId, now);
+        return toResponse(match, group, membership, now);
+    }
+
+    @Transactional
     public MatchResponse updateGoalkeeper(
             String authenticatedUserId,
             UUID matchId,
@@ -567,6 +624,7 @@ public class MatchService {
                 now);
 
         invalidateTeams(matchId);
+        waitlistService.reconcile(match, now);
 
         return toResponse(match, group, membership, now);
     }
@@ -595,6 +653,7 @@ public class MatchService {
         }
         rentalGoalkeeperRepository.save(new MatchRentalGoalkeeper(matchId, normalizedName));
         invalidateTeams(matchId);
+        waitlistService.reconcile(match, now);
 
         if (occupiedBefore + 1 == match.getMaxPlayers()) {
             notificationQueue.enqueue(
@@ -626,6 +685,7 @@ public class MatchService {
                 .orElseThrow(RentalGoalkeeperNotFoundException::new);
         rentalGoalkeeperRepository.delete(rentalGoalkeeper);
         invalidateTeams(matchId);
+        waitlistService.reconcile(match, now);
         return toResponse(match, group, membership, now);
     }
 
@@ -679,8 +739,11 @@ public class MatchService {
         requirePermission(membership, GroupAdminPermission.MANAGE_MATCH_PLAYERS);
         Instant now = clock.instant();
         requireEditableMatch(match, now);
-        if (capacityService.isFull(match)) {
-            throw new MatchFullException();
+        waitlistService.reconcile(match, now);
+        if (!capacityService.canAdmit(match,
+                primaryPosition == com.onze.api.group.PlayerPosition.GOALKEEPER)) {
+            throw new MatchWaitlistService.WaitlistConflictException(
+                    "Não há vaga disponível para esta posição. As vagas de goleiro são reservadas.");
         }
         String normalizedName = normalizeOptional(displayName);
         if (normalizedName == null || primaryPosition == null
@@ -723,6 +786,7 @@ public class MatchService {
                 .orElseThrow(GuestNotFoundException::new);
         guestRepository.delete(guest);
         invalidateTeams(matchId);
+        waitlistService.reconcile(match, now);
         return toResponse(match, group, membership, now);
     }
 
@@ -1071,6 +1135,11 @@ public class MatchService {
             Instant now) {
         List<MatchAttendance> storedAttendances = attendanceRepository
                 .findAllByMatchIdOrderByCreatedAtAsc(match.getId());
+        List<MatchAttendance> waiting = waitlistService.waiting(match);
+        Map<UUID, Integer> waitlistPositions = new java.util.HashMap<>();
+        for (int index = 0; index < waiting.size(); index++) {
+            waitlistPositions.put(waiting.get(index).getUserId(), index + 1);
+        }
         List<GroupMember> groupMembers = groupMemberRepository
                 .findAllByGroupIdOrderByCreatedAtAsc(match.getGroupId());
         java.util.Map<UUID, GroupMember> groupMembersByUser = groupMembers.stream()
@@ -1142,6 +1211,8 @@ public class MatchService {
                     replacementDetailsVisible ? attendance.getAddedAsReplacementAt() : null,
                     replacementDetailsVisible ? attendance.getReplacementForUserId() : null,
                     financialDetailsVisible && settlementAvailable(match, attendance),
+                    attendance.getWaitlistJoinedAt(),
+                    waitlistPositions.get(attendance.getUserId()),
                     currentUser));
         }
 
@@ -1237,6 +1308,11 @@ public class MatchService {
                 myPaymentDeadlineRemovedAt,
                 goingCount,
                 notGoingCount,
+                waiting.size(),
+                waitlistPositions.get(membership.getUserId()),
+                capacityService.reservedGoalkeeperSlots(match),
+                match.isAttendanceOpen(now) && waitlistService.guestDecisionRequired(match),
+                waitlistService.replaceableGuestIds(match),
                 List.copyOf(attendances),
                 rentalGoalkeepers,
                 guests,
@@ -1318,7 +1394,8 @@ public class MatchService {
             MatchAttendance attendance,
             Instant now) {
         if (attendance == null
-                || attendance.getStatus() != AttendanceStatus.GOING
+                || (attendance.getStatus() != AttendanceStatus.GOING
+                        && attendance.getStatus() != AttendanceStatus.WAITLISTED)
                 || !match.isAttendanceOpen(now)) {
             return false;
         }
@@ -1332,6 +1409,7 @@ public class MatchService {
         return match.isAttendanceOpen(now)
                 && match.isSignupOpen(now)
                 && (attendance == null || attendance.getStatus() != AttendanceStatus.GOING)
+                && (attendance == null || attendance.getStatus() != AttendanceStatus.WAITLISTED)
                 && (attendance == null || !attendance.requiresAdministratorToRejoin());
     }
 

@@ -41,6 +41,12 @@ public class MatchAttendance {
     @Column(nullable = false, length = 24)
     private AttendanceStatus status;
 
+    @Column(name = "waitlist_joined_at")
+    private Instant waitlistJoinedAt;
+
+    @Column(name = "waitlist_order")
+    private Long waitlistOrder;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "payment_status", length = 24)
     private PaymentStatus paymentStatus;
@@ -141,6 +147,27 @@ public class MatchAttendance {
 
     public AttendanceStatus getStatus() {
         return status;
+    }
+
+    public Instant getWaitlistJoinedAt() { return waitlistJoinedAt; }
+
+    public Long getWaitlistOrder() { return waitlistOrder; }
+
+    public void joinWaitlist(Instant now, long order) {
+        if (status == AttendanceStatus.WAITLISTED) return;
+        if (hasRecordedCashPayment() || hasActiveCredit()) {
+            throw new IllegalStateException("A financial obligation must be resolved before waiting");
+        }
+        status = AttendanceStatus.WAITLISTED;
+        goalkeeper = false;
+        waitlistJoinedAt = now;
+        waitlistOrder = order;
+        paymentStatus = null;
+        cashAmountDue = BigDecimal.ZERO;
+        cashPaidAmount = BigDecimal.ZERO;
+        paymentReportedAt = null;
+        paymentConfirmedAt = null;
+        paymentDeadlineRemovedAt = null;
     }
 
     public boolean isGoalkeeper() {
@@ -292,6 +319,10 @@ public class MatchAttendance {
     public void changeStatus(AttendanceStatus status, BigDecimal paymentAmount, Instant now) {
         AttendanceStatus previousStatus = this.status;
         this.status = status;
+        if (status != AttendanceStatus.WAITLISTED) {
+            waitlistJoinedAt = null;
+            waitlistOrder = null;
+        }
         if (status == AttendanceStatus.GOING) {
             paymentDeadlineRemovedAt = null;
         } else if (status == AttendanceStatus.NOT_GOING) {

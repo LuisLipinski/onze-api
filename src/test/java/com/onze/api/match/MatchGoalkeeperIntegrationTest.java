@@ -362,6 +362,7 @@ class MatchGoalkeeperIntegrationTest extends IntegrationTestSupport {
         GroupResponse group = createGroup(creator, "Pelada goleiro de aluguel");
         InviteResponse invite = createInvite(creator, group.id());
         join(member, invite.code());
+        completeProfile(creator, group.id(), "GOALKEEPER", null, false);
 
         MatchResponse first = readMatch(createMatch(
                 creator,
@@ -384,8 +385,8 @@ class MatchGoalkeeperIntegrationTest extends IntegrationTestSupport {
         MatchResponse withRental = readMatch(addResult);
 
         confirmAttendance(first.id(), member, "GOING")
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.code").value("MATCH_FULL"));
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.myAttendance").value("WAITLISTED"));
         addRentalGoalkeeper(first.id(), creator, "Outro aluguel")
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("MATCH_FULL"));
@@ -413,7 +414,8 @@ class MatchGoalkeeperIntegrationTest extends IntegrationTestSupport {
                 .andExpect(jsonPath("$.rentalGoalkeepers.length()").value(0));
         confirmAttendance(first.id(), member, "GOING")
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.goingCount").value(2));
+                .andExpect(jsonPath("$.goingCount").value(1))
+                .andExpect(jsonPath("$.myAttendance").value("WAITLISTED"));
         mockMvc.perform(delete(
                         "/api/matches/{matchId}/rental-goalkeepers/{rentalGoalkeeperId}",
                         first.id(),
