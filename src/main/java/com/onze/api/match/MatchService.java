@@ -720,6 +720,7 @@ public class MatchService {
                     .forEach(item -> item.updatePlayerConfiguration(
                             configuration.modality(), configuration.minimumPlayers()));
         }
+        waitlistService.reconcile(match, now);
         return toResponse(match, group, membership, now);
     }
 

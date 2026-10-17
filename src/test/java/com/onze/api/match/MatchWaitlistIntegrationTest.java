@@ -260,6 +260,24 @@ class MatchWaitlistIntegrationTest extends IntegrationTestSupport {
     }
 
     @Test
+    void shouldFillNewPlacesImmediatelyWhenAdministratorIncreasesMaximum() throws Exception {
+        UUID match = create(3, false, "NONE");
+        rentals(match);
+        AuthResponse playing = member("Titular", "DEFENDER");
+        AuthResponse first = member("Primeiro", "DEFENDER"), second = member("Segundo", "DEFENDER");
+        for (AuthResponse player : List.of(playing, first, second)) attend(match, player, "GOING").andExpect(status().isOk());
+        mvc.perform(put("/api/matches/{id}/player-configuration", match)
+                .header(HttpHeaders.AUTHORIZATION, bearer(admin)).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"modality\":\"FUT7\",\"minimumPlayers\":2,\"maxPlayers\":5}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.goingCount").value(5))
+                .andExpect(jsonPath("$.waitlistCount").value(0))
+                .andExpect(jsonPath("$.currentGoalkeepers").value(2));
+        assertThat(getMatch(match, first).myAttendance()).isEqualTo(AttendanceStatus.GOING);
+        assertThat(getMatch(match, second).myAttendance()).isEqualTo(AttendanceStatus.GOING);
+        assertThat(jobs(match, "WAITLIST_PROMOTED")).isEqualTo(2);
+    }
+
+    @Test
     void shouldReleaseWaitingCreditToNextMatchAndApplyItOnceWhenPromoted() throws Exception {
         UUID match = create(3, true, "NONE");
         rentals(match);
