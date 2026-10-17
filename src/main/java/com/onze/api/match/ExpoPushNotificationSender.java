@@ -87,6 +87,15 @@ public class ExpoPushNotificationSender {
             return;
         }
 
+        if ((notificationType == MatchNotificationType.WAITLIST_GOALKEEPER_DECISION
+                || notificationType == MatchNotificationType.WAITLIST_GUEST_DECISION)
+                && (recipientUserId == null || groupMemberRepository
+                        .findByGroupIdAndUserId(match.getGroupId(), recipientUserId)
+                        .filter(member -> member.hasPermission(
+                                com.onze.api.group.GroupAdminPermission.MANAGE_MATCH_PLAYERS)).isEmpty())) {
+            return;
+        }
+
         List<UUID> recipientUserIds = recipientUserId == null
                 ? groupMemberRepository.findAllByGroupIdOrderByCreatedAtAsc(match.getGroupId())
                         .stream()
@@ -170,6 +179,17 @@ public class ExpoPushNotificationSender {
                     "Sua vaga foi preenchida ✅",
                     "O acerto do seu pagamento no jogo de " + group.getName()
                             + " já pode ser resolvido pelo administrador.");
+            case WAITLIST_PROMOTED -> new NotificationCopy(
+                    "Sua vez chegou ⚽",
+                    "Você saiu da lista de espera e entrou no jogo de " + group.getName()
+                            + ". Confira sua vaga e, se necessário, o pagamento.");
+            case WAITLIST_GOALKEEPER_DECISION -> new NotificationCopy(
+                    "Falta goleiro: escolha como preencher a vaga 🧤",
+                    "O prazo de " + group.getName()
+                            + " terminou. Use o primeiro da fila no gol, adicione um goleiro de aluguel ou convide um goleiro.");
+            case WAITLIST_GUEST_DECISION -> new NotificationCopy(
+                    "Convidado ou membro da lista de espera? ⚽",
+                    group.getName() + " tem convidado e membro aguardando. Abra a partida e escolha quem terá preferência.");
             case MATCH_TOMORROW -> tomorrowCopy(match, group, recipientUserId, remainingAmount);
             case TEAM_FULL -> new NotificationCopy(
                     "Time fechado ✅",

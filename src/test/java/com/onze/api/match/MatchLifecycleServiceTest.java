@@ -39,6 +39,7 @@ class MatchLifecycleServiceTest {
                 playerCreditService,
                 goalkeeperService,
                 weeklyMatchWindowService,
+                mock(MatchWaitlistService.class),
                 clock);
 
         UUID matchId = UUID.randomUUID();
@@ -107,6 +108,7 @@ class MatchLifecycleServiceTest {
                 playerCreditService,
                 goalkeeperService,
                 weeklyMatchWindowService,
+                mock(MatchWaitlistService.class),
                 clock);
 
         UUID matchId = UUID.randomUUID();
@@ -165,6 +167,7 @@ class MatchLifecycleServiceTest {
                 playerCreditService,
                 goalkeeperService,
                 weeklyMatchWindowService,
+                mock(MatchWaitlistService.class),
                 clock);
 
         UUID matchId = UUID.randomUUID();

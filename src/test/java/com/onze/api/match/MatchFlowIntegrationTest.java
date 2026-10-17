@@ -520,6 +520,7 @@ class MatchFlowIntegrationTest extends IntegrationTestSupport {
         InviteResponse invite = createInvite(creator, group.id());
         join(firstMember, invite.code());
         join(secondMember, invite.code());
+        setGoalkeeperProfiles(group.id(), creator, firstMember, secondMember);
 
         LocalDate date = LocalDate.now(SAO_PAULO).plusDays(3);
         var createResult = mockMvc.perform(post("/api/groups/{groupId}/matches", group.id())
@@ -550,12 +551,13 @@ class MatchFlowIntegrationTest extends IntegrationTestSupport {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.goingCount").value(2));
         confirmAttendance(match.id(), secondMember, "GOING")
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.code").value("MATCH_FULL"));
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.myAttendance").value("WAITLISTED"))
+                .andExpect(jsonPath("$.myWaitlistPosition").value(1));
 
         confirmAttendance(match.id(), creator, "NOT_GOING")
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.goingCount").value(1))
+                .andExpect(jsonPath("$.goingCount").value(2))
                 .andExpect(jsonPath("$.notGoingCount").value(1));
         confirmAttendance(match.id(), secondMember, "GOING")
                 .andExpect(status().isOk())
@@ -742,6 +744,7 @@ class MatchFlowIntegrationTest extends IntegrationTestSupport {
         InviteResponse invite = createInvite(creator, group.id());
         join(member, invite.code());
         join(replacement, invite.code());
+        setGoalkeeperProfiles(group.id(), creator, member, replacement);
 
         mockMvc.perform(put("/api/groups/{groupId}/details", group.id())
                         .header(HttpHeaders.AUTHORIZATION, bearer(creator))
@@ -1884,5 +1887,12 @@ class MatchFlowIntegrationTest extends IntegrationTestSupport {
 
     private String bearer(AuthResponse response) {
         return "Bearer " + response.accessToken();
+    }
+
+    private void setGoalkeeperProfiles(UUID groupId, AuthResponse... players) {
+        for (AuthResponse player : players) {
+            jdbcTemplate.update("UPDATE group_members SET primary_position='GOALKEEPER', dominant_foot='RIGHT' WHERE group_id=? AND user_id=?",
+                    groupId, player.user().id());
+        }
     }
 }

@@ -61,6 +61,17 @@ public final class MatchModels {
             @NotNull AttendanceStatus status) {
     }
 
+    public enum GuestPreferenceAction { KEEP_GUESTS, PROMOTE_MEMBER }
+
+    public record WaitlistGuestDecisionRequest(
+            @NotNull UUID expectedFirstUserId,
+            UUID guestId,
+            @NotNull GuestPreferenceAction action) {
+    }
+
+    public record WaitlistGoalkeeperDecisionRequest(@NotNull UUID expectedFirstUserId) {
+    }
+
     public record ResolvePaymentSettlementRequest(
             @NotNull PaymentSettlementResolution resolution) {
     }
@@ -110,6 +121,8 @@ public final class MatchModels {
             Instant addedAsReplacementAt,
             UUID replacementForUserId,
             boolean settlementAvailable,
+            Instant waitlistJoinedAt,
+            Integer waitlistPosition,
             boolean currentUser) {
     }
 
@@ -169,6 +182,7 @@ public final class MatchModels {
             boolean paymentOpen,
             boolean canReportPayment,
             boolean canJoin,
+            boolean willJoinWaitlist,
             boolean canWithdraw,
             AttendanceStatus myAttendance,
             PaymentStatus myPaymentStatus,
@@ -179,6 +193,11 @@ public final class MatchModels {
             Instant myPaymentDeadlineRemovedAt,
             int goingCount,
             int notGoingCount,
+            int waitlistCount,
+            Integer myWaitlistPosition,
+            int reservedGoalkeeperSlots,
+            boolean guestPreferenceDecisionRequired,
+            List<UUID> replaceableGuestIds,
             List<AttendanceResponse> attendances,
             List<RentalGoalkeeperResponse> rentalGoalkeepers,
             List<GuestResponse> guests,

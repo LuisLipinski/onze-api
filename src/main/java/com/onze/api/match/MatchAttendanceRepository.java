@@ -6,6 +6,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
 
 public interface MatchAttendanceRepository extends JpaRepository<MatchAttendance, UUID> {
     List<MatchAttendance> findAllByMatchIdInAndStatusOrderByMatchIdAscCreatedAtAsc(
@@ -20,4 +21,12 @@ public interface MatchAttendanceRepository extends JpaRepository<MatchAttendance
             Collection<PaymentSettlementStatus> statuses);
 
     long countByMatchIdAndStatus(UUID matchId, AttendanceStatus status);
+
+    long countByMatchIdAndStatusAndGoalkeeperTrue(UUID matchId, AttendanceStatus status);
+
+    List<MatchAttendance> findAllByMatchIdAndStatusOrderByWaitlistOrderAsc(
+            UUID matchId, AttendanceStatus status);
+
+    @Query(value = "select nextval('match_waitlist_order_seq')", nativeQuery = true)
+    long nextWaitlistOrder();
 }

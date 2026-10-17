@@ -59,6 +59,9 @@ public class FootballMatch {
     @Column(name = "required_goalkeepers", nullable = false)
     private int requiredGoalkeepers;
 
+    @Column(name = "waitlist_guest_preference_key", length = 36)
+    private String waitlistGuestPreferenceKey;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 16)
     private MatchModality modality;
@@ -240,6 +243,10 @@ public class FootballMatch {
     public int getRequiredGoalkeepers() {
         return requiredGoalkeepers;
     }
+
+    public String getWaitlistGuestPreferenceKey() { return waitlistGuestPreferenceKey; }
+
+    public void keepGuestPreference(String key) { waitlistGuestPreferenceKey = key; }
 
     public MatchModality getModality() {
         return modality;
