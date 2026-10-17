@@ -307,12 +307,35 @@ public class ExpoPushNotificationSender {
                 .orElse(fallbackAmount);
     }
 
-    @SuppressWarnings("unchecked")
     private BatchDeliveryResult sendBatch(
             List<PushDevice> devices,
             FootballMatch match,
             MatchNotificationType notificationType,
             NotificationCopy copy) {
+        return sendBatch(devices, Map.of(
+                "route", isLiveMatchNotification(notificationType) ? "/live-match" : "/match",
+                "matchId", match.getId().toString(),
+                "groupId", match.getGroupId().toString(),
+                "notificationType", notificationType.name()), copy);
+    }
+
+    public void sendGroupDeleted(UUID noticeId, UUID groupId, String groupName, UUID recipientUserId) {
+        if (!enabled) return;
+        List<PushDevice> devices = pushDeviceRepository.findAllByUserIdInAndActiveTrue(List.of(recipientUserId));
+        NotificationCopy copy = new NotificationCopy("Grupo excluído",
+                "O grupo \"" + groupName + "\" foi excluído pelo administrador principal.");
+        Map<String, Object> data = Map.of("route", "/groups", "groupId", groupId.toString(),
+                "noticeId", noticeId.toString(), "notificationType", "GROUP_DELETED");
+        for (int start = 0; start < devices.size(); start += EXPO_BATCH_SIZE) {
+            sendBatch(devices.subList(start, Math.min(start + EXPO_BATCH_SIZE, devices.size())), data, copy);
+        }
+        LOGGER.info("Group deletion push completed: groupId={}, recipientUserId={}, devices={}",
+                groupId, recipientUserId, devices.size());
+    }
+
+    @SuppressWarnings("unchecked")
+    private BatchDeliveryResult sendBatch(
+            List<PushDevice> devices, Map<String, Object> data, NotificationCopy copy) {
         List<Map<String, Object>> messages = new ArrayList<>(devices.size());
         for (PushDevice device : devices) {
             Map<String, Object> message = new HashMap<>();
@@ -322,11 +345,7 @@ public class ExpoPushNotificationSender {
             message.put("channelId", "matches");
             message.put("title", copy.title());
             message.put("body", copy.body());
-            message.put("data", Map.of(
-                    "route", isLiveMatchNotification(notificationType) ? "/live-match" : "/match",
-                    "matchId", match.getId().toString(),
-                    "groupId", match.getGroupId().toString(),
-                    "notificationType", notificationType.name()));
+            message.put("data", data);
             messages.add(message);
         }
 
@@ -361,9 +380,9 @@ public class ExpoPushNotificationSender {
                 deactivatedDeviceCount++;
                 LOGGER.info(
                         "Deactivated rejected Expo push device: matchId={}, userId={}, notificationType={}",
-                        match.getId(),
+                        data.get("matchId"),
                         device.getUserId(),
-                        notificationType);
+                        data.get("notificationType"));
             } else {
                 retryableError = errorCode + ": " + String.valueOf(ticket.get("message"));
             }
