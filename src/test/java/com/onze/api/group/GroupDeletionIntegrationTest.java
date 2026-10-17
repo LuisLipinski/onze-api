@@ -23,7 +23,6 @@ import org.springframework.test.web.servlet.MockMvc;
 import tools.jackson.databind.json.JsonMapper;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -65,9 +64,9 @@ class GroupDeletionIntegrationTest extends IntegrationTestSupport {
         members.save(new GroupMember(group.id(), admin.user().id(), GroupRole.ADMIN));
         jdbc.update("""
                 INSERT INTO football_matches
-                  (id, group_id, starts_at, time_zone, venue, max_players, status, attendance_opens_at,
+                  (id, group_id, starts_at, time_zone, venue, max_players, minimum_players, status, attendance_opens_at,
                    signup_deadline, created_by)
-                VALUES (?, ?, NOW() + INTERVAL '7 days', 'America/Sao_Paulo', 'Arena', 14, 'SCHEDULED',
+                VALUES (?, ?, NOW() + INTERVAL '7 days', 'America/Sao_Paulo', 'Arena', 14, 14, 'SCHEDULED',
                         NOW(), NOW() + INTERVAL '6 days', ?)
                 """, UUID.randomUUID(), group.id(), owner.user().id());
         String invite = jsonMapper.readTree(mvc.perform(post("/api/groups/{id}/invite", group.id())
@@ -182,9 +181,9 @@ class GroupDeletionIntegrationTest extends IntegrationTestSupport {
         jdbc.execute("CREATE TABLE deletion_test_guard (group_id UUID REFERENCES groups(id))");
         try {
             jdbc.update("INSERT INTO deletion_test_guard (group_id) VALUES (?)", group.id());
-            assertThatThrownBy(() -> mvc.perform(delete("/api/groups/{id}", group.id())
-                    .header(HttpHeaders.AUTHORIZATION, bearer(owner))))
-                    .hasRootCauseInstanceOf(org.postgresql.util.PSQLException.class);
+            mvc.perform(delete("/api/groups/{id}", group.id())
+                            .header(HttpHeaders.AUTHORIZATION, bearer(owner)))
+                    .andExpect(status().isInternalServerError());
             assertThat(groups.existsById(group.id())).isTrue();
             assertThat(notices.count()).isZero();
         } finally {
