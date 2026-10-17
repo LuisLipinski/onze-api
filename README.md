@@ -167,6 +167,9 @@ A base funcional mais recente foi introduzida pelo commit `13cbc1a`; commits pos
 | Método | Endpoint | Finalidade |
 |---|---|---|
 | `POST` / `GET` | `/api/groups` | Criar ou listar grupos |
+| `DELETE` | `/api/groups/{groupId}` | Excluir o grupo e seus dados vinculados (somente Principal); avisar todos os membros |
+| `GET` | `/api/groups/deletion-notices` | Listar os próprios avisos de grupos excluídos, mesmo sem push |
+| `POST` | `/api/groups/deletion-notices/{noticeId}/acknowledge` | Confirmar leitura de um aviso próprio |
 | `PUT` | `/api/groups/{groupId}/details` | Atualizar configurações |
 | `POST` | `/api/groups/{groupId}/photo` | Enviar foto |
 | `POST` | `/api/groups/{groupId}/invite` | Obter/criar convite |

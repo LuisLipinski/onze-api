@@ -52,6 +52,7 @@ public class GroupController {
     private final GroupSportsProfileService groupSportsProfileService;
     private final TechnicalProfileService technicalProfileService;
     private final GroupStatisticsService groupStatisticsService;
+    private final GroupDeletionService groupDeletionService;
 
     public GroupController(
             GroupService groupService,
@@ -59,13 +60,15 @@ public class GroupController {
             GroupAdminService groupAdminService,
             GroupSportsProfileService groupSportsProfileService,
             TechnicalProfileService technicalProfileService,
-            GroupStatisticsService groupStatisticsService) {
+            GroupStatisticsService groupStatisticsService,
+            GroupDeletionService groupDeletionService) {
         this.groupService = groupService;
         this.groupInviteService = groupInviteService;
         this.groupAdminService = groupAdminService;
         this.groupSportsProfileService = groupSportsProfileService;
         this.technicalProfileService = technicalProfileService;
         this.groupStatisticsService = groupStatisticsService;
+        this.groupDeletionService = groupDeletionService;
     }
 
     @PostMapping
@@ -74,6 +77,24 @@ public class GroupController {
             @Valid @RequestBody CreateGroupRequest request) {
         GroupResponse response = groupService.create(authentication.getName(), request);
         return ResponseEntity.created(URI.create("/api/groups/" + response.id())).body(response);
+    }
+
+    @DeleteMapping("/{groupId}")
+    public ResponseEntity<Void> deleteGroup(Authentication authentication, @PathVariable UUID groupId) {
+        groupDeletionService.delete(authentication.getName(), groupId);
+        return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping("/deletion-notices")
+    public List<GroupDeletionService.DeletionNoticeResponse> deletionNotices(Authentication authentication) {
+        return groupDeletionService.unreadNotices(authentication.getName());
+    }
+
+    @PostMapping("/deletion-notices/{noticeId}/acknowledge")
+    public ResponseEntity<Void> acknowledgeDeletionNotice(
+            Authentication authentication, @PathVariable UUID noticeId) {
+        groupDeletionService.acknowledge(authentication.getName(), noticeId);
+        return ResponseEntity.noContent().build();
     }
 
     @PostMapping(value = "/{groupId}/photo", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)

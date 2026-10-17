@@ -1,5 +1,7 @@
 package com.onze.api.match;
 
+import com.onze.api.group.GroupDeletionNotificationProcessor;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -13,14 +15,17 @@ public class MatchBackgroundTasks {
     private final MatchLifecycleService lifecycleService;
     private final MatchNotificationProcessor notificationProcessor;
     private final LiveMatchService liveMatchService;
+    private final GroupDeletionNotificationProcessor groupDeletionNotificationProcessor;
 
     public MatchBackgroundTasks(
             MatchLifecycleService lifecycleService,
             MatchNotificationProcessor notificationProcessor,
-            LiveMatchService liveMatchService) {
+            LiveMatchService liveMatchService,
+            GroupDeletionNotificationProcessor groupDeletionNotificationProcessor) {
         this.lifecycleService = lifecycleService;
         this.notificationProcessor = notificationProcessor;
         this.liveMatchService = liveMatchService;
+        this.groupDeletionNotificationProcessor = groupDeletionNotificationProcessor;
     }
 
     @Scheduled(
@@ -43,6 +48,11 @@ public class MatchBackgroundTasks {
             notificationProcessor.processPending();
         } catch (RuntimeException exception) {
             LOGGER.error("Could not process match notifications", exception);
+        }
+        try {
+            groupDeletionNotificationProcessor.processPending();
+        } catch (RuntimeException exception) {
+            LOGGER.error("Could not process group deletion notifications", exception);
         }
     }
 }

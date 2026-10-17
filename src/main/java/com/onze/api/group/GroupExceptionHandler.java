@@ -32,6 +32,12 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 @RestControllerAdvice(assignableTypes = GroupController.class)
 public class GroupExceptionHandler {
 
+    @ExceptionHandler(GroupDeletionService.GroupDeletionNoticeNotFoundException.class)
+    ResponseEntity<ApiErrorResponse> deletionNoticeNotFound() {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(new ApiErrorResponse("GROUP_DELETION_NOTICE_NOT_FOUND", "Aviso não encontrado."));
+    }
+
     @ExceptionHandler(StatisticsSeasonNotFoundException.class)
     ResponseEntity<ApiErrorResponse> statisticsSeasonNotFound() {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)

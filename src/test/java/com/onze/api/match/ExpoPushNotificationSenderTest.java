@@ -7,6 +7,7 @@ import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.jsonPath;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 import java.time.Instant;
@@ -136,6 +137,8 @@ class ExpoPushNotificationSenderTest {
         when(pushDeviceRepository.findAllByUserIdInAndActiveTrue(anyCollection()))
                 .thenReturn(List.of(acceptedDevice, rejectedDevice));
         server.expect(requestTo("https://example.invalid/push"))
+                .andExpect(jsonPath("$[0].data.route").value("/live-match"))
+                .andExpect(jsonPath("$[0].data.matchId").value(matchId.toString()))
                 .andRespond(withSuccess(
                         """
                         {"data":[
@@ -154,5 +157,33 @@ class ExpoPushNotificationSenderTest {
         assertTrue(output.getOut().contains("acceptedDevices=1"));
         assertTrue(output.getOut().contains("deactivatedDevices=1"));
         assertTrue(output.getOut().contains("Deactivated rejected Expo push device"));
+    }
+
+    @Test
+    void sendsGroupDeletionToTheMemberUsingTheSnapshotAndGroupsDestination() {
+        RestClient.Builder builder = RestClient.builder().baseUrl("https://example.invalid/push");
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        sender = new ExpoPushNotificationSender(groupRepository, groupMemberRepository,
+                attendanceRepository, capacityService, pushDeviceRepository, builder.build(), true);
+        UUID groupId = UUID.randomUUID();
+        UUID noticeId = UUID.randomUUID();
+        UUID recipientId = UUID.randomUUID();
+        when(pushDeviceRepository.findAllByUserIdInAndActiveTrue(List.of(recipientId)))
+                .thenReturn(List.of(new PushDevice(recipientId, "ExponentPushToken[group-member]")));
+        server.expect(requestTo("https://example.invalid/push"))
+                .andExpect(jsonPath("$[0].title").value("Grupo excluído"))
+                .andExpect(jsonPath("$[0].body").value(
+                        "O grupo \"Pelada Onze\" foi excluído pelo administrador principal."))
+                .andExpect(jsonPath("$[0].data.route").value("/groups"))
+                .andExpect(jsonPath("$[0].data.notificationType").value("GROUP_DELETED"))
+                .andExpect(jsonPath("$[0].data.groupId").value(groupId.toString()))
+                .andExpect(jsonPath("$[0].data.noticeId").value(noticeId.toString()))
+                .andExpect(jsonPath("$[0].data.matchId").doesNotExist())
+                .andRespond(withSuccess("{\"data\":[{\"status\":\"ok\",\"id\":\"ticket\"}]}", MediaType.APPLICATION_JSON));
+
+        sender.sendGroupDeleted(noticeId, groupId, group.getName(), recipientId);
+
+        server.verify();
+        org.mockito.Mockito.verifyNoInteractions(groupRepository, groupMemberRepository, attendanceRepository);
     }
 }
