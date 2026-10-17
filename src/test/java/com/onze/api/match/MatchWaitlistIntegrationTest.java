@@ -259,8 +259,34 @@ class MatchWaitlistIntegrationTest extends IntegrationTestSupport {
         catch (Exception e) { throw new RuntimeException(e); }
     }
 
+    @Test
+    void shouldReleaseWaitingCreditToNextMatchAndApplyItOnceWhenPromoted() throws Exception {
+        UUID match = create(3, true, "NONE");
+        rentals(match);
+        AuthResponse playing = member("Titular", "DEFENDER"), waiting = member("Com crédito", "DEFENDER");
+        attend(match, playing, "GOING").andExpect(status().isOk());
+        jdbc.update("INSERT INTO group_player_credits(id,group_id,user_id,balance,created_at,updated_at) VALUES(?,?,?,20,NOW(),NOW())",
+                UUID.randomUUID(), groupId, waiting.user().id());
+        UUID next = create(3, true, "NONE", 12);
+        assertThat(getMatch(match, waiting).myCreditAppliedAmount()).isEqualByComparingTo("20");
+        attend(match, waiting, "GOING").andExpect(status().isOk());
+        assertThat(getMatch(match, waiting).myPaymentStatus()).isNull();
+        assertThat(getMatch(next, waiting).myCreditAppliedAmount()).isEqualByComparingTo("20");
+        attend(match, playing, "NOT_GOING").andExpect(status().isOk());
+        MatchResponse promoted = getMatch(match, waiting);
+        assertThat(promoted.myPaymentStatus()).isEqualTo(PaymentStatus.PAID);
+        assertThat(promoted.myCreditAppliedAmount()).isEqualByComparingTo("20");
+        assertThat(getMatch(next, waiting).myCreditAppliedAmount()).isEqualByComparingTo("0");
+        assertThat(jdbc.queryForObject("SELECT balance FROM group_player_credits WHERE group_id=? AND user_id=?",
+                java.math.BigDecimal.class, groupId, waiting.user().id())).isEqualByComparingTo("0");
+    }
+
     private UUID create(int max, boolean paid, String recurrence) throws Exception {
-        LocalDate day = LocalDate.now(ZoneId.of("America/Sao_Paulo")).plusDays(5);
+        return create(max, paid, recurrence, 5);
+    }
+
+    private UUID create(int max, boolean paid, String recurrence, int daysAhead) throws Exception {
+        LocalDate day = LocalDate.now(ZoneId.of("America/Sao_Paulo")).plusDays(daysAhead);
         return read(mvc.perform(post("/api/groups/{id}/matches", groupId)
                 .header(HttpHeaders.AUTHORIZATION, bearer(admin)).contentType(MediaType.APPLICATION_JSON)
                 .content(json.writeValueAsString(Map.ofEntries(

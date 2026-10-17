@@ -165,6 +165,9 @@ public class MatchAttendance {
         paymentStatus = null;
         cashAmountDue = BigDecimal.ZERO;
         cashPaidAmount = BigDecimal.ZERO;
+        creditAppliedAmount = BigDecimal.ZERO;
+        creditConsumedAt = null;
+        creditReturnedAt = null;
         paymentReportedAt = null;
         paymentConfirmedAt = null;
         paymentDeadlineRemovedAt = null;

@@ -1298,6 +1298,7 @@ public class MatchService {
                 match.isPaymentOpen(now),
                 canReportPayment(match, currentUserAttendance, now),
                 canJoin(match, currentUserAttendance, now),
+                !waitlistService.canAdmit(match, membership),
                 canWithdraw(match, currentUserAttendance, now),
                 myAttendance,
                 myPaymentStatus,

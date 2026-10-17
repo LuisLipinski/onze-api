@@ -186,4 +186,34 @@ class ExpoPushNotificationSenderTest {
         server.verify();
         org.mockito.Mockito.verifyNoInteractions(groupRepository, groupMemberRepository, attendanceRepository);
     }
+
+    @Test
+    void sendsWaitlistDecisionToCurrentPlayerManagerAndStopsAfterPermissionRevocation() {
+        RestClient.Builder builder = RestClient.builder().baseUrl("https://example.invalid/push");
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        sender = new ExpoPushNotificationSender(groupRepository, groupMemberRepository,
+                attendanceRepository, capacityService, pushDeviceRepository, builder.build(), true);
+        UUID groupId = UUID.randomUUID(), matchId = UUID.randomUUID(), recipient = UUID.randomUUID();
+        var manager = mock(com.onze.api.group.GroupMember.class);
+        when(match.getId()).thenReturn(matchId);
+        when(match.getGroupId()).thenReturn(groupId);
+        when(match.getStartsAt()).thenReturn(Instant.parse("2026-10-24T21:00:00Z"));
+        when(match.getTimeZone()).thenReturn("UTC");
+        when(groupRepository.findById(groupId)).thenReturn(Optional.of(group));
+        when(groupMemberRepository.findByGroupIdAndUserId(groupId, recipient)).thenReturn(Optional.of(manager));
+        when(manager.hasPermission(com.onze.api.group.GroupAdminPermission.MANAGE_MATCH_PLAYERS))
+                .thenReturn(true, false);
+        when(pushDeviceRepository.findAllByUserIdInAndActiveTrue(List.of(recipient)))
+                .thenReturn(List.of(new PushDevice(recipient, "ExponentPushToken[waitlist-manager]")));
+        server.expect(requestTo("https://example.invalid/push"))
+                .andExpect(jsonPath("$[0].data.route").value("/match"))
+                .andExpect(jsonPath("$[0].data.matchId").value(matchId.toString()))
+                .andExpect(jsonPath("$[0].data.notificationType").value("WAITLIST_GUEST_DECISION"))
+                .andRespond(withSuccess("{\"data\":[{\"status\":\"ok\",\"id\":\"ticket\"}]}", MediaType.APPLICATION_JSON));
+        sender.send(match, MatchNotificationType.WAITLIST_GUEST_DECISION, recipient);
+        sender.send(match, MatchNotificationType.WAITLIST_GUEST_DECISION, recipient);
+        server.verify();
+        org.mockito.Mockito.verify(pushDeviceRepository, org.mockito.Mockito.times(1))
+                .findAllByUserIdInAndActiveTrue(List.of(recipient));
+    }
 }

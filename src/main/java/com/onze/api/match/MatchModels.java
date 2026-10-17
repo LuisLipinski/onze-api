@@ -182,6 +182,7 @@ public final class MatchModels {
             boolean paymentOpen,
             boolean canReportPayment,
             boolean canJoin,
+            boolean willJoinWaitlist,
             boolean canWithdraw,
             AttendanceStatus myAttendance,
             PaymentStatus myPaymentStatus,

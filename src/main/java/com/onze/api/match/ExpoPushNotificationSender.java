@@ -87,6 +87,15 @@ public class ExpoPushNotificationSender {
             return;
         }
 
+        if ((notificationType == MatchNotificationType.WAITLIST_GOALKEEPER_DECISION
+                || notificationType == MatchNotificationType.WAITLIST_GUEST_DECISION)
+                && (recipientUserId == null || groupMemberRepository
+                        .findByGroupIdAndUserId(match.getGroupId(), recipientUserId)
+                        .filter(member -> member.hasPermission(
+                                com.onze.api.group.GroupAdminPermission.MANAGE_MATCH_PLAYERS)).isEmpty())) {
+            return;
+        }
+
         List<UUID> recipientUserIds = recipientUserId == null
                 ? groupMemberRepository.findAllByGroupIdOrderByCreatedAtAsc(match.getGroupId())
                         .stream()
