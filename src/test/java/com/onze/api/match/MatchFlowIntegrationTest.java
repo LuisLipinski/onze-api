@@ -1890,6 +1890,36 @@ class MatchFlowIntegrationTest extends IntegrationTestSupport {
                 .andExpect(jsonPath("$.goingCount").value(0));
     }
 
+    @Test
+    void testPlayerScenariosCanReplacePersistedRatingsRepeatedly() throws Exception {
+        AuthResponse owner = register("scenario-owner@onze.test", "Scenario owner");
+        GroupResponse group = createGroup(owner, "Repeated test scenarios");
+        var created = mockMvc.perform(post("/api/groups/{groupId}/matches", group.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(matchBody(LocalDate.now(SAO_PAULO).plusDays(3), "NONE", 14)))
+                .andExpect(status().isCreated()).andReturn();
+        MatchResponse match = jsonMapper.readValue(created.getResponse().getContentAsString(), MatchResponse.class);
+        String base = "/api/dev/test-data/matches/" + match.id();
+        mockMvc.perform(post(base + "/generate")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"count\":6}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.created").value(6));
+        for (String scenario : List.of("BALANCED", "ATTACK_VS_DEFENSE", "UNEVEN", "SPECIALISTS",
+                "SECONDARY_POSITIONS", "GOALKEEPER_PRIORITY", "BALANCED")) {
+            mockMvc.perform(put(base + "/scenario")
+                            .header(HttpHeaders.AUTHORIZATION, bearer(owner))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"scenario\":\"" + scenario + "\"}"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.updatedPlayers").value(6));
+            assertThat(jdbcTemplate.queryForObject("""
+                    select count(*) from group_member_skill_ratings r
+                    join group_members m on m.id = r.group_member_id where m.group_id = ?
+                    """, Integer.class, group.id())).isEqualTo(6 * 17);
+        }
+    }
+
     private InviteResponse createInvite(AuthResponse creator, java.util.UUID groupId) throws Exception {
         var result = mockMvc.perform(post("/api/groups/{groupId}/invite", groupId)
                         .header(HttpHeaders.AUTHORIZATION, bearer(creator)))

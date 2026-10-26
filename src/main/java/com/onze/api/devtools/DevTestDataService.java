@@ -258,6 +258,7 @@ public class DevTestDataService {
         List<GroupMemberSkillRating> existingRatings = ratingRepository.findAllByGroupMemberId(member.getId());
         if (!existingRatings.isEmpty()) {
             ratingRepository.deleteAll(existingRatings);
+            ratingRepository.flush();
         }
         ratingRepository.saveAll(profile.ratings().entrySet().stream()
                 .map(entry -> new GroupMemberSkillRating(
