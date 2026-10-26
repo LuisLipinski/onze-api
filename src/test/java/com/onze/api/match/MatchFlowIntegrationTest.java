@@ -1850,6 +1850,46 @@ class MatchFlowIntegrationTest extends IntegrationTestSupport {
                 .andExpect(status().isOk());
     }
 
+    @Test
+    void minimumPlayerDecisionsReturnForbiddenAndNotFoundWithoutChangingTheMatch() throws Exception {
+        AuthResponse owner = register("minimum-owner@onze.test", "Owner");
+        AuthResponse member = register("minimum-member@onze.test", "Member");
+        AuthResponse outsider = register("minimum-outsider@onze.test", "Outsider");
+        GroupResponse group = createGroup(owner, "Minimum decision");
+        join(member, createInvite(owner, group.id()).code());
+        var created = mockMvc.perform(post("/api/groups/{groupId}/matches", group.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(matchBody(LocalDate.now(SAO_PAULO).plusDays(3), "NONE", 14)))
+                .andExpect(status().isCreated()).andReturn();
+        MatchResponse match = jsonMapper.readValue(created.getResponse().getContentAsString(), MatchResponse.class);
+        String extension = """
+                {"signupDeadlineDate":"%s","signupDeadlineTime":"18:00:00"}
+                """.formatted(LocalDate.now(SAO_PAULO).plusDays(2));
+        String base = "/api/matches/" + match.id() + "/minimum-player-decision";
+        for (String suffix : List.of("", "/approve", "/extend")) {
+            for (AuthResponse actor : List.of(member, outsider)) {
+                if (suffix.isEmpty() && actor == member) continue;
+                var action = suffix.isEmpty() ? get(base) : put(base + suffix);
+                mockMvc.perform(action.header(HttpHeaders.AUTHORIZATION, bearer(actor))
+                                .contentType(MediaType.APPLICATION_JSON).content(extension))
+                        .andExpect(status().isForbidden())
+                        .andExpect(jsonPath("$.code").value("GROUP_ACCESS_DENIED"));
+            }
+            String missing = "/api/matches/" + UUID.randomUUID() + "/minimum-player-decision";
+            var action = suffix.isEmpty() ? get(missing) : put(missing + suffix);
+            mockMvc.perform(action.header(HttpHeaders.AUTHORIZATION, bearer(owner))
+                            .contentType(MediaType.APPLICATION_JSON).content(extension))
+                    .andExpect(status().isNotFound())
+                    .andExpect(jsonPath("$.code").value("MATCH_NOT_FOUND"));
+        }
+        mockMvc.perform(get("/api/matches/{matchId}", match.id())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(owner)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("SCHEDULED"))
+                .andExpect(jsonPath("$.goingCount").value(0));
+    }
+
     private InviteResponse createInvite(AuthResponse creator, java.util.UUID groupId) throws Exception {
         var result = mockMvc.perform(post("/api/groups/{groupId}/invite", groupId)
                         .header(HttpHeaders.AUTHORIZATION, bearer(creator)))
