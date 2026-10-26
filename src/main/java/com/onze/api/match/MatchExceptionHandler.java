@@ -68,7 +68,8 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 @Order(Ordered.HIGHEST_PRECEDENCE)
 @RestControllerAdvice(assignableTypes = {
-        MatchController.class, MatchShareController.class, MatchTeamReserveController.class, PushDeviceController.class})
+        MatchController.class, MatchShareController.class, MatchTeamReserveController.class,
+        MatchMinimumPlayerDecisionController.class, PushDeviceController.class})
 public class MatchExceptionHandler {
 
     @ExceptionHandler(MatchWaitlistService.WaitlistConflictException.class)
