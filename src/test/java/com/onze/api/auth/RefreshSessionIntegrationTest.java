@@ -7,6 +7,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import java.time.Duration;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
@@ -37,15 +38,19 @@ import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.test.annotation.DirtiesContext;
 
 import tools.jackson.databind.json.JsonMapper;
 
 @SpringBootTest(properties = {
         "security.jwt.secret=onze-refresh-integration-secret-with-at-least-32-bytes",
-        "security.jwt.issuer=onze-refresh-test"
+        "security.jwt.issuer=onze-refresh-test",
+        "spring.datasource.hikari.maximum-pool-size=3",
+        "spring.datasource.hikari.minimum-idle=0"
 })
 @AutoConfigureMockMvc
 @Import(RefreshSessionIntegrationTest.TimeConfiguration.class)
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class RefreshSessionIntegrationTest extends IntegrationTestSupport {
     @Autowired MockMvc mvc;
     @Autowired JsonMapper json;
@@ -58,7 +63,9 @@ class RefreshSessionIntegrationTest extends IntegrationTestSupport {
     @Autowired MutableClock clock;
 
     @BeforeEach void reset() {
-        clock.current.set(Instant.now());
+        // PostgreSQL persists microseconds; align the fixture so exact deadline
+        // assertions cannot change after a nanosecond round-trip through JDBC.
+        clock.current.set(Instant.now().truncatedTo(ChronoUnit.MILLIS));
         resetCodes.deleteAll();
         users.deleteAll();
     }
