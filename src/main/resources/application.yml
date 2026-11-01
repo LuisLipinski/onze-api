@@ -34,6 +34,9 @@ security:
     issuer: ${JWT_ISSUER:onze-api}
     secret: ${JWT_SECRET}
     access-token-ttl: ${JWT_ACCESS_TOKEN_TTL:PT2H}
+  session:
+    refresh-idle-ttl: ${REFRESH_IDLE_TTL:P30D}
+    refresh-absolute-ttl: ${REFRESH_ABSOLUTE_TTL:P90D}
   login:
     max-attempts: ${LOGIN_MAX_ATTEMPTS:5}
     observation-window: ${LOGIN_ATTEMPT_WINDOW:PT15M}

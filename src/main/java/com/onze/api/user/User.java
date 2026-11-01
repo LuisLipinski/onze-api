@@ -47,6 +47,9 @@ public class User {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
+    @Column(name = "password_changed_at")
+    private Instant passwordChangedAt;
+
     protected User() {
     }
 
@@ -110,8 +113,15 @@ public class User {
     }
 
     public void changePasswordHash(String passwordHash) {
-        this.passwordHash = passwordHash;
+        changePasswordHash(passwordHash, Instant.now());
     }
+
+    public void changePasswordHash(String passwordHash, Instant changedAt) {
+        this.passwordHash = passwordHash;
+        this.passwordChangedAt = changedAt;
+    }
+
+    public Instant getPasswordChangedAt() { return passwordChangedAt; }
 
     public void updateLoginProtection(
             int failedLoginAttempts,

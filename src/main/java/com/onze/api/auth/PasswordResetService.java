@@ -28,6 +28,8 @@ public class PasswordResetService {
     private final PasswordEncoder passwordEncoder;
     private final PasswordResetEmailSender emailSender;
     private final LoginProtectionService loginProtectionService;
+    private final RefreshTokenService refreshTokenService;
+    private final SessionClock clock;
     private final SecureRandom secureRandom = new SecureRandom();
 
     public PasswordResetService(
@@ -35,12 +37,16 @@ public class PasswordResetService {
             PasswordResetCodeRepository resetCodeRepository,
             PasswordEncoder passwordEncoder,
             PasswordResetEmailSender emailSender,
-            LoginProtectionService loginProtectionService) {
+            LoginProtectionService loginProtectionService,
+            RefreshTokenService refreshTokenService,
+            SessionClock clock) {
         this.userRepository = userRepository;
         this.resetCodeRepository = resetCodeRepository;
         this.passwordEncoder = passwordEncoder;
         this.emailSender = emailSender;
         this.loginProtectionService = loginProtectionService;
+        this.refreshTokenService = refreshTokenService;
+        this.clock = clock;
     }
 
     @Transactional
@@ -51,7 +57,7 @@ public class PasswordResetService {
             return;
         }
 
-        Instant now = Instant.now();
+        Instant now = clock.instant();
         var latestCode = resetCodeRepository.findTopByUserIdOrderByCreatedAtDesc(user.getId());
         if (latestCode.isPresent()
                 && latestCode.get().getCreatedAt().plus(RESEND_INTERVAL).isAfter(now)) {
@@ -85,7 +91,7 @@ public class PasswordResetService {
                 .findTopByUserIdAndConsumedAtIsNullOrderByCreatedAtDesc(user.getId())
                 .orElseThrow(InvalidPasswordResetCodeException::new);
 
-        Instant now = Instant.now();
+        Instant now = clock.instant();
         if (resetCode.isExpiredAt(now) || resetCode.getAttemptCount() >= 5) {
             resetCode.consume(now);
             resetCodeRepository.save(resetCode);
@@ -98,9 +104,10 @@ public class PasswordResetService {
             throw new InvalidPasswordResetCodeException();
         }
 
-        user.changePasswordHash(passwordEncoder.encode(request.newPassword()));
+        user.changePasswordHash(passwordEncoder.encode(request.newPassword()), now);
         loginProtectionService.clear(user);
         userRepository.save(user);
+        refreshTokenService.revokeAllForUser(user.getId());
         resetCode.consume(now);
         resetCodeRepository.save(resetCode);
     }

@@ -6,6 +6,7 @@ import com.onze.api.auth.AuthModels.MessageResponse;
 import com.onze.api.auth.AuthModels.PasswordResetConfirmRequest;
 import com.onze.api.auth.AuthModels.PasswordResetRequest;
 import com.onze.api.auth.AuthModels.RegisterRequest;
+import com.onze.api.auth.AuthModels.RefreshRequest;
 import com.onze.api.auth.AuthModels.UserResponse;
 
 import jakarta.validation.Valid;
@@ -29,10 +30,13 @@ public class AuthController {
 
     private final AuthService authService;
     private final PasswordResetService passwordResetService;
+    private final RefreshTokenService refreshTokenService;
 
-    public AuthController(AuthService authService, PasswordResetService passwordResetService) {
+    public AuthController(AuthService authService, PasswordResetService passwordResetService,
+            RefreshTokenService refreshTokenService) {
         this.authService = authService;
         this.passwordResetService = passwordResetService;
+        this.refreshTokenService = refreshTokenService;
     }
 
     @PostMapping("/register")
@@ -44,6 +48,22 @@ public class AuthController {
     @PostMapping("/login")
     public AuthResponse login(@Valid @RequestBody LoginRequest request) {
         return authService.login(request);
+    }
+
+    @PostMapping("/refresh")
+    public AuthResponse refresh(@Valid @RequestBody RefreshRequest request) {
+        return refreshTokenService.refresh(request.refreshToken());
+    }
+
+    @PostMapping("/logout")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void logout(@Valid @RequestBody RefreshRequest request) {
+        refreshTokenService.revoke(request.refreshToken());
+    }
+
+    @PostMapping("/sessions/legacy")
+    public AuthResponse exchangeLegacySession(@AuthenticationPrincipal Jwt jwt) {
+        return refreshTokenService.exchangeLegacySession(jwt);
     }
 
     @PostMapping("/password-reset/request")

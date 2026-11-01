@@ -4,6 +4,7 @@ import com.onze.api.auth.AuthService.EmailAlreadyInUseException;
 import com.onze.api.auth.AuthService.InvalidCredentialsException;
 import com.onze.api.auth.LoginProtectionService.LoginRateLimitExceededException;
 import com.onze.api.auth.PasswordResetService.InvalidPasswordResetCodeException;
+import com.onze.api.auth.RefreshTokenService.InvalidRefreshTokenException;
 import com.onze.api.web.ApiErrorResponse;
 
 import org.springframework.core.Ordered;
@@ -29,6 +30,12 @@ public class AuthExceptionHandler {
     @ResponseStatus(HttpStatus.UNAUTHORIZED)
     ApiErrorResponse invalidCredentials() {
         return new ApiErrorResponse("INVALID_CREDENTIALS", "E-mail ou senha inválidos.");
+    }
+
+    @ExceptionHandler(InvalidRefreshTokenException.class)
+    @ResponseStatus(HttpStatus.UNAUTHORIZED)
+    ApiErrorResponse invalidRefreshToken() {
+        return new ApiErrorResponse("INVALID_OR_EXPIRED_SESSION", "Seu acesso foi encerrado ou expirou. Entre novamente com sua senha.");
     }
 
     @ExceptionHandler(LoginRateLimitExceededException.class)

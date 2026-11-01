@@ -27,16 +27,19 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final TokenService tokenService;
     private final LoginProtectionService loginProtectionService;
+    private final RefreshTokenService refreshTokenService;
 
     public AuthService(
             UserRepository userRepository,
             PasswordEncoder passwordEncoder,
             TokenService tokenService,
-            LoginProtectionService loginProtectionService) {
+            LoginProtectionService loginProtectionService,
+            RefreshTokenService refreshTokenService) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.tokenService = tokenService;
         this.loginProtectionService = loginProtectionService;
+        this.refreshTokenService = refreshTokenService;
     }
 
     @Transactional
@@ -100,11 +103,14 @@ public class AuthService {
 
     private AuthResponse authenticated(User user) {
         TokenService.IssuedToken issuedToken = tokenService.issueToken(user);
+        RefreshTokenService.IssuedRefresh refresh = refreshTokenService.issue(user);
         return new AuthResponse(
                 issuedToken.value(),
                 "Bearer",
                 issuedToken.expiresInSeconds(),
-                UserResponse.from(user));
+                UserResponse.from(user),
+                refresh.value(),
+                refresh.expiresInSeconds());
     }
 
     private String normalizeEmail(String email) {

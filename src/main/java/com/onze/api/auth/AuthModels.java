@@ -25,6 +25,10 @@ public final class AuthModels {
             @NotBlank String password) {
     }
 
+    public record RefreshRequest(
+            @NotBlank @Pattern(regexp = "[A-Za-z0-9_-]{43}") String refreshToken) {
+    }
+
     public record PasswordResetRequest(
             @NotBlank @Email @Size(max = 320) String email) {
     }
@@ -54,7 +58,9 @@ public final class AuthModels {
             String accessToken,
             String tokenType,
             long expiresIn,
-            UserResponse user) {
+            UserResponse user,
+            String refreshToken,
+            long refreshExpiresIn) {
     }
 
     public record MessageResponse(String message) {

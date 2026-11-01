@@ -2,6 +2,7 @@ package com.onze.api.auth;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.UUID;
 
 import com.onze.api.user.User;
 
@@ -17,18 +18,21 @@ public class TokenService {
     private final JwtEncoder jwtEncoder;
     private final String issuer;
     private final Duration accessTokenTtl;
+    private final SessionClock clock;
 
     public TokenService(
             JwtEncoder jwtEncoder,
             @Value("${security.jwt.issuer}") String issuer,
-            @Value("${security.jwt.access-token-ttl}") Duration accessTokenTtl) {
+            @Value("${security.jwt.access-token-ttl}") Duration accessTokenTtl,
+            SessionClock clock) {
         this.jwtEncoder = jwtEncoder;
         this.issuer = issuer;
         this.accessTokenTtl = accessTokenTtl;
+        this.clock = clock;
     }
 
     public IssuedToken issueToken(User user) {
-        Instant issuedAt = Instant.now();
+        Instant issuedAt = clock.instant();
         Instant expiresAt = issuedAt.plus(accessTokenTtl);
 
         JwtClaimsSet claims = JwtClaimsSet.builder()
@@ -36,6 +40,7 @@ public class TokenService {
                 .issuedAt(issuedAt)
                 .expiresAt(expiresAt)
                 .subject(user.getId().toString())
+                .id(UUID.randomUUID().toString())
                 .claim("email", user.getEmail())
                 .claim("name", user.getDisplayName())
                 .build();
