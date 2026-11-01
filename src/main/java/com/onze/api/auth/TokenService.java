@@ -1,7 +1,6 @@
 package com.onze.api.auth;
 
 import java.time.Duration;
-import java.time.Clock;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -19,13 +18,13 @@ public class TokenService {
     private final JwtEncoder jwtEncoder;
     private final String issuer;
     private final Duration accessTokenTtl;
-    private final Clock clock;
+    private final SessionClock clock;
 
     public TokenService(
             JwtEncoder jwtEncoder,
             @Value("${security.jwt.issuer}") String issuer,
             @Value("${security.jwt.access-token-ttl}") Duration accessTokenTtl,
-            Clock clock) {
+            SessionClock clock) {
         this.jwtEncoder = jwtEncoder;
         this.issuer = issuer;
         this.accessTokenTtl = accessTokenTtl;

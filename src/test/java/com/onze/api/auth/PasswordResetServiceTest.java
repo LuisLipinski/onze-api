@@ -59,7 +59,7 @@ class PasswordResetServiceTest {
                 resetCodeRepository,
                 passwordEncoder,
                 emailSender,
-                loginProtectionService, refreshTokenService);
+                loginProtectionService, refreshTokenService, Instant::now);
         userId = UUID.randomUUID();
     }
 
@@ -135,7 +135,8 @@ class PasswordResetServiceTest {
                 "123456",
                 "NewStrongPass123!"));
 
-        verify(user).changePasswordHash("new-password-hash");
+        verify(user).changePasswordHash(org.mockito.ArgumentMatchers.eq("new-password-hash"), any(Instant.class));
+        verify(refreshTokenService).revokeAllForUser(userId);
         verify(loginProtectionService).clear(user);
         verify(userRepository).save(user);
         assertNotNull(reset.getConsumedAt());
@@ -169,7 +170,7 @@ class PasswordResetServiceTest {
 
         assertNotNull(reset.getConsumedAt());
         verify(resetCodeRepository).save(reset);
-        verify(user, never()).changePasswordHash(any());
+        verify(user, never()).changePasswordHash(any(), any());
     }
 
     @Test

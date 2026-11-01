@@ -5,11 +5,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
-import java.time.ZoneId;
-import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
@@ -227,10 +224,8 @@ class RefreshSessionIntegrationTest extends IntegrationTestSupport {
         assertThat(db.queryForObject("select count(*) from auth_refresh_tokens", Integer.class)).isZero();
     }
 
-    static final class MutableClock extends Clock {
+    static final class MutableClock implements SessionClock {
         final AtomicReference<Instant> current = new AtomicReference<>(Instant.now());
-        public ZoneId getZone() { return ZoneOffset.UTC; }
-        public Clock withZone(ZoneId zone) { return this; }
         public Instant instant() { return current.get(); }
         void advance(Duration duration) { current.updateAndGet(value -> value.plus(duration)); }
     }

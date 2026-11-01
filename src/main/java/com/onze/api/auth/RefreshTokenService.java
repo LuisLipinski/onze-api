@@ -4,7 +4,6 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
-import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Base64;
@@ -26,13 +25,13 @@ public class RefreshTokenService {
     private final RefreshTokenRepository tokens;
     private final UserRepository users;
     private final TokenService accessTokens;
-    private final Clock clock;
+    private final SessionClock clock;
     private final Duration idleTtl;
     private final Duration absoluteTtl;
     private final SecureRandom random = new SecureRandom();
 
     public RefreshTokenService(RefreshTokenRepository tokens, UserRepository users, TokenService accessTokens,
-            Clock clock, @Value("${security.session.refresh-idle-ttl:P30D}") Duration idleTtl,
+            SessionClock clock, @Value("${security.session.refresh-idle-ttl:P30D}") Duration idleTtl,
             @Value("${security.session.refresh-absolute-ttl:P90D}") Duration absoluteTtl) {
         if (idleTtl.isNegative() || idleTtl.isZero() || absoluteTtl.isNegative() || absoluteTtl.isZero()) {
             throw new IllegalArgumentException("Refresh token lifetimes must be positive");

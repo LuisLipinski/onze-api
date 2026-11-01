@@ -113,8 +113,12 @@ public class User {
     }
 
     public void changePasswordHash(String passwordHash) {
+        changePasswordHash(passwordHash, Instant.now());
+    }
+
+    public void changePasswordHash(String passwordHash, Instant changedAt) {
         this.passwordHash = passwordHash;
-        this.passwordChangedAt = Instant.now();
+        this.passwordChangedAt = changedAt;
     }
 
     public Instant getPasswordChangedAt() { return passwordChangedAt; }

@@ -4,11 +4,8 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
-import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
-import java.time.ZoneId;
-import java.time.ZoneOffset;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
@@ -41,11 +38,7 @@ class RefreshTokenServiceTest {
     @BeforeEach void setup() {
         user = new User("person@onze.test", "hash", "Jogador");
         ReflectionTestUtils.setField(user, "id", userId);
-        Clock clock = new Clock() {
-            public ZoneId getZone() { return ZoneOffset.UTC; }
-            public Clock withZone(ZoneId zone) { return this; }
-            public Instant instant() { return now.get(); }
-        };
+        SessionClock clock = now::get;
         service = new RefreshTokenService(tokens, users, access, clock, Duration.ofDays(30), Duration.ofDays(90));
     }
 
@@ -164,7 +157,7 @@ class RefreshTokenServiceTest {
 
     @Test void newAccessTokensCannotBootstrapMoreSessions() {
         Jwt jwt = Jwt.withTokenValue("new").header("alg", "HS256").issuer("https://onze.test")
-                .subject(userId.toString()).id(UUID.randomUUID().toString()).issuedAt(now.get())
+                .subject(userId.toString()).claim("jti", UUID.randomUUID().toString()).issuedAt(now.get())
                 .expiresAt(now.get().plusSeconds(7200)).build();
         assertThrows(InvalidRefreshTokenException.class, () -> service.exchangeLegacySession(jwt));
         verifyNoInteractions(tokens, users, access);

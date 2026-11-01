@@ -2,6 +2,11 @@ package com.onze.api.config;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
+
+import com.onze.api.auth.SessionClock;
 
 import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
@@ -26,6 +31,9 @@ import org.springframework.security.web.SecurityFilterChain;
 
 @Configuration
 public class SecurityConfig {
+
+    @Bean
+    SessionClock sessionClock() { return Instant::now; }
 
     @Bean
     SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
@@ -72,12 +80,16 @@ public class SecurityConfig {
     JwtDecoder jwtDecoder(
             SecretKey jwtSecretKey,
             @Value("${security.jwt.issuer}") String issuer,
-            Clock clock) {
+            SessionClock clock) {
         NimbusJwtDecoder decoder = NimbusJwtDecoder.withSecretKey(jwtSecretKey)
                 .macAlgorithm(MacAlgorithm.HS256)
                 .build();
         JwtTimestampValidator timestamps = new JwtTimestampValidator();
-        timestamps.setClock(clock);
+        timestamps.setClock(new Clock() {
+            public ZoneId getZone() { return ZoneOffset.UTC; }
+            public Clock withZone(ZoneId zone) { return this; }
+            public Instant instant() { return clock.instant(); }
+        });
         decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(timestamps, new JwtIssuerValidator(issuer)));
         return decoder;
     }
