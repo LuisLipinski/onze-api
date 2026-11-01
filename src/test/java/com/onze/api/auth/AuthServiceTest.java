@@ -38,23 +38,28 @@ class AuthServiceTest {
     @Mock
     private LoginProtectionService loginProtectionService;
 
+    @Mock
+    private RefreshTokenService refreshTokenService;
+
     @Test
     void registersUserWithNormalizedEmailAndEncodedPassword() {
         AuthService service = new AuthService(
                 userRepository,
                 passwordEncoder,
                 tokenService,
-                loginProtectionService);
+                loginProtectionService, refreshTokenService);
         RegisterRequest request = new RegisterRequest(" User@Example.com ", "strongPass1", " Luis ");
 
         when(userRepository.existsByEmailIgnoreCase("user@example.com")).thenReturn(false);
         when(passwordEncoder.encode("strongPass1")).thenReturn("encoded-password");
         when(userRepository.save(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(tokenService.issueToken(any(User.class))).thenReturn(new TokenService.IssuedToken("jwt", 7200));
+        when(refreshTokenService.issue(any(User.class))).thenReturn(new RefreshTokenService.IssuedRefresh("refresh", 2592000));
 
         var response = service.register(request);
 
         assertEquals("jwt", response.accessToken());
+        assertEquals("refresh", response.refreshToken());
         assertEquals("user@example.com", response.user().email());
         assertEquals("Luis", response.user().displayName());
         verify(passwordEncoder).encode("strongPass1");
@@ -66,7 +71,7 @@ class AuthServiceTest {
                 userRepository,
                 passwordEncoder,
                 tokenService,
-                loginProtectionService);
+                loginProtectionService, refreshTokenService);
         RegisterRequest request = new RegisterRequest("user@example.com", "strongPass1", "Luis");
 
         when(userRepository.existsByEmailIgnoreCase("user@example.com")).thenReturn(true);
@@ -80,12 +85,13 @@ class AuthServiceTest {
                 userRepository,
                 passwordEncoder,
                 tokenService,
-                loginProtectionService);
+                loginProtectionService, refreshTokenService);
         User user = new User("user@example.com", "encoded-password", "Luis");
 
         when(userRepository.findByEmailForLogin("user@example.com")).thenReturn(Optional.of(user));
         when(passwordEncoder.matches("strongPass1", "encoded-password")).thenReturn(true);
         when(tokenService.issueToken(user)).thenReturn(new TokenService.IssuedToken("jwt", 7200));
+        when(refreshTokenService.issue(user)).thenReturn(new RefreshTokenService.IssuedRefresh("refresh", 2592000));
 
         var response = service.login(new LoginRequest("user@example.com", "strongPass1"));
 
@@ -99,7 +105,7 @@ class AuthServiceTest {
                 userRepository,
                 passwordEncoder,
                 tokenService,
-                loginProtectionService);
+                loginProtectionService, refreshTokenService);
         User user = new User("user@example.com", "encoded-password", "Luis");
 
         when(userRepository.findByEmailForLogin("user@example.com")).thenReturn(Optional.of(user));
@@ -117,7 +123,7 @@ class AuthServiceTest {
                 userRepository,
                 passwordEncoder,
                 tokenService,
-                loginProtectionService);
+                loginProtectionService, refreshTokenService);
 
         when(userRepository.findByEmailForLogin("missing@example.com")).thenReturn(Optional.empty());
 

@@ -44,6 +44,9 @@ class PasswordResetServiceTest {
     private LoginProtectionService loginProtectionService;
 
     @Mock
+    private RefreshTokenService refreshTokenService;
+
+    @Mock
     private User user;
 
     private PasswordResetService service;
@@ -56,7 +59,7 @@ class PasswordResetServiceTest {
                 resetCodeRepository,
                 passwordEncoder,
                 emailSender,
-                loginProtectionService);
+                loginProtectionService, refreshTokenService);
         userId = UUID.randomUUID();
     }
 

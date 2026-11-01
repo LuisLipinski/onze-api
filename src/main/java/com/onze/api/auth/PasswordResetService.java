@@ -28,6 +28,7 @@ public class PasswordResetService {
     private final PasswordEncoder passwordEncoder;
     private final PasswordResetEmailSender emailSender;
     private final LoginProtectionService loginProtectionService;
+    private final RefreshTokenService refreshTokenService;
     private final SecureRandom secureRandom = new SecureRandom();
 
     public PasswordResetService(
@@ -35,12 +36,14 @@ public class PasswordResetService {
             PasswordResetCodeRepository resetCodeRepository,
             PasswordEncoder passwordEncoder,
             PasswordResetEmailSender emailSender,
-            LoginProtectionService loginProtectionService) {
+            LoginProtectionService loginProtectionService,
+            RefreshTokenService refreshTokenService) {
         this.userRepository = userRepository;
         this.resetCodeRepository = resetCodeRepository;
         this.passwordEncoder = passwordEncoder;
         this.emailSender = emailSender;
         this.loginProtectionService = loginProtectionService;
+        this.refreshTokenService = refreshTokenService;
     }
 
     @Transactional
@@ -101,6 +104,7 @@ public class PasswordResetService {
         user.changePasswordHash(passwordEncoder.encode(request.newPassword()));
         loginProtectionService.clear(user);
         userRepository.save(user);
+        refreshTokenService.revokeAllForUser(user.getId());
         resetCode.consume(now);
         resetCodeRepository.save(resetCode);
     }
