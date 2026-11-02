@@ -236,6 +236,7 @@ A base funcional mais recente foi introduzida pelo commit `13cbc1a`; commits pos
 - A suíte JUnit é executada integralmente pelo Maven; a contagem efetiva e eventuais testes ignorados ficam registrados no sumário da CI.
 - Integrações usam um PostgreSQL 18 compartilhado durante a suíte; os dados são limpos entre classes e as migrações Flyway são preservadas.
 - `API CI` executa `mvn verify`.
+- JaCoCo mede linhas e ramificações de todo o Java de produção. A CI publica HTML/XML/CSV/JSON e um resumo por arquivo; veja [escopo e execução da cobertura](docs/coverage.md).
 - `Docker CI` constrói a imagem de produção.
 - Spotless está disponível para formatar Java com `mvn spotless:apply`. A verificação automática de todo o código será ativada após a formatação da base existente.
 

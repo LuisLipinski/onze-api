@@ -21,4 +21,28 @@ jobs:
           cache: maven
 
       - name: Verify
+        id: verify
         run: mvn -B verify
+
+      - name: Validate coverage summary parser
+        if: always()
+        run: python3 -m unittest discover -s scripts -p 'test_*.py'
+
+      - name: Summarize line and branch coverage
+        if: always()
+        run: |
+          if [ ! -f target/site/jacoco/jacoco.xml ]; then
+            mvn -B jacoco:report
+          fi
+          python3 scripts/coverage_summary.py --test-status '${{ steps.verify.outcome }}'
+
+      - name: Publish coverage and test reports
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: api-code-coverage
+          path: |
+            target/site/jacoco/
+            target/surefire-reports/
+          if-no-files-found: error
+          retention-days: 30
